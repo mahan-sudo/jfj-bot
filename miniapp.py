@@ -23,6 +23,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 # مسیر دیتابیس مطلق شود (در WSGI مسیر کاری متفاوت است)
 bot.DB_PATH = os.environ.get("JFJ_DB") or os.path.join(HERE, "bot.db")
+try:  # اگر پوشه‌ی دیتابیس (مثل /data روی Volume) وجود ندارد بساز؛ نشد از کنار فایل‌ها استفاده کن
+    os.makedirs(os.path.dirname(bot.DB_PATH) or ".", exist_ok=True)
+    open(bot.DB_PATH, "a").close()
+except OSError:
+    print("WARNING: مسیر دیتابیس در دسترس نیست؛ از bot.db کنار فایل‌ها استفاده می‌شود", flush=True)
+    bot.DB_PATH = os.path.join(HERE, "bot.db")
 DEV_UID = os.environ.get("JFJ_DEV_UID")
 DEV_PHOTO = os.environ.get("JFJ_DEV_PHOTO", "")
 STATIC_DIR = os.path.join(HERE, "static")
