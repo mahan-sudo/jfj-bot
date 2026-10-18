@@ -26,6 +26,8 @@ bot.DB_PATH = os.environ.get("JFJ_DB") or os.path.join(HERE, "bot.db")
 DEV_UID = os.environ.get("JFJ_DEV_UID")
 DEV_PHOTO = os.environ.get("JFJ_DEV_PHOTO", "")
 STATIC_DIR = os.path.join(HERE, "static")
+if not os.path.exists(os.path.join(STATIC_DIR, "index.html")):
+    STATIC_DIR = HERE  # اگر index.html کنار miniapp.py گذاشته شد (آپلود از موبایل)
 
 _init_lock = __import__("threading").Lock()
 _schema_done = False
