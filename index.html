@@ -243,9 +243,22 @@ const THEMES = ['system', 'light', 'light2', 'light3', 'light4', 'dark', 'dark2'
 try { const t = localStorage.getItem('jfj_theme'); if (t && THEMES.includes(t)) S.theme = t; } catch (e) {}
 
 /* ---------------------------------------------------------------- API */
+function getInitData() {
+  try { if (TG && TG.initData) return TG.initData; } catch (e) {}
+  try {
+    for (const src of [location.hash.replace(/^#/, ''), location.search.replace(/^\?/, '')]) {
+      const v = new URLSearchParams(src).get('tgWebAppData');
+      if (v) return v;
+    }
+  } catch (e) {}
+  try { const v = sessionStorage.getItem('jfj_init'); if (v) return v; } catch (e) {}
+  return '';
+}
+try { const d = getInitData(); if (d) sessionStorage.setItem('jfj_init', d); } catch (e) {}
 async function api(path, body) {
   const headers = {};
-  if (TG && TG.initData) headers['Authorization'] = 'tma ' + TG.initData;
+  const idata = getInitData();
+  if (idata) headers['Authorization'] = 'tma ' + idata;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   let res;
   try {

@@ -119,7 +119,7 @@ def member_status(uid, ident, tries=4, fresh=False):
 
 
 # ---------------------------------------------------------------- احراز هویت
-def verify_init_data(init_data, bot_token=None, max_age=86400):
+def verify_init_data(init_data, bot_token=None, max_age=604800):
     bot_token = bot_token or bot.BOT_TOKEN
     pairs = dict(parse_qsl(init_data, keep_blank_values=True))
     got_hash = pairs.pop("hash", None)
