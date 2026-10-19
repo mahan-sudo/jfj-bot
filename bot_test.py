@@ -121,11 +121,15 @@ def miniapp_url():
     return u if u.startswith("https://") else ""
 
 
+def kb_sig(uid):
+    return hmac.new(BOT_TOKEN.encode(), f"jfj-kb:{int(uid)}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
 def main_menu(user_id):
     mu = miniapp_url()
     buy_row = [btn(BTN_BUY_JTOKEN, SUCCESS), btn(BTN_BUY_SERVICES, SUCCESS)]
     if mu:  # دکمه‌ی مینی‌اپ دقیقاً بین «خرید شاهی» و «خرید ممبر و سین»
-        buy_row.insert(1, {"text": BTN_MINIAPP, "web_app": {"url": mu}, "style": SUCCESS})
+        buy_row.insert(1, {"text": BTN_MINIAPP, "web_app": {"url": mu + ("&" if "?" in mu else "?") + f"kb={int(user_id)}.{kb_sig(user_id)}"}, "style": SUCCESS})
     rows = [
         [btn(BTN_REQUEST_JFJ, SUCCESS), btn(BTN_START_JFJ, SUCCESS)],
         [btn(BTN_MY_ACCOUNT, SUCCESS), btn(BTN_TRANSFER_BANK, SUCCESS)],

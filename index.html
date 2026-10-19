@@ -259,6 +259,7 @@ async function api(path, body) {
   const headers = {};
   const idata = getInitData();
   if (idata) headers['Authorization'] = 'tma ' + idata;
+  else { try { let kb = new URLSearchParams(location.search).get('kb') || sessionStorage.getItem('jfj_kb') || ''; if (kb) { sessionStorage.setItem('jfj_kb', kb); headers['X-KB'] = kb; } } catch (e) {} }
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   let res;
   try {

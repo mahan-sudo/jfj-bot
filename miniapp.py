@@ -150,6 +150,19 @@ def auth_user(environ):
         user = verify_init_data(auth[4:])
         if user:
             return user
+    kb = environ.get("HTTP_X_KB", "")
+    if kb and "." in kb:
+        k_uid, k_sig = kb.split(".", 1)
+        if k_uid.isdigit() and hmac.compare_digest(bot.kb_sig(k_uid), k_sig):
+            fn, un = "", None
+            try:
+                with bot.get_db() as c:
+                    r = c.execute("SELECT first_name, username FROM users WHERE id=?", (int(k_uid),)).fetchone()
+                if r:
+                    fn, un = r[0], r[1]
+            except Exception:
+                pass
+            return {"id": int(k_uid), "first_name": fn, "username": un}
     if DEV_UID and not auth:
         return {"id": int(DEV_UID), "first_name": "Dev", "username": "dev_user", "photo_url": DEV_PHOTO}
     raise ApiError("unauthorized", 401)
