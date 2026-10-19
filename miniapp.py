@@ -469,7 +469,7 @@ def build_state(user):
         reqs = c.execute(
             """SELECT r.tracking_code, r.member_count, r.link, r.status, r.created_at,
                       (SELECT COUNT(*) FROM joins j WHERE j.tracking_code=r.tracking_code AND j.left_at IS NULL)
-               FROM requests r WHERE r.user_id=? ORDER BY r.created_at DESC, r.rowid DESC LIMIT 100""",
+               FROM requests r WHERE r.user_id=? AND r.status!='cancelled' ORDER BY r.created_at DESC, r.rowid DESC LIMIT 100""",
             (uid,),
         ).fetchall()
         joins_n = c.execute("SELECT COUNT(*) FROM joins WHERE user_id=? AND left_at IS NULL", (uid,)).fetchone()[0]
@@ -642,7 +642,11 @@ def api_join_list(uid, body):
         ident = bot.resolve_chat_ident(row[3], row[1])
         if not ident:
             return None
-        if member_status(uid, ident) not in ("left", "kicked"):
+        st0 = member_status(uid, ident)
+        if st0 is None and bot.bot_admin_state(ident) is False:
+            bot.cancel_request_not_admin(row[0], "miniapp list")
+            return None
+        if st0 not in ("left", "kicked"):
             return None  # همین الان عضو است یا بررسی ممکن نیست
         return row + (chat_title(row[0], ident),)
 
@@ -693,6 +697,13 @@ def api_join_confirm(uid, body):
     if ident:
         st = member_status(uid, ident, fresh=True)
         joined = st is not None and st not in ("left", "kicked")
+    if ident and st is None:
+        if bot.bot_admin_state(ident) is False:
+            bot.cancel_request_not_admin(code, "miniapp confirm")
+            with bot.get_db() as c:
+                c.execute("DELETE FROM mini_seen WHERE user_id=? AND code=?", (uid, code))
+            return {"ok": False, "gone": True, "error": "این درخواست دیگر معتبر نیست."}
+        return {"ok": False, "error": "بررسی عضویت الان ممکن نشد؛ چند لحظه بعد دوباره امتحان کن."}
     if not joined:
         return {"ok": False, "error": "هنوز در کانال مورد نظر عضو نشدی!"}
 
@@ -788,7 +799,7 @@ def api_request(uid, body):
     if left:
         raise ApiError(f"بین دو درخواست JFJ باید حداقل {fa_n(bot.RESUBMIT_COOLDOWN_SECONDS // 60)} دقیقه فاصله باشد؛ {bot.cooldown_text(left)} دیگر صبر کن.")
     existing = bot.get_active_request_for_chat(uid, chat_id_num)
-    if existing and existing[2] != "completed":
+    if existing and existing[2] not in ("completed", "cancelled"):
         elapsed = (bot.now_local() - datetime.fromisoformat(existing[3])).total_seconds()
         if elapsed < bot.RESUBMIT_COOLDOWN_SECONDS:
             raise ApiError("باید حداقل ۵ دقیقه از درخواست قبلی این کانال بگذرد یا سفارش قبلی تکمیل شود.")

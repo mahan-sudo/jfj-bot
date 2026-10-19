@@ -83,6 +83,7 @@ BTN_BUY_SERVICES = "⭐️ خرید ممبر و سین ..."
 BTN_SUPPORT = "☎️ پشتیبانی"
 BTN_MY_ORDERS = "🔍 سفارش من"
 BTN_RULES = "📛 قوانین"
+BTN_MINIAPP = "💻 Mini app"
 BACK_BTN = "بازگشت ◁"
 BTN_ADMIN_PANEL = "🖌 پنل مدیریت"
 BTN_ADMIN_STATS = "📊 آمار ربات"
@@ -110,11 +111,25 @@ def is_admin(user_id):
     return user_id in ADMIN_IDS
 
 
+def miniapp_url():
+    """آدرس مینی‌اپ: از MINIAPP_URL یا (روی Railway) از آدرس عمومی خودِ سرویس"""
+    u = (os.environ.get("MINIAPP_URL") or "").strip()
+    if not u:
+        d = (os.environ.get("RAILWAY_PUBLIC_DOMAIN") or "").strip()
+        if d:
+            u = f"https://{d}/app"
+    return u if u.startswith("https://") else ""
+
+
 def main_menu(user_id):
+    mu = miniapp_url()
+    buy_row = [btn(BTN_BUY_JTOKEN, SUCCESS), btn(BTN_BUY_SERVICES, SUCCESS)]
+    if mu:  # دکمه‌ی مینی‌اپ دقیقاً بین «خرید شاهی» و «خرید ممبر و سین»
+        buy_row.insert(1, {"text": BTN_MINIAPP, "web_app": {"url": mu}, "style": SUCCESS})
     rows = [
         [btn(BTN_REQUEST_JFJ, SUCCESS), btn(BTN_START_JFJ, SUCCESS)],
         [btn(BTN_MY_ACCOUNT, SUCCESS), btn(BTN_TRANSFER_BANK, SUCCESS)],
-        [btn(BTN_BUY_JTOKEN, SUCCESS), btn(BTN_BUY_SERVICES, SUCCESS)],
+        buy_row,
         [btn(BTN_SUPPORT, DANGER), btn(BTN_MY_ORDERS, DANGER), btn(BTN_RULES, DANGER)],
     ]
     if is_admin(user_id):
@@ -369,7 +384,29 @@ REFERRAL_CONFIRMED_TEXT = (
 
 def notify_new_referral(referrer_id):
     """همان لحظه‌ای که کاربر جدید از لینک زیرمجموعه‌گیری وارد شد (هنوز پاداشی داده نمی‌شود)"""
-    send(referrer_id, REFERRAL_SIGNUP_TEXT)
+    for attempt in range(3):
+        r = send(referrer_id, REFERRAL_SIGNUP_TEXT)
+        if r.get("ok"):
+            return True
+        logging.warning("referral signup notify to %s failed (try %s): %s", referrer_id, attempt + 1, r)
+        if r.get("error_code") in (400, 403):
+            break  # بلاک/چت نامعتبر؛ تکرار فایده ندارد
+        time.sleep(1 + attempt)
+    return False
+
+
+def register_start_referral(message):
+    """اگر کاربر تازه با لینک دعوت /start کرد، همان لحظه (قبل از هر قفل جوین اجباری و ...) ثبت و به معرف خبر می‌دهد"""
+    user = message.get("from") or {}
+    text = (message.get("text") or "").strip()
+    m = re.match(r"^/start(?:@\w+)?\s+ref(\d+)", text)
+    if not m or not user.get("id") or user_exists(user["id"]):
+        return
+    candidate = int(m.group(1))
+    if candidate == user["id"] or not user_exists(candidate):
+        return
+    upsert_user(user, referred_by=candidate)
+    notify_new_referral(candidate)
 
 
 def get_referral_count(user_id):
@@ -397,7 +434,9 @@ def maybe_reward_referrer(user_id):
             return
         c.execute("UPDATE users SET tokens = tokens + ? WHERE id=?", (REFERRAL_REWARD, referred_by))
         c.execute("UPDATE users SET referral_rewarded=1 WHERE id=?", (user_id,))
-    send(referred_by, REFERRAL_CONFIRMED_TEXT)
+    r = send(referred_by, REFERRAL_CONFIRMED_TEXT)
+    if not r.get("ok"):
+        logging.warning("referral confirmed notify to %s failed: %s", referred_by, r)
 
 
 
@@ -531,7 +570,7 @@ def get_recent_requests(user_id, limit=5):
     with get_db() as c:
         return c.execute(
             """SELECT tracking_code, member_count, link, status
-               FROM requests WHERE user_id=? ORDER BY created_at DESC LIMIT ?""",
+               FROM requests WHERE user_id=? AND status!='cancelled' ORDER BY created_at DESC LIMIT ?""",
             (user_id, limit),
         ).fetchall()
 
@@ -922,7 +961,7 @@ def handle_jfj_wait_link(chat_id, user_id, text, data):
     existing = get_active_request_for_chat(user_id, chat_id_num)
     if existing:
         _, _, ex_status, ex_last_requested_at = existing
-        if ex_status != "completed":
+        if ex_status not in ("completed", "cancelled"):
             try:
                 elapsed = (now_local() - datetime.fromisoformat(ex_last_requested_at)).total_seconds()
             except (TypeError, ValueError):
@@ -1123,6 +1162,54 @@ def resolve_chat_ident(chat_id_num, link):
     return chat_id_num if chat_id_num else extract_chat_identifier(link)
 
 
+def bot_admin_state(ident):
+    """True = ربات ادمین است، False = قطعاً ادمین نیست (حذف شده/کانال پاک شده)، None = نامشخص (خطای شبکه و ...)"""
+    if not ident or not BOT_ID:
+        return None
+    r = tg("getChatMember", chat_id=ident, user_id=BOT_ID, _timeout=10)
+    if r.get("ok"):
+        return r["result"].get("status") in ("administrator", "creator")
+    d = str(r.get("description") or r.get("error_description") or "").lower()
+    if r.get("error_code") in (400, 403) and any(x in d for x in (
+            "chat not found", "kicked", "not a member", "forbidden", "channel_private", "chat_admin_required")):
+        return False
+    return None
+
+
+def cancel_request_not_admin(code, why=""):
+    """سفارش را بی‌صدا لغو می‌کند تا دیگر در شروع JFJ نمایش داده نشود (موجودی برنمی‌گردد)"""
+    with get_db() as c:
+        cur = c.execute("UPDATE requests SET status='cancelled' WHERE tracking_code=? AND status='in_progress'", (code,))
+        c.execute("DELETE FROM mini_seen WHERE code=?", (code,)) if _table_exists(c, "mini_seen") else None
+    if cur.rowcount:
+        logging.warning("request %s cancelled: bot is not admin (%s)", code, why)
+    return bool(cur.rowcount)
+
+
+def _table_exists(c, name):
+    return bool(c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone())
+
+
+def request_sweeper():
+    """هر ۳۰ دقیقه: سفارش‌هایی که ربات دیگر در کانال/گروهشان ادمین نیست بی‌صدا لغو می‌شوند"""
+    time.sleep(60)
+    while True:
+        try:
+            with get_db() as c:
+                rows = c.execute("SELECT tracking_code, link, chat_id FROM requests WHERE status='in_progress'").fetchall()
+            checked = {}
+            for code, link, chat_id_num in rows:
+                key = chan_key(chat_id_num, link)
+                if key not in checked:
+                    checked[key] = bot_admin_state(resolve_chat_ident(chat_id_num, link))
+                    time.sleep(0.2)
+                if checked[key] is False:
+                    cancel_request_not_admin(code, "sweep")
+        except Exception:
+            logging.exception("request_sweeper")
+        time.sleep(1800)
+
+
 def chan_key(chat_id_num, link):
     """کلید یکتای کانال/گروه (مستقل از اینکه چند سفارش جدا برایش ثبت شده باشد)"""
     ident = extract_chat_identifier(link or "")
@@ -1179,6 +1266,9 @@ def pick_jfj_candidate(user_id, exclude_code=None):
                 if res["result"].get("status") not in ("left", "kicked"):
                     continue  # کاربر همین الان هم عضو این کانال است؛ نشانش نده
                 verified = True  # همین الان تأیید شد که عضو نیست
+            elif bot_admin_state(chat_ident) is False:
+                cancel_request_not_admin(code, "pick")
+                continue  # ربات دیگر ادمین نیست: سفارش بی‌صدا لغو و از لیست برداشته شد
         return (code, link, member_count, verified)
     return None
 
@@ -1240,10 +1330,27 @@ def handle_jfj_join(cq):
 
     chat_ident = resolve_chat_ident(chat_id_num, link)
     joined = False
+    check_failed = None
     if chat_ident:
         res = tg("getChatMember", chat_id=chat_ident, user_id=user["id"])
         if res.get("ok"):
             joined = res["result"].get("status") not in ("left", "kicked")
+            if not joined:
+                logging.info("jfj join: user %s status=%s in %s", user["id"], res["result"].get("status"), chat_ident)
+        else:
+            check_failed = res.get("description") or res.get("error_description") or res.get("error") or "no response"
+            logging.warning("jfj join check failed for %s: %s", chat_ident, check_failed)
+    else:
+        check_failed = "آیدی/لینک کانال قابل استفاده نیست (کانال خصوصی؟)"
+
+    if check_failed:
+        if bot_admin_state(chat_ident) is False or not chat_ident:
+            cancel_request_not_admin(code, "join")  # بی‌صدا؛ بدون هشدار به کاربر، مستقیم سراغ بعدی
+            answer_callback(cq["id"])
+            advance_jfj(user["id"], chat_id, message_id, exclude_code=code)
+            return
+        answer_callback(cq["id"], "⚠️ بررسی عضویت الان ممکن نشد؛ چند لحظه بعد دوباره امتحان کن.", show_alert=True)
+        return
 
     if not joined:
         answer_callback(cq["id"], "🛑 هنوز در کانال مورد نظر عضو نشدید!", show_alert=True)
@@ -2278,7 +2385,7 @@ def admin_dashboard(chat_id):
     sales = _q1("SELECT COALESCE(SUM(final_amount),0) FROM invoices WHERE status='paid' AND created_at >= ?", (today,))
     pend_so = _q1("SELECT COUNT(*) FROM service_orders WHERE status='pending'")
     pend_inv = _q1("SELECT COUNT(*) FROM invoices WHERE status='review'")
-    active_req = _q1("SELECT COUNT(*) FROM requests WHERE status!='completed'")
+    active_req = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled')")
     on = get_setting("bot_enabled", "1") != "0"
     text = (
         "🖌 <b>پنل مدیریت</b>\n"
@@ -2487,7 +2594,7 @@ def render_referral():
 
 def render_requests():
     tot = _q1("SELECT COUNT(*) FROM requests")
-    act = _q1("SELECT COUNT(*) FROM requests WHERE status!='completed'")
+    act = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled')")
     joins = _q1("SELECT COUNT(*) FROM joins")
     left = _q1("SELECT COUNT(*) FROM joins WHERE left_at IS NOT NULL")
     text = (
@@ -2515,7 +2622,7 @@ def render_orders():
     so = _q1("SELECT COUNT(*) FROM service_orders WHERE status='pending'")
     rv = _q1("SELECT COUNT(*) FROM invoices WHERE status='review'")
     aw = _q1("SELECT COUNT(*) FROM invoices WHERE status='awaiting_receipt'")
-    rq = _q1("SELECT COUNT(*) FROM requests WHERE status!='completed'")
+    rq = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled')")
     text = (
         "🧾 <b>سفارشات تکمیل نشده</b>\n"
         f"{LINE}\n"
@@ -2569,7 +2676,7 @@ def _user_card(uid):
     if not u:
         return "❌ کاربر پیدا نشد.", _kb(_back("u"))
     reqs = _q1("SELECT COUNT(*) FROM requests WHERE user_id=?", (uid,))
-    act = _q1("SELECT COUNT(*) FROM requests WHERE user_id=? AND status!='completed'", (uid,))
+    act = _q1("SELECT COUNT(*) FROM requests WHERE user_id=? AND status NOT IN ('completed','cancelled')", (uid,))
     joins = _q1("SELECT COUNT(*) FROM joins WHERE user_id=? AND left_at IS NULL", (uid,))
     lefts = _q1("SELECT COUNT(*) FROM joins WHERE user_id=? AND left_at IS NOT NULL", (uid,))
     svc = _q1("SELECT COUNT(*) FROM service_orders WHERE user_id=?", (uid,))
@@ -2843,12 +2950,12 @@ def _send_list(ctx_chat, sec_key, offset):
 
 
 def _send_requests(chat_id, offset):
-    total = _q1("SELECT COUNT(*) FROM requests WHERE status!='completed'")
+    total = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled')")
     with get_db() as c:
         rows = c.execute(
             "SELECT r.tracking_code, r.user_id, r.member_count, r.link, r.created_at, "
             "(SELECT COUNT(*) FROM joins j WHERE j.tracking_code=r.tracking_code AND j.left_at IS NULL) "
-            "FROM requests r WHERE r.status!='completed' ORDER BY r.created_at LIMIT 8 OFFSET ?", (offset,)).fetchall()
+            "FROM requests r WHERE r.status NOT IN ('completed','cancelled') ORDER BY r.created_at LIMIT 8 OFFSET ?", (offset,)).fetchall()
     if not rows:
         _hsend(chat_id, "🎉 درخواست JFJ در حال انجامی وجود ندارد.", _kb(_back("o")))
         return
@@ -3687,6 +3794,13 @@ def handle_message(message):
         handle_react_wait_qty(chat_id, user["id"], text, data)
     elif state == "premium_wait_qty":
         handle_premium_wait_qty(chat_id, user["id"], text)
+    elif text == BTN_MINIAPP:
+        mu = miniapp_url()
+        if mu:
+            send(chat_id, "👇 برای ورود به مینی‌اپ روی دکمه‌ی زیر بزنید.",
+                 {"inline_keyboard": [[{"text": BTN_MINIAPP, "web_app": {"url": mu}}]]}, markdown=False)
+        else:
+            send_main_menu(chat_id, user["id"], back=True)
     elif text == BTN_REQUEST_JFJ:
         start_jfj_request(chat_id, user["id"])
     elif text == BTN_START_JFJ:
@@ -4057,6 +4171,14 @@ def _fj_warn_admins(ref, desc):
     if now - _fj_warned.get(ref, 0) < 6 * 3600:
         return
     _fj_warned[ref] = now
+    if str(ref).startswith("jfj:"):
+        text = (f"⚠️ <b>بررسی عضویت در شروع JFJ ناموفق بود</b>\n"
+                f"سفارش: <code>{_h(str(ref)[4:])}</code>\n"
+                f"جزئیات: <code>{_h(str(desc))[:300]}</code>\n\n"
+                f"✅ بررسی کن ربات هنوز در آن کانال/گروه <b>ادمین</b> است و لینک سفارش درست است.")
+        for aid in ADMIN_IDS:
+            tg("sendMessage", chat_id=aid, text=text, parse_mode="HTML")
+        return
     text = (f"⚠️ <b>جوین اجباری کار نمی‌کند</b>\n"
             f"ربات نمی‌تواند عضویت در <code>{_h(str(ref))}</code> را بررسی کند، پس این کانال فعلاً چک نمی‌شود.\n"
             f"دلیل: <code>{_h(str(desc))[:200]}</code>\n\n"
@@ -5727,6 +5849,11 @@ def handle_update(update):
         if not claim_update(update_id):
             return  # قبلاً پردازش شده
         try:
+            if message and message["chat"].get("type") == "private":
+                try:
+                    register_start_referral(message)
+                except Exception:
+                    logging.exception("register_start_referral")
             if message and gate_blocked(user_id, message["chat"]["id"]):
                 return
             if callback and gate_blocked(user_id, (callback.get("message") or {}).get("chat", {}).get("id"), callback["id"]):
@@ -5784,6 +5911,7 @@ def main():
     tg("deleteWebhook")
     threading.Thread(target=invoice_watcher, daemon=True).start()
     threading.Thread(target=bc_worker, daemon=True).start()
+    threading.Thread(target=request_sweeper, daemon=True).start()
     offset = 0
     pool = ThreadPoolExecutor(max_workers=8)
     fails = 0
