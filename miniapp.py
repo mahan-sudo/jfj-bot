@@ -482,7 +482,7 @@ def build_state(user):
         reqs = c.execute(
             """SELECT r.tracking_code, r.member_count, r.link, r.status, r.created_at,
                       (SELECT COUNT(*) FROM joins j WHERE j.tracking_code=r.tracking_code AND j.left_at IS NULL)
-               FROM requests r WHERE r.user_id=? AND r.status!='cancelled' ORDER BY r.created_at DESC, r.rowid DESC LIMIT 100""",
+               FROM requests r WHERE r.user_id=? ORDER BY r.created_at DESC, r.rowid DESC LIMIT 100""",
             (uid,),
         ).fetchall()
         joins_n = c.execute("SELECT COUNT(*) FROM joins WHERE user_id=? AND left_at IS NULL", (uid,)).fetchone()[0]
@@ -535,7 +535,8 @@ def build_state(user):
     for code, cnt, link, status, created, done in reqs:
         allo.append((parse_ts(created) or epoch0, {
             "kind": "jfj", "code": code, "channel": display_name(link), "total": cnt,
-            "cur": min(done, cnt), "done": status == "completed"}))
+            "cur": min(done, cnt), "done": status == "completed", "removed": status in ("removed", "deleted"),
+            "rlabel": "حذف شد توسط مدیریت" if status == "deleted" else "ربات عزل شد"}))
     for code, name, qty, link, status, created in svc_rows:
         allo.append((parse_ts(created) or epoch0, {
             "kind": "svc", "code": code, "title": name, "qty": qty, "channel": display_name(link),
@@ -780,10 +781,12 @@ def api_request(uid, body):
         raise ApiError(f"حداقل تعداد {bot.MIN_MEMBER_COUNT} است.")
     if count > 100000:
         raise ApiError("تعداد خیلی زیاد است.")
-    low = link.lower()
-    if not any(m in low for m in bot._LINK_MARKERS):
-        raise ApiError("آیدی کانال را با @ وارد کن.")
+    link = bot.parse_jfj_link(link) or ""
+    if not link:
+        raise ApiError("آیدی کانال را حتماً با @ وارد کن؛ مثل @mychannel")
     ident = bot.extract_chat_identifier(link)
+    if bot.is_chan_blocked(ident):
+        raise ApiError("🛑 امکان درخواست برای این گروه-کانال وجود ندارد.")
     is_admin = False
     res = {}
     if ident and bot.BOT_ID:
@@ -807,12 +810,14 @@ def api_request(uid, body):
     res_chat = bot.tg("getChat", chat_id=ident)
     if res_chat.get("ok"):
         chat_id_num = res_chat["result"].get("id")
+    if bot.is_chan_blocked(ident, chat_id_num):
+        raise ApiError("🛑 امکان درخواست برای این گروه-کانال وجود ندارد.")
 
     left = bot.user_cooldown_left(uid)
     if left:
         raise ApiError(f"بین دو درخواست JFJ باید حداقل {fa_n(bot.RESUBMIT_COOLDOWN_SECONDS // 60)} دقیقه فاصله باشد؛ {bot.cooldown_text(left)} دیگر صبر کن.")
     existing = bot.get_active_request_for_chat(uid, chat_id_num)
-    if existing and existing[2] not in ("completed", "cancelled"):
+    if existing and existing[2] not in ("completed", "cancelled", "removed", "deleted"):
         elapsed = (bot.now_local() - datetime.fromisoformat(existing[3])).total_seconds()
         if elapsed < bot.RESUBMIT_COOLDOWN_SECONDS:
             raise ApiError("باید حداقل ۵ دقیقه از درخواست قبلی این کانال بگذرد یا سفارش قبلی تکمیل شود.")

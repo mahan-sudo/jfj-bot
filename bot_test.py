@@ -337,6 +337,7 @@ def migrate_schema():
         "ALTER TABLE invoices ADD COLUMN kind TEXT NOT NULL DEFAULT 'vip'",
         "ALTER TABLE invoices ADD COLUMN meta TEXT",
         "ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE bc_jobs ADD COLUMN pin INTEGER NOT NULL DEFAULT 0",
     ]
     with get_db() as c:
         for stmt in alters:
@@ -574,7 +575,7 @@ def get_recent_requests(user_id, limit=5):
     with get_db() as c:
         return c.execute(
             """SELECT tracking_code, member_count, link, status
-               FROM requests WHERE user_id=? AND status!='cancelled' ORDER BY created_at DESC LIMIT ?""",
+               FROM requests WHERE user_id=? ORDER BY created_at DESC LIMIT ?""",
             (user_id, limit),
         ).fetchall()
 
@@ -590,7 +591,7 @@ def get_join_count(tracking_code):
 def refresh_request_status(tracking_code, member_count, status, owner_id=None):
     """وقتی تعداد جوین‌های همین سفارش (فقط همین یکی) به تعداد درخواستی‌اش برسد،
     وضعیت تکمیل‌شده ثبت و پیام تکمیل‌شدن برای صاحب همین سفارش ارسال می‌شود"""
-    if status == "completed":
+    if status in ("completed", "removed", "deleted"):
         return status
     if get_join_count(tracking_code) >= member_count:
         with get_db() as c:
@@ -919,6 +920,36 @@ def handle_jfj_wait_count(chat_id, user_id, text):
 
 
 _LINK_MARKERS = ("http://", "https://", "t.me/", "@")
+BLOCKED_MSG = "🛑 *امکان درخواست برای این گروه-کانال وجود ندارد.*"
+
+
+def parse_jfj_link(text):
+    """فقط آیدی با @ پذیرفته می‌شود (مثل @mychannel)؛ لینک http/https/t.me قبول نیست"""
+    t = (text or "").strip()
+    return t if re.fullmatch(r"@[A-Za-z][A-Za-z0-9_]{3,31}", t) else None
+
+
+def _block_keys():
+    return {str(k).lower() for k in sjson("jfj_block", [])}
+
+
+def is_chan_blocked(ident=None, num=None):
+    keys = _block_keys()
+    if not keys:
+        return False
+    if ident and str(ident).lower() in keys:
+        return True
+    return bool(num) and f"id:{num}" in keys
+
+
+def block_chan(keys):
+    cur = sorted(_block_keys() | {str(k).lower() for k in keys if k})
+    set_setting("jfj_block", json.dumps(cur, ensure_ascii=False))
+
+
+def unblock_chan(key):
+    cur = sorted(_block_keys() - {str(key).lower()})
+    set_setting("jfj_block", json.dumps(cur, ensure_ascii=False))
 
 
 def extract_chat_identifier(text):
@@ -933,12 +964,15 @@ def extract_chat_identifier(text):
 
 
 def handle_jfj_wait_link(chat_id, user_id, text, data):
-    low = text.lower()
-    if not any(marker in low for marker in _LINK_MARKERS):
-        send(chat_id, "🛑 *لطفا لینک را صحیح وارد کنید! (با @)*")
+    text = parse_jfj_link(text)
+    if not text:
+        send(chat_id, "🛑 *لطفا آیدی را صحیح وارد کنید! (حتما با @ شروع شود؛ مثل @mychannel)*")
         return
 
     chat_ident = extract_chat_identifier(text)
+    if is_chan_blocked(chat_ident):
+        send(chat_id, BLOCKED_MSG)
+        return
     is_admin = False
     if chat_ident:
         res = tg("getChatMember", chat_id=chat_ident, user_id=BOT_ID)
@@ -953,6 +987,9 @@ def handle_jfj_wait_link(chat_id, user_id, text, data):
     res_chat = tg("getChat", chat_id=chat_ident)
     if res_chat.get("ok"):
         chat_id_num = res_chat["result"].get("id")
+    if is_chan_blocked(chat_ident, chat_id_num):
+        send(chat_id, BLOCKED_MSG)
+        return
 
     count, cost = data["count"], data["cost"]
 
@@ -965,7 +1002,7 @@ def handle_jfj_wait_link(chat_id, user_id, text, data):
     existing = get_active_request_for_chat(user_id, chat_id_num)
     if existing:
         _, _, ex_status, ex_last_requested_at = existing
-        if ex_status not in ("completed", "cancelled"):
+        if ex_status not in ("completed", "cancelled", "removed", "deleted"):
             try:
                 elapsed = (now_local() - datetime.fromisoformat(ex_last_requested_at)).total_seconds()
             except (TypeError, ValueError):
@@ -1183,7 +1220,7 @@ def bot_admin_state(ident):
 def cancel_request_not_admin(code, why=""):
     """سفارش را بی‌صدا لغو می‌کند تا دیگر در شروع JFJ نمایش داده نشود (موجودی برنمی‌گردد)"""
     with get_db() as c:
-        cur = c.execute("UPDATE requests SET status='cancelled' WHERE tracking_code=? AND status='in_progress'", (code,))
+        cur = c.execute("UPDATE requests SET status='removed' WHERE tracking_code=? AND status='in_progress'", (code,))
         c.execute("DELETE FROM mini_seen WHERE code=?", (code,)) if _table_exists(c, "mini_seen") else None
     if cur.rowcount:
         logging.warning("request %s cancelled: bot is not admin (%s)", code, why)
@@ -1336,7 +1373,12 @@ def handle_jfj_join(cq):
     joined = False
     check_failed = None
     if chat_ident:
-        res = tg("getChatMember", chat_id=chat_ident, user_id=user["id"])
+        res = {}
+        for _try in range(3):
+            res = tg("getChatMember", chat_id=chat_ident, user_id=user["id"], _timeout=15)
+            if res.get("ok"):
+                break
+            time.sleep(1.0 + _try)
         if res.get("ok"):
             joined = res["result"].get("status") not in ("left", "kicked")
             if not joined:
@@ -1348,12 +1390,18 @@ def handle_jfj_join(cq):
         check_failed = "آیدی/لینک کانال قابل استفاده نیست (کانال خصوصی؟)"
 
     if check_failed:
-        if bot_admin_state(chat_ident) is False or not chat_ident:
+        _cf = str(check_failed).lower()
+        _rm = any(x in _cf for x in ("member list is inaccessible", "not enough rights", "chat_admin_required",
+                                      "need administrator", "chat not found", "kicked", "forbidden"))
+        if _rm or bot_admin_state(chat_ident) is False or not chat_ident:
             cancel_request_not_admin(code, "join")  # بی‌صدا؛ بدون هشدار به کاربر، مستقیم سراغ بعدی
             answer_callback(cq["id"])
             advance_jfj(user["id"], chat_id, message_id, exclude_code=code)
             return
-        answer_callback(cq["id"], "⚠️ بررسی عضویت الان ممکن نشد؛ چند لحظه بعد دوباره امتحان کن.", show_alert=True)
+        msg = "⚠️ بررسی عضویت الان ممکن نشد؛ چند لحظه بعد دوباره امتحان کن."
+        if user["id"] in ADMIN_IDS:
+            msg += f"\n\n[ادمین] علت: {str(check_failed)[:150]}"
+        answer_callback(cq["id"], msg, show_alert=True)
         return
 
     if not joined:
@@ -2389,7 +2437,7 @@ def admin_dashboard(chat_id):
     sales = _q1("SELECT COALESCE(SUM(final_amount),0) FROM invoices WHERE status='paid' AND created_at >= ?", (today,))
     pend_so = _q1("SELECT COUNT(*) FROM service_orders WHERE status='pending'")
     pend_inv = _q1("SELECT COUNT(*) FROM invoices WHERE status='review'")
-    active_req = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled')")
+    active_req = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted')")
     on = get_setting("bot_enabled", "1") != "0"
     text = (
         "🖌 <b>پنل مدیریت</b>\n"
@@ -2517,6 +2565,7 @@ def render_users():
         [_ab("🔎 جستجوی کاربر", "adm_p:u:in:ufind", SUCCESS)],
         [_ab("🏆 ثروتمندترین‌ها", "adm_p:u:rich", PRIMARY), _ab("🆕 جدیدترین‌ها", "adm_p:u:new", PRIMARY)],
         [_ab(f"🚫 مسدودشده‌ها ({_n(banned)})", "adm_p:u:bl", DANGER)],
+        [_ab("💸 شارژ همگانی", "adm_p:x:mc", SUCCESS)],
     )
     return text, kb
 
@@ -2598,7 +2647,7 @@ def render_referral():
 
 def render_requests():
     tot = _q1("SELECT COUNT(*) FROM requests")
-    act = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled')")
+    act = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted')")
     joins = _q1("SELECT COUNT(*) FROM joins")
     left = _q1("SELECT COUNT(*) FROM joins WHERE left_at IS NOT NULL")
     text = (
@@ -2618,6 +2667,7 @@ def render_requests():
         [_ab("🎁 پاداش جوین", "adm_p:q:in:jr", PRIMARY), _ab("↩️ بازگشت لفت", "adm_p:q:in:lrf", PRIMARY)],
         [_ab("⏱ فاصله‌ی دو درخواست", "adm_p:q:in:cool", PRIMARY)],
         [_ab("📋 درخواست‌های در حال انجام", "adm_p:o:req:0", SUCCESS)],
+        [_ab("🗑 حذف درخواست‌ها", "adm_p:x:rm:0", DANGER), _ab(f"🚫 کانال‌های مسدود ({_n(len(_block_keys()))})", "adm_p:x:bk", DANGER)],
     )
     return text, kb
 
@@ -2626,7 +2676,7 @@ def render_orders():
     so = _q1("SELECT COUNT(*) FROM service_orders WHERE status='pending'")
     rv = _q1("SELECT COUNT(*) FROM invoices WHERE status='review'")
     aw = _q1("SELECT COUNT(*) FROM invoices WHERE status='awaiting_receipt'")
-    rq = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled')")
+    rq = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted')")
     text = (
         "🧾 <b>سفارشات تکمیل نشده</b>\n"
         f"{LINE}\n"
@@ -2680,7 +2730,7 @@ def _user_card(uid):
     if not u:
         return "❌ کاربر پیدا نشد.", _kb(_back("u"))
     reqs = _q1("SELECT COUNT(*) FROM requests WHERE user_id=?", (uid,))
-    act = _q1("SELECT COUNT(*) FROM requests WHERE user_id=? AND status NOT IN ('completed','cancelled')", (uid,))
+    act = _q1("SELECT COUNT(*) FROM requests WHERE user_id=? AND status NOT IN ('completed','cancelled','removed','deleted')", (uid,))
     joins = _q1("SELECT COUNT(*) FROM joins WHERE user_id=? AND left_at IS NULL", (uid,))
     lefts = _q1("SELECT COUNT(*) FROM joins WHERE user_id=? AND left_at IS NOT NULL", (uid,))
     svc = _q1("SELECT COUNT(*) FROM service_orders WHERE user_id=?", (uid,))
@@ -2847,6 +2897,34 @@ def admin_handle_input(chat_id, user, text, data):
         else:
             _err(chat_id, "ارسال نشد؛ احتمالاً کاربر ربات را بلاک کرده است.")
             set_state(admin_id, "admin_panel")
+    elif name in ("mc_add", "mc_sub"):
+        n = _num_ok(t, 0.01)
+        if n is None:
+            _err(chat_id, "یک عدد معتبر بزرگ‌تر از صفر بفرستید.")
+            return True
+        mode = name[3:]
+        total = _q1("SELECT COUNT(*) FROM users")
+        set_state(admin_id, "admin_panel")
+        _hsend(chat_id, f"{'➕ شارژ' if mode == 'add' else '➖ کسر'} همگانی\n{LINE}\n"
+                        f"🪙 مقدار: <b>{_t(n)}</b> شاهی برای هر کاربر\n👥 تعداد کاربران: <b>{_n(total)}</b>\n"
+                        "🔕 بدون اطلاع‌رسانی به کاربران.\n\nمطمئنید؟",
+               _kb([_ab("✅ تأیید و اجرا", f"adm_p:x:mcg:{mode}:{fmt_tokens(n)}", SUCCESS if mode == "add" else DANGER)],
+                   [_ab("❌ انصراف", "adm_p:x:mc", PRIMARY)]))
+    elif name == "bk_add":
+        ref = t if re.fullmatch(r"-?\d{6,}", t) else None
+        if ref:
+            keys = [f"id:{ref}"]
+        else:
+            m = re.fullmatch(r"(?:https?://)?(?:t\.me/)?@?([A-Za-z][A-Za-z0-9_]{3,31})", t)
+            if not m:
+                _err(chat_id, "آیدی نامعتبر است؛ مثل @mychannel یا آیدی عددی (-100…) بفرستید.")
+                return True
+            keys = ["@" + m.group(1)]
+            g = tg("getChat", chat_id="@" + m.group(1), _timeout=10)
+            if g.get("ok"):
+                keys.append(f"id:{g['result']['id']}")
+        block_chan(keys)
+        _fin(chat_id, admin_id, data, "کانال/گروه مسدود شد.")
     elif name == "sdm_id":
         uid = _find_user(text)
         if not uid:
@@ -2954,12 +3032,12 @@ def _send_list(ctx_chat, sec_key, offset):
 
 
 def _send_requests(chat_id, offset):
-    total = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled')")
+    total = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted')")
     with get_db() as c:
         rows = c.execute(
             "SELECT r.tracking_code, r.user_id, r.member_count, r.link, r.created_at, "
             "(SELECT COUNT(*) FROM joins j WHERE j.tracking_code=r.tracking_code AND j.left_at IS NULL) "
-            "FROM requests r WHERE r.status NOT IN ('completed','cancelled') ORDER BY r.created_at LIMIT 8 OFFSET ?", (offset,)).fetchall()
+            "FROM requests r WHERE r.status NOT IN ('completed','cancelled','removed','deleted') ORDER BY r.created_at LIMIT 8 OFFSET ?", (offset,)).fetchall()
     if not rows:
         _hsend(chat_id, "🎉 درخواست JFJ در حال انجامی وجود ندارد.", _kb(_back("o")))
         return
@@ -3109,7 +3187,7 @@ def admin_panel_callback(cq):
                     with get_db() as c:
                         rq = c.execute("SELECT tracking_code, member_count, status FROM requests WHERE user_id=? ORDER BY created_at DESC LIMIT 5", (uid,)).fetchall()
                         so = c.execute("SELECT tracking_code, service, quantity, status FROM service_orders WHERE user_id=? ORDER BY created_at DESC LIMIT 5", (uid,)).fetchall()
-                    st = {"completed": "✅ تکمیل", "pending": "⏳ در انتظار", "cancelled": "❌ لغو", "in_progress": "⏳ در حال انجام"}
+                    st = {"completed": "✅ تکمیل", "pending": "⏳ در انتظار", "cancelled": "❌ لغو", "removed": "🚫 ربات عزل شد", "deleted": "🗑 حذف شد", "in_progress": "⏳ در حال انجام"}
                     lines = [f"📦 <b>سفارش‌های کاربر</b> <code>{uid}</code>", LINE, "<b>درخواست‌های JFJ:</b>"]
                     lines += [f"• <code>{c0}</code> • {_n(m)} ممبر • {st.get(s0, s0)}" for c0, m, s0 in rq] or ["—"]
                     lines += ["", "<b>سفارش‌های خدمات:</b>"]
@@ -3657,8 +3735,8 @@ def send_orders(chat_id, user_id):
         lines = ["🔍 *وضعیت درخواست های JFJ اخیر شما:*", ""]
         for code, member_count, link, status in rows:
             status = refresh_request_status(code, member_count, status, owner_id=user_id)
-            status_emoji = "✅️" if status == "completed" else "⏳️"
-            status_text = "تکمیل شده" if status == "completed" else "درحال انجام"
+            status_emoji = "✅️" if status == "completed" else ("🚫" if status in ("removed", "deleted") else "⏳️")
+            status_text = "تکمیل شده" if status == "completed" else ("ربات عزل شد" if status == "removed" else "حذف شد توسط مدیریت" if status == "deleted" else "درحال انجام")
             lines += [
                 f"🔐 *کد پیگیری: {code}*",
                 f"{status_emoji} *وضعیت: {status_text}*",
@@ -3892,6 +3970,10 @@ def v2_migrate():
             status TEXT NOT NULL DEFAULT 'running',
             prog_chat INTEGER, prog_mid INTEGER,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+        try:
+            c.execute("ALTER TABLE bc_jobs ADD COLUMN pin INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
         # اشتراک‌های قدیمیِ پرداخت‌شده که هنوز ردیف ندارند
         old = c.execute(
             "SELECT i.code, i.buyer_id, i.meta, i.created_at FROM invoices i WHERE i.kind='sponsor' AND i.status='paid' "
@@ -4007,7 +4089,13 @@ def rich_receive(message, data):
         q = (f"📣 بالا پیش‌نمایش اطلاعیه است.\nگیرندگان: <b>{AUD_LABELS[aud]}</b> — <b>{_n(len(bc_targets(aud)))}</b> "
              f"{'کانال/گروه' if aud == 'chan' else 'نفر'}\n"
              f"⏱ فاصله‌ی ارسال بین هر دو نفر: <b>{_fmt_dur(cron_sec())}</b>\n\nمطمئنید؟")
-    _hsend(chat_id, q, _kb([_ab("✅ ارسال", "adm_p:x:rgo", SUCCESS), _ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
+    if data["purpose"] == "dm":
+        _hsend(chat_id, q, _kb([_ab("✅ ارسال", "adm_p:x:rgo", SUCCESS), _ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
+    else:
+        _hsend(chat_id, q + "\n\n📌 پیام بعد از ارسال برای گیرندگان <b>پین</b> بشود؟",
+               _kb([_ab("📌 ارسال و پین", "adm_p:x:rgop", SUCCESS)],
+                   [_ab("✅ ارسال بدون پین", "adm_p:x:rgo", PRIMARY)],
+                   [_ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
 
 
 # ---------- مخاطبان و ارسال همگانی با فاصله‌ی زمانی (کرون) ----------
@@ -4072,12 +4160,12 @@ def cron_sec():
         return 1.0
 
 
-def bc_create(admin_id, chat_id, src_chat, src_mid, aud):
+def bc_create(admin_id, chat_id, src_chat, src_mid, aud, pin=0):
     targets = bc_targets(aud)
     with get_db() as c:
         cur = c.execute(
-            "INSERT INTO bc_jobs (admin_id, src_chat, src_mid, audience, targets, prog_chat) VALUES (?,?,?,?,?,?)",
-            (admin_id, src_chat, src_mid, aud, json.dumps(targets), chat_id))
+            "INSERT INTO bc_jobs (admin_id, src_chat, src_mid, audience, targets, prog_chat, pin) VALUES (?,?,?,?,?,?,?)",
+            (admin_id, src_chat, src_mid, aud, json.dumps(targets), chat_id, 1 if pin else 0))
         jid = cur.lastrowid
     r = _hsend(chat_id, _bc_progress_text(jid), _kb([_ab("⛔ توقف ارسال", f"adm_p:x:bcc:{jid}", DANGER)]))
     if r.get("ok"):
@@ -4088,10 +4176,10 @@ def bc_create(admin_id, chat_id, src_chat, src_mid, aud):
 
 def _bc_progress_text(jid):
     with get_db() as c:
-        row = c.execute("SELECT audience, targets, idx, ok, fail, status FROM bc_jobs WHERE id=?", (jid,)).fetchone()
+        row = c.execute("SELECT audience, targets, idx, ok, fail, status, pin FROM bc_jobs WHERE id=?", (jid,)).fetchone()
     if not row:
         return "—"
-    aud, targets, idx, ok, fail, status = row
+    aud, targets, idx, ok, fail, status, pin = row
     total = len(json.loads(targets))
     left = max(total - idx, 0)
     eta = _fmt_dur(left * cron_sec()) if left and status == "running" else "—"
@@ -4099,6 +4187,7 @@ def _bc_progress_text(jid):
     return (f"{'📡 <b>همگانی درخواست JFJ</b>' if aud == 'chan' else '📣 <b>ارسال اطلاعیه</b>'} — {AUD_LABELS.get(aud, aud)}\n{LINE}\n{st}\n"
             f"📤 ارسال‌شده: <b>{_n(idx)}</b> از <b>{_n(total)}</b>\n"
             f"✅ موفق: <b>{_n(ok)}</b> • ❌ ناموفق: <b>{_n(fail)}</b>\n"
+            f"📌 پین: <b>{'بله' if pin else 'خیر'}</b>\n"
             f"⏱ فاصله‌ی ارسال: <b>{_fmt_dur(cron_sec())}</b>\n"
             f"⌛ زمان باقی‌مانده: <b>{eta}</b>")
 
@@ -4106,11 +4195,11 @@ def _bc_progress_text(jid):
 def bc_step():
     """یک پیام از صف همگانی را می‌فرستد. True یعنی کاری انجام شد."""
     with get_db() as c:
-        job = c.execute("SELECT id, src_chat, src_mid, targets, idx, ok, fail, prog_chat, prog_mid FROM bc_jobs "
+        job = c.execute("SELECT id, src_chat, src_mid, targets, idx, ok, fail, prog_chat, prog_mid, pin FROM bc_jobs "
                         "WHERE status='running' ORDER BY id LIMIT 1").fetchone()
     if not job:
         return False
-    jid, src_chat, src_mid, targets, idx, ok, fail, prog_chat, prog_mid = job
+    jid, src_chat, src_mid, targets, idx, ok, fail, prog_chat, prog_mid, pin = job
     targets = json.loads(targets)
     finished = idx >= len(targets)
     if not finished:
@@ -4119,6 +4208,11 @@ def bc_step():
             time.sleep(float((r.get("parameters") or {}).get("retry_after", 3)) + 0.5)
             return True
         good = bool(r.get("ok"))
+        if good and pin:
+            try:
+                tg("pinChatMessage", chat_id=targets[idx], message_id=r["result"]["message_id"], disable_notification=True)
+            except Exception:
+                pass
         with get_db() as c:
             c.execute("UPDATE bc_jobs SET idx=idx+1, ok=ok+?, fail=fail+? WHERE id=? AND status='running'",
                       (1 if good else 0, 0 if good else 1, jid))
@@ -5240,7 +5334,104 @@ def section_blocked(uid, text):
     return hit[1] if hit[0] in sections_off() else None
 
 
-XPAGES = {"cb": render_chan_bc, "sec": render_sections, "cron": render_cron, "fj": render_fj, "pay": render_pay, "bon": render_bonus, "disc": render_disc}
+
+def render_mass_charge():
+    total = _q1("SELECT COUNT(*) FROM users")
+    s = _q1("SELECT COALESCE(SUM(tokens),0) FROM users")
+    text = ("💸 <b>شارژ همگانی</b>\n" + LINE + "\n"
+            f"👥 تعداد کاربران: <b>{_n(total)}</b>\n"
+            f"🪙 مجموع موجودی همه: <b>{_t(s)}</b> شاهی\n\n"
+            "با «شارژ» مقدار دلخواه به موجودی <b>همه‌ی کاربران</b> اضافه می‌شود و با «کسر» از همه کم می‌شود "
+            "(موجودی هیچ‌کس زیر صفر نمی‌رود).\n"
+            "🔕 به کاربران هیچ پیامی ارسال نمی‌شود.")
+    kb = _kb([_ab("➕ شارژ همه", "adm_p:x:mc_in:add", SUCCESS), _ab("➖ کسر از همه", "adm_p:x:mc_in:sub", DANGER)],
+             [_ab("🔙 مدیریت کاربر", "adm_p:u:home")])
+    return text, kb
+
+
+def _req_short(code, link):
+    return f"{code} • {link}"[:40]
+
+
+def render_req_manage(offset=0):
+    PG = 8
+    total = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted')")
+    with get_db() as c:
+        rows = c.execute(
+            "SELECT tracking_code, link, member_count, (SELECT COUNT(*) FROM joins j WHERE j.tracking_code=r.tracking_code AND j.left_at IS NULL) "
+            "FROM requests r WHERE status NOT IN ('completed','cancelled','removed','deleted') ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (PG, offset)).fetchall()
+    text = ("🗑 <b>حذف درخواست JFJ</b>\n" + LINE + "\n"
+            f"درخواست‌های در حال انجام: <b>{_n(total)}</b>\n\n"
+            "روی هر درخواست بزنید تا گزینه‌های حذف (با یا بدون بازگرداندن شاهی) و مسدودسازی کانال را ببینید.")
+    kb = [[_ab(f"🗑 {_req_short(code, link)} ({_n(done)}/{_n(cnt)})", f"adm_p:x:rmc:{code}", PRIMARY)] for code, link, cnt, done in rows]
+    nav = []
+    if offset > 0:
+        nav.append(_ab("⬆️ قبلی", f"adm_p:x:rm:{max(offset - PG, 0)}", PRIMARY))
+    if offset + PG < total:
+        nav.append(_ab("⬇️ بعدی", f"adm_p:x:rm:{offset + PG}", PRIMARY))
+    if nav:
+        kb.append(nav)
+    kb.append([_ab("🔙 تنظیمات درخواست JFJ", "adm_p:q:home")])
+    return text, _kb(*kb)
+
+
+def render_req_card(code):
+    with get_db() as c:
+        r = c.execute("SELECT user_id, member_count, token_cost, link, chat_id, status, created_at, "
+                      "(SELECT COUNT(*) FROM joins j WHERE j.tracking_code=requests.tracking_code AND j.left_at IS NULL) "
+                      "FROM requests WHERE tracking_code=?", (code,)).fetchone()
+    if not r:
+        return "❌ درخواست پیدا نشد.", _kb([_ab("🔙 لیست", "adm_p:x:rm:0")])
+    uid, cnt, cost, link, cid, status, created, done = r
+    blocked = is_chan_blocked(extract_chat_identifier(link or ""), cid)
+    text = ("🗑 <b>درخواست JFJ</b>\n" + LINE + "\n"
+            f"🔍 کد: <code>{code}</code>\n👤 {_label(uid)}\n🔗 {_h(link)}\n"
+            f"👥 {_n(done)} از {_n(cnt)} ممبر\n💎 هزینه‌ی پرداختی: <b>{_t(cost)}</b> شاهی\n"
+            f"📌 وضعیت: <b>{status}</b>\n⏰ {_fa_dt(created)}"
+            + ("\n🚫 این کانال مسدود است." if blocked else ""))
+    kb = []
+    if status not in ("completed", "cancelled", "removed", "deleted"):
+        kb.append([_ab("🗑 حذف + بازگرداندن شاهی", f"adm_p:x:rmd:{code}:1", DANGER)])
+        kb.append([_ab("🗑 حذف بدون بازگرداندن", f"adm_p:x:rmd:{code}:0", DANGER)])
+        if not blocked:
+            kb.append([_ab("🚫 حذف همه‌ی درخواست‌های این کانال + مسدود", f"adm_p:x:rmb:{code}", DANGER)])
+    kb.append([_ab("🔙 لیست", "adm_p:x:rm:0")])
+    return text, _kb(*kb)
+
+
+def render_block_list():
+    keys = sorted(_block_keys())
+    text = ("🚫 <b>کانال‌های مسدود از درخواست JFJ</b>\n" + LINE + "\n"
+            + (f"تعداد: <b>{_n(len(keys))}</b>\nبا زدن روی هر مورد، مسدودی آن برداشته می‌شود."
+               if keys else "هنوز کانالی مسدود نشده است.")
+            + "\n\nکاربر هنگام ثبت درخواست برای این کانال‌ها پیام «امکان درخواست وجود ندارد» می‌گیرد.")
+    kb = [[_ab(f"♻️ {k}", f"adm_p:x:bku:{i}", PRIMARY)] for i, k in enumerate(keys[:30])]
+    kb.append([_ab("➕ مسدود کردن کانال/گروه", "adm_p:x:bk_in", DANGER)])
+    kb.append([_ab("🔙 تنظیمات درخواست JFJ", "adm_p:q:home")])
+    return text, _kb(*kb)
+
+
+def delete_request_admin(code, refund):
+    """True اگر حذف شد. refund=True: هزینه‌ی باقی‌مانده (به نسبت ممبرهای نیامده) به صاحب برمی‌گردد"""
+    with get_db() as c:
+        r = c.execute("SELECT user_id, member_count, token_cost, status FROM requests WHERE tracking_code=?", (code,)).fetchone()
+        if not r or r[3] in ("completed", "cancelled", "removed", "deleted"):
+            return False
+        c.execute("UPDATE requests SET status='deleted' WHERE tracking_code=?", (code,))
+        if _table_exists(c, "mini_seen"):
+            c.execute("DELETE FROM mini_seen WHERE code=?", (code,))
+    if refund:
+        uid, cnt, cost, _ = r
+        done = get_join_count(code)
+        rest = max(cnt - done, 0)
+        amt = round(float(cost) * rest / max(cnt, 1), 2)
+        if amt > 0:
+            add_tokens(uid, amt)
+    return True
+
+
+XPAGES = {"mc": render_mass_charge, "bk": render_block_list, "us": render_users, "cb": render_chan_bc, "sec": render_sections, "cron": render_cron, "fj": render_fj, "pay": render_pay, "bon": render_bonus, "disc": render_disc}
 
 
 # =====================================================================
@@ -5550,7 +5741,7 @@ def v2_admin_callback(cq):
                      "فرمت‌ها (bold، کج، خط‌خورده، اسپویلر، لینک و…) دقیقاً حفظ می‌شود.",
                      _kb([_ab("🔁 تغییر نوع", "adm_p:x:rch", PRIMARY), _ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
                 return True
-            if act == "rgo":
+            if act in ("rgo", "rgop"):
                 _, d = get_state(admin_id)
                 if not d or d.get("name") != "rich" or not d.get("src_mid"):
                     ack("پیامی برای ارسال نیست.", True)
@@ -5562,7 +5753,7 @@ def v2_admin_callback(cq):
                     _hsend(chat_id, "✅ پیام ارسال شد." if r.get("ok") else "❗️ ارسال نشد؛ احتمالاً کاربر ربات را بلاک کرده است.")
                     show_then(chat_id, d.get("then"))
                 else:
-                    bc_create(admin_id, chat_id, d["src_chat"], d["src_mid"], d["aud"])
+                    bc_create(admin_id, chat_id, d["src_chat"], d["src_mid"], d["aud"], pin=(act == "rgop"))
                 return True
             if act == "bc":
                 ack()
@@ -5651,6 +5842,68 @@ def v2_admin_callback(cq):
                           "bonus_amount": "🎁 <b>چند شاهی</b> بونوس بدهیم؟",
                           "bonus_hours": "⏳ بونوس چند <b>ساعت</b> فعال باشد؟ (۰ = بدون محدودیت)"}[f]
                 return _ask2(chat_id, admin_id, f, "bon", prompt) or True
+            if act == "mc_in":
+                ack()
+                mode = args[0]
+                return _ask2(chat_id, admin_id, "mc_" + mode, "mc",
+                             ("➕ <b>شارژ همگانی</b>\n\nچند شاهی به <b>همه‌ی کاربران</b> اضافه شود؟" if mode == "add"
+                              else "➖ <b>کسر همگانی</b>\n\nچند شاهی از <b>همه‌ی کاربران</b> کم شود؟")) or True
+            if act == "mcg":
+                mode, amt = args[0], float(args[1])
+                if mode not in ("add", "sub") or amt <= 0:
+                    return ack() or True
+                with get_db() as c:
+                    if mode == "add":
+                        cur = c.execute("UPDATE users SET tokens = tokens + ?", (amt,))
+                    else:
+                        cur = c.execute("UPDATE users SET tokens = MAX(0, tokens - ?)", (amt,))
+                ack("انجام شد.")
+                set_state(admin_id, "admin_panel")
+                show(f"✅ <b>{'شارژ' if mode == 'add' else 'کسر'} همگانی انجام شد</b>\n{LINE}\n"
+                     f"🪙 مقدار: <b>{_t(amt)}</b> شاهی\n👥 کاربران: <b>{_n(cur.rowcount)}</b>\n🔕 به کاربران خبری داده نشد.",
+                     _kb([_ab("🔙 مدیریت کاربر", "adm_p:u:home")]))
+                return True
+            if act == "rm":
+                ack()
+                t, k = render_req_manage(int(args[0]) if args else 0)
+                return show(t, k) or True
+            if act == "rmc":
+                ack()
+                t, k = render_req_card(args[0])
+                return show(t, k) or True
+            if act == "rmd":
+                ok = delete_request_admin(args[0], args[1] == "1")
+                ack("درخواست حذف شد." if ok else "این درخواست دیگر فعال نیست.", not ok)
+                t, k = render_req_manage(0)
+                return show(t, k) or True
+            if act == "rmb":
+                with get_db() as c:
+                    r = c.execute("SELECT link, chat_id FROM requests WHERE tracking_code=?", (args[0],)).fetchone()
+                if not r:
+                    return ack("پیدا نشد.", True) or True
+                link, cid = r
+                keys = [extract_chat_identifier(link or ""), f"id:{cid}" if cid else None]
+                block_chan(keys)
+                n = 0
+                with get_db() as c:
+                    rows = c.execute("SELECT tracking_code, link, chat_id FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted')").fetchall()
+                for code, l2, c2 in rows:
+                    if is_chan_blocked(extract_chat_identifier(l2 or ""), c2):
+                        n += 1 if delete_request_admin(code, False) else 0
+                ack(f"کانال مسدود شد؛ {n} درخواست حذف شد.", True)
+                t, k = render_req_manage(0)
+                return show(t, k) or True
+            if act == "bku":
+                keys = sorted(_block_keys())
+                i = int(args[0])
+                if 0 <= i < len(keys):
+                    unblock_chan(keys[i])
+                ack("مسدودی برداشته شد.")
+                return page("bk") or True
+            if act == "bk_in":
+                ack()
+                return _ask2(chat_id, admin_id, "bk_add", "bk",
+                             "🚫 <b>مسدود کردن کانال/گروه</b>\n\nآیدی را بفرستید: <code>@mychannel</code> یا آیدی عددی (مثل -1001234567890).") or True
             if act == "up":
                 ack()
                 return _ask2(chat_id, admin_id, "unit_price", "disc", "💵 قیمت هر <b>۱ شاهی</b> را به تومان بفرستید:") or True
@@ -5844,6 +6097,12 @@ def handle_update(update):
     elif chat_member:
         user_id = chat_member["new_chat_member"]["user"]["id"]
     else:
+        return
+
+    # گروه/سوپرگروه/کانال: فعلاً هیچ واکنشی ندارد (خام)
+    if message and message["chat"].get("type") != "private":
+        return
+    if callback and (callback.get("message") or {}).get("chat", {}).get("type", "private") != "private":
         return
 
     lock = user_lock(user_id)
