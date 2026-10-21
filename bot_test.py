@@ -636,7 +636,7 @@ def handle_member_left(chat_numeric_id, user_id):
         )
 
         with get_db() as c:
-            c.execute("UPDATE users SET tokens = MAX(tokens - ?, 0) WHERE id=?", (JOIN_REWARD, user_id))
+            c.execute("UPDATE users SET tokens = tokens - ? WHERE id=?", (JOIN_REWARD, user_id))  # می‌تواند منفی شود
         send(
             user_id,
             f"⛔️ *به دلیل لفت دادن شما*\n*از لینک ({link}) تعداد 💎{JOIN_REWARD} شاهی از شما کم شد!*",
@@ -1261,11 +1261,22 @@ def chan_key(chat_id_num, link):
     return re.sub(r"^https?://", "", (link or "").strip().lower()).rstrip("/")
 
 
+def record_join(user_id, code):
+    """ثبت جوین؛ اگر قبلاً لفت داده بود دوباره فعال می‌شود. True یعنی جوین تازه ثبت/فعال شد"""
+    with get_db() as c:
+        cur = c.execute("INSERT OR IGNORE INTO joins (user_id, tracking_code) VALUES (?, ?)", (user_id, code))
+        if cur.rowcount == 1:
+            return True
+        cur = c.execute("UPDATE joins SET left_at=NULL, joined_at=CURRENT_TIMESTAMP "
+                        "WHERE user_id=? AND tracking_code=? AND left_at IS NOT NULL", (user_id, code))
+        return cur.rowcount == 1
+
+
 def user_channel_keys(user_id, exclude_code=None):
-    """کانال‌هایی که کاربر قبلاً از طریق ربات برایشان پاداش جوین گرفته است"""
+    """کانال‌هایی که کاربر از طریق ربات در آن‌ها جوین فعال دارد (کسی که لفت داده دوباره می‌تواند جوین بدهد)"""
     with get_db() as c:
         rows = c.execute("SELECT r.chat_id, r.link, j.tracking_code FROM joins j JOIN requests r ON r.tracking_code=j.tracking_code "
-                         "WHERE j.user_id=?", (user_id,)).fetchall()
+                         "WHERE j.user_id=? AND j.left_at IS NULL", (user_id,)).fetchall()
     return {chan_key(cid, lk) for cid, lk, code in rows if code != exclude_code}
 
 
@@ -1282,7 +1293,7 @@ def pick_jfj_candidate(user_id, exclude_code=None):
     query = """
         SELECT tracking_code, link, member_count, chat_id FROM requests
         WHERE status = 'in_progress' AND user_id != ?
-          AND tracking_code NOT IN (SELECT tracking_code FROM joins WHERE user_id = ?)
+          AND tracking_code NOT IN (SELECT tracking_code FROM joins WHERE user_id = ? AND left_at IS NULL)
     """
     params = [user_id, user_id]
     if exclude_code:
@@ -1410,7 +1421,7 @@ def handle_jfj_join(cq):
 
     with get_db() as c:
         already = c.execute(
-            "SELECT 1 FROM joins WHERE user_id=? AND tracking_code=?", (user["id"], code)
+            "SELECT 1 FROM joins WHERE user_id=? AND tracking_code=? AND left_at IS NULL", (user["id"], code)
         ).fetchone()
 
     # اگر قبلاً برای همین سفارش پاداش گرفته (کلیک دوباره)، یا هیچ‌وقت تأیید نشده بود که
@@ -1422,8 +1433,10 @@ def handle_jfj_join(cq):
         advance_jfj(user["id"], chat_id, message_id, exclude_code=code)
         return
 
-    with get_db() as c:
-        c.execute("INSERT OR IGNORE INTO joins (user_id, tracking_code) VALUES (?, ?)", (user["id"], code))
+    if not record_join(user["id"], code):
+        answer_callback(cq["id"], "⚠️ شما از قبل عضو بودید!", show_alert=True)
+        advance_jfj(user["id"], chat_id, message_id, exclude_code=code)
+        return
 
     add_tokens(user["id"], JOIN_REWARD)
     add_activity_tokens(user["id"], JOIN_REWARD)
@@ -2821,6 +2834,7 @@ def admin_handle_input(chat_id, user, text, data):
     admin_id = user["id"]
     name = data.get("name")
     text = text.strip()
+    t = text.translate(_ASCII_DIGITS)
     if name in SETTING_DEFS:
         d = SETTING_DEFS[name]
         n = parse_number(text)
@@ -2878,7 +2892,7 @@ def admin_handle_input(chat_id, user, text, data):
             if name == "uadd":
                 c.execute("UPDATE users SET tokens = tokens + ? WHERE id=?", (n, uid))
             elif name == "usub":
-                c.execute("UPDATE users SET tokens = MAX(0, tokens - ?) WHERE id=?", (n, uid))
+                c.execute("UPDATE users SET tokens = tokens - ? WHERE id=?", (n, uid))
             else:
                 c.execute("UPDATE users SET tokens = ? WHERE id=?", (n, uid))
         bal = get_balance(uid)
@@ -3970,10 +3984,11 @@ def v2_migrate():
             status TEXT NOT NULL DEFAULT 'running',
             prog_chat INTEGER, prog_mid INTEGER,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
-        try:
-            c.execute("ALTER TABLE bc_jobs ADD COLUMN pin INTEGER NOT NULL DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
+        for _col in ("pin", "fwd"):
+            try:
+                c.execute(f"ALTER TABLE bc_jobs ADD COLUMN {_col} INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
         # اشتراک‌های قدیمیِ پرداخت‌شده که هنوز ردیف ندارند
         old = c.execute(
             "SELECT i.code, i.buyer_id, i.meta, i.created_at FROM invoices i WHERE i.kind='sponsor' AND i.status='paid' "
@@ -4031,12 +4046,21 @@ def copy_msg(to_chat, from_chat, mid):
     return r
 
 
+def forward_msg(to_chat, from_chat, mid):
+    return tg("forwardMessage", chat_id=to_chat, from_chat_id=from_chat, message_id=mid)
+
+
+def send_rich(to_chat, from_chat, mid, fwd=False):
+    return forward_msg(to_chat, from_chat, mid) if fwd else copy_msg(to_chat, from_chat, mid)
+
+
 RICH_KINDS = {
     "photo": "🖼 دارای عکس",
     "voice": "🎙 دارای ویس",
     "sticker": "🎭 دارای استیکر",
     "gif": "🎞 دارای گیف",
     "text": "📝 متن خالی (بدون مدیا)",
+    "forward": "↪️ فوروارد",
 }
 
 
@@ -4058,7 +4082,7 @@ def rich_start(chat_id, admin_id, purpose, back, **extra):
     set_state(admin_id, "adm_in", dict(name="rich", purpose=purpose, back=back, kind=None, **extra))
     rows = [[_ab(RICH_KINDS["photo"], "adm_p:x:rk:photo", PRIMARY), _ab(RICH_KINDS["voice"], "adm_p:x:rk:voice", PRIMARY)],
             [_ab(RICH_KINDS["sticker"], "adm_p:x:rk:sticker", PRIMARY), _ab(RICH_KINDS["gif"], "adm_p:x:rk:gif", PRIMARY)],
-            [_ab(RICH_KINDS["text"], "adm_p:x:rk:text", SUCCESS)],
+            [_ab(RICH_KINDS["text"], "adm_p:x:rk:text", SUCCESS), _ab(RICH_KINDS["forward"], "adm_p:x:rk:forward", SUCCESS)],
             [_ab("❌ انصراف", "adm_p:x:rx", DANGER)]]
     ttl = {"dm": "✉️ <b>پیام به کاربر</b>", "bc": "📣 <b>ارسال اطلاعیه</b>"}[purpose]
     if extra.get("aud") == "chan":
@@ -4071,14 +4095,14 @@ def rich_start(chat_id, admin_id, purpose, back, **extra):
 def rich_receive(message, data):
     chat_id = message["chat"]["id"]
     admin_id = message["from"]["id"]
-    kind = msg_kind(message)
+    kind = "forward" if data.get("kind") == "forward" else msg_kind(message)
     if kind != data.get("kind"):
         _hsend(chat_id, f"❗️ نوع پیام با گزینه‌ی انتخابی (<b>{RICH_KINDS[data['kind']]}</b>) نمی‌خواند؛ دوباره بفرستید یا نوع را عوض کنید.",
                _kb([_ab("🔁 تغییر نوع پیام", "adm_p:x:rch", PRIMARY), _ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
         return
     data = dict(data, src_chat=chat_id, src_mid=message["message_id"])
     set_state(admin_id, "adm_in", data)
-    pr = copy_msg(chat_id, chat_id, message["message_id"])
+    pr = send_rich(chat_id, chat_id, message["message_id"], data.get("kind") == "forward")
     if not pr.get("ok"):
         _hsend(chat_id, "❗️ پیش‌نمایش پیام ممکن نشد؛ دوباره بفرستید.")
         return
@@ -4160,12 +4184,12 @@ def cron_sec():
         return 1.0
 
 
-def bc_create(admin_id, chat_id, src_chat, src_mid, aud, pin=0):
+def bc_create(admin_id, chat_id, src_chat, src_mid, aud, pin=0, fwd=0):
     targets = bc_targets(aud)
     with get_db() as c:
         cur = c.execute(
-            "INSERT INTO bc_jobs (admin_id, src_chat, src_mid, audience, targets, prog_chat, pin) VALUES (?,?,?,?,?,?,?)",
-            (admin_id, src_chat, src_mid, aud, json.dumps(targets), chat_id, 1 if pin else 0))
+            "INSERT INTO bc_jobs (admin_id, src_chat, src_mid, audience, targets, prog_chat, pin, fwd) VALUES (?,?,?,?,?,?,?,?)",
+            (admin_id, src_chat, src_mid, aud, json.dumps(targets), chat_id, 1 if pin else 0, 1 if fwd else 0))
         jid = cur.lastrowid
     r = _hsend(chat_id, _bc_progress_text(jid), _kb([_ab("⛔ توقف ارسال", f"adm_p:x:bcc:{jid}", DANGER)]))
     if r.get("ok"):
@@ -4195,15 +4219,15 @@ def _bc_progress_text(jid):
 def bc_step():
     """یک پیام از صف همگانی را می‌فرستد. True یعنی کاری انجام شد."""
     with get_db() as c:
-        job = c.execute("SELECT id, src_chat, src_mid, targets, idx, ok, fail, prog_chat, prog_mid, pin FROM bc_jobs "
+        job = c.execute("SELECT id, src_chat, src_mid, targets, idx, ok, fail, prog_chat, prog_mid, pin, fwd FROM bc_jobs "
                         "WHERE status='running' ORDER BY id LIMIT 1").fetchone()
     if not job:
         return False
-    jid, src_chat, src_mid, targets, idx, ok, fail, prog_chat, prog_mid, pin = job
+    jid, src_chat, src_mid, targets, idx, ok, fail, prog_chat, prog_mid, pin, fwd = job
     targets = json.loads(targets)
     finished = idx >= len(targets)
     if not finished:
-        r = copy_msg(targets[idx], src_chat, src_mid)
+        r = send_rich(targets[idx], src_chat, src_mid, fwd)
         if not r.get("ok") and r.get("error_code") == 429:
             time.sleep(float((r.get("parameters") or {}).get("retry_after", 3)) + 0.5)
             return True
@@ -5342,7 +5366,7 @@ def render_mass_charge():
             f"👥 تعداد کاربران: <b>{_n(total)}</b>\n"
             f"🪙 مجموع موجودی همه: <b>{_t(s)}</b> شاهی\n\n"
             "با «شارژ» مقدار دلخواه به موجودی <b>همه‌ی کاربران</b> اضافه می‌شود و با «کسر» از همه کم می‌شود "
-            "(موجودی هیچ‌کس زیر صفر نمی‌رود).\n"
+            "(موجودی می‌تواند منفی شود).\n"
             "🔕 به کاربران هیچ پیامی ارسال نمی‌شود.")
     kb = _kb([_ab("➕ شارژ همه", "adm_p:x:mc_in:add", SUCCESS), _ab("➖ کسر از همه", "adm_p:x:mc_in:sub", DANGER)],
              [_ab("🔙 مدیریت کاربر", "adm_p:u:home")])
@@ -5736,9 +5760,13 @@ def v2_admin_callback(cq):
                 set_state(admin_id, "adm_in", d)
                 ack()
                 hint = {"photo": "🖼 عکس (با کپشن اگر می‌خواهید)", "voice": "🎙 ویس", "sticker": "🎭 استیکر",
-                        "gif": "🎞 گیف", "text": "📝 متن"}[args[0]]
-                show(f"✉️ <b>{hint}</b>\n\nحالا پیام را <b>همان‌طور که می‌خواهید کاربر ببیند</b> بفرستید. "
-                     "فرمت‌ها (bold، کج، خط‌خورده، اسپویلر، لینک و…) دقیقاً حفظ می‌شود.",
+                        "gif": "🎞 گیف", "text": "📝 متن", "forward": "↪️ فوروارد"}[args[0]]
+                show(f"✉️ <b>{hint}</b>\n\n" + (
+                     "هر پیامی (از هر نوعی) بفرستید یا از یک کانال/چت <b>فوروارد</b> کنید؛ ربات همان را به‌صورت "
+                     "<b>فوروارد</b> (با نام مبدأ) برای گیرندگان می‌فرستد."
+                     if args[0] == "forward" else
+                     "حالا پیام را <b>همان‌طور که می‌خواهید کاربر ببیند</b> بفرستید. "
+                     "فرمت‌ها (bold، کج، خط‌خورده، اسپویلر، لینک و…) دقیقاً حفظ می‌شود."),
                      _kb([_ab("🔁 تغییر نوع", "adm_p:x:rch", PRIMARY), _ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
                 return True
             if act in ("rgo", "rgop"):
@@ -5749,11 +5777,11 @@ def v2_admin_callback(cq):
                 ack("در حال ارسال…")
                 set_state(admin_id, "admin_panel")
                 if d["purpose"] == "dm":
-                    r = copy_msg(d["uid"], d["src_chat"], d["src_mid"])
+                    r = send_rich(d["uid"], d["src_chat"], d["src_mid"], d.get("kind") == "forward")
                     _hsend(chat_id, "✅ پیام ارسال شد." if r.get("ok") else "❗️ ارسال نشد؛ احتمالاً کاربر ربات را بلاک کرده است.")
                     show_then(chat_id, d.get("then"))
                 else:
-                    bc_create(admin_id, chat_id, d["src_chat"], d["src_mid"], d["aud"], pin=(act == "rgop"))
+                    bc_create(admin_id, chat_id, d["src_chat"], d["src_mid"], d["aud"], pin=(act == "rgop"), fwd=(d.get("kind") == "forward"))
                 return True
             if act == "bc":
                 ack()
@@ -5856,7 +5884,7 @@ def v2_admin_callback(cq):
                     if mode == "add":
                         cur = c.execute("UPDATE users SET tokens = tokens + ?", (amt,))
                     else:
-                        cur = c.execute("UPDATE users SET tokens = MAX(0, tokens - ?)", (amt,))
+                        cur = c.execute("UPDATE users SET tokens = tokens - ?", (amt,))
                 ack("انجام شد.")
                 set_state(admin_id, "admin_panel")
                 show(f"✅ <b>{'شارژ' if mode == 'add' else 'کسر'} همگانی انجام شد</b>\n{LINE}\n"

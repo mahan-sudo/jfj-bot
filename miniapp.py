@@ -405,7 +405,7 @@ def process_leave(uid, code, owner_id, link):
     bot.add_tokens(owner_id, bot.LEAVE_REFUND_TO_OWNER)
     bot.send(owner_id, f"🔔 *یه ممبر لفت داده!*\n💎 *تعداد {bot.fmt_tokens(bot.LEAVE_REFUND_TO_OWNER)} شاهی به موجودی شما اضافه شد.*")
     with bot.get_db() as c:
-        c.execute("UPDATE users SET tokens = MAX(tokens - ?, 0) WHERE id=?", (bot.JOIN_REWARD, uid))
+        c.execute("UPDATE users SET tokens = tokens - ? WHERE id=?", (bot.JOIN_REWARD, uid))
     bot.send(uid, f"⛔️ *به دلیل لفت دادن شما*\n*از لینک ({link}) تعداد 💎{bot.JOIN_REWARD} شاهی از شما کم شد!*")
     return True
 
@@ -647,7 +647,7 @@ def api_join_list(uid, body):
                       (SELECT COUNT(*) FROM joins j WHERE j.tracking_code=r.tracking_code AND j.left_at IS NULL)
                FROM requests r
                WHERE r.status='in_progress' AND r.user_id != ?
-                 AND r.tracking_code NOT IN (SELECT tracking_code FROM joins WHERE user_id=?)
+                 AND r.tracking_code NOT IN (SELECT tracking_code FROM joins WHERE user_id=? AND left_at IS NULL)
                ORDER BY r.created_at, r.rowid LIMIT 60""",
             (uid, uid),
         ).fetchall()
@@ -722,10 +722,8 @@ def api_join_confirm(uid, body):
         return {"ok": False, "error": "هنوز در کانال مورد نظر عضو نشدی!"}
 
     with bot.get_db() as c:
-        cur = c.execute("INSERT OR IGNORE INTO joins (user_id, tracking_code) VALUES (?, ?)", (uid, code))
-        fresh = cur.rowcount == 1
         c.execute("DELETE FROM mini_seen WHERE user_id=? AND code=?", (uid, code))
-    if not fresh:
+    if not bot.record_join(uid, code):
         return {"ok": False, "gone": True, "error": "برای این سفارش قبلاً پاداش گرفتی."}
 
     bot.add_tokens(uid, bot.JOIN_REWARD)
