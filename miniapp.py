@@ -407,6 +407,7 @@ def process_leave(uid, code, owner_id, link):
     with bot.get_db() as c:
         c.execute("UPDATE users SET tokens = tokens - ? WHERE id=?", (bot.JOIN_REWARD, uid))
     bot.send(uid, f"⛔️ *به دلیل لفت دادن شما*\n*از لینک ({link}) تعداد 💎{bot.JOIN_REWARD} شاهی از شما کم شد!*")
+    bot.rep_ev_leave(uid, owner_id, code, link, bot.JOIN_REWARD, bot.LEAVE_REFUND_TO_OWNER)
     return True
 
 
@@ -535,8 +536,8 @@ def build_state(user):
     for code, cnt, link, status, created, done in reqs:
         allo.append((parse_ts(created) or epoch0, {
             "kind": "jfj", "code": code, "channel": display_name(link), "total": cnt,
-            "cur": min(done, cnt), "done": status == "completed", "removed": status in ("removed", "deleted"),
-            "rlabel": "حذف شد توسط مدیریت" if status == "deleted" else "ربات عزل شد"}))
+            "cur": min(done, cnt), "done": status == "completed", "removed": status in ("removed", "deleted", "relinked"),
+            "rlabel": "حذف شد توسط مدیریت" if status == "deleted" else "لینک تغییر کرد" if status == "relinked" else "ربات عزل شد"}))
     for code, name, qty, link, status, created in svc_rows:
         allo.append((parse_ts(created) or epoch0, {
             "kind": "svc", "code": code, "title": name, "qty": qty, "channel": display_name(link),
@@ -815,7 +816,7 @@ def api_request(uid, body):
     if left:
         raise ApiError(f"بین دو درخواست JFJ باید حداقل {fa_n(bot.RESUBMIT_COOLDOWN_SECONDS // 60)} دقیقه فاصله باشد؛ {bot.cooldown_text(left)} دیگر صبر کن.")
     existing = bot.get_active_request_for_chat(uid, chat_id_num)
-    if existing and existing[2] not in ("completed", "cancelled", "removed", "deleted"):
+    if existing and existing[2] not in ("completed", "cancelled", "removed", "deleted", "relinked"):
         elapsed = (bot.now_local() - datetime.fromisoformat(existing[3])).total_seconds()
         if elapsed < bot.RESUBMIT_COOLDOWN_SECONDS:
             raise ApiError("باید حداقل ۵ دقیقه از درخواست قبلی این کانال بگذرد یا سفارش قبلی تکمیل شود.")

@@ -387,8 +387,9 @@ REFERRAL_CONFIRMED_TEXT = (
 )
 
 
-def notify_new_referral(referrer_id):
+def notify_new_referral(referrer_id, new_user=None):
     """همان لحظه‌ای که کاربر جدید از لینک زیرمجموعه‌گیری وارد شد (هنوز پاداشی داده نمی‌شود)"""
+    rep_ev_ref_new(referrer_id, new_user)
     for attempt in range(3):
         r = send(referrer_id, REFERRAL_SIGNUP_TEXT)
         if r.get("ok"):
@@ -411,7 +412,7 @@ def register_start_referral(message):
     if candidate == user["id"] or not user_exists(candidate):
         return
     upsert_user(user, referred_by=candidate)
-    notify_new_referral(candidate)
+    notify_new_referral(candidate, user)
 
 
 def get_referral_count(user_id):
@@ -439,6 +440,7 @@ def maybe_reward_referrer(user_id):
             return
         c.execute("UPDATE users SET tokens = tokens + ? WHERE id=?", (REFERRAL_REWARD, referred_by))
         c.execute("UPDATE users SET referral_rewarded=1 WHERE id=?", (user_id,))
+    rep_ev_ref_ok(referred_by, user_id)
     r = send(referred_by, REFERRAL_CONFIRMED_TEXT)
     if not r.get("ok"):
         logging.warning("referral confirmed notify to %s failed: %s", referred_by, r)
@@ -468,6 +470,7 @@ def transfer_tokens(sender_id, recipient_id, amount):
             "INSERT INTO transfers (sender_id, recipient_id, amount) VALUES (?, ?, ?)",
             (sender_id, recipient_id, amount),
         )
+    rep_ev_transfer(sender_id, recipient_id, amount)
     return True
 
 
@@ -520,6 +523,7 @@ def create_service_order(user_id, service_name, quantity, cost, link, code, extr
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (code, user_id, service_name, quantity, extra, cost, link),
         )
+    rep_ev_service(code)
 
 
 def create_request(user_id, member_count, token_cost, link, chat_id=None):
@@ -533,6 +537,7 @@ def create_request(user_id, member_count, token_cost, link, chat_id=None):
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (code, user_id, member_count, token_cost, link, chat_id, now_iso),
         )
+    rep_ev_request(code)
     return code
 
 
@@ -591,11 +596,12 @@ def get_join_count(tracking_code):
 def refresh_request_status(tracking_code, member_count, status, owner_id=None):
     """وقتی تعداد جوین‌های همین سفارش (فقط همین یکی) به تعداد درخواستی‌اش برسد،
     وضعیت تکمیل‌شده ثبت و پیام تکمیل‌شدن برای صاحب همین سفارش ارسال می‌شود"""
-    if status in ("completed", "removed", "deleted"):
+    if status in ("completed", "removed", "deleted", "relinked"):
         return status
     if get_join_count(tracking_code) >= member_count:
         with get_db() as c:
             c.execute("UPDATE requests SET status='completed' WHERE tracking_code=?", (tracking_code,))
+        rep_ev_request_state(tracking_code, "completed")
         if owner_id:
             date_str, time_str = jalali_now_strings()
             send(
@@ -641,6 +647,7 @@ def handle_member_left(chat_numeric_id, user_id):
             user_id,
             f"⛔️ *به دلیل لفت دادن شما*\n*از لینک ({link}) تعداد 💎{JOIN_REWARD} شاهی از شما کم شد!*",
         )
+        rep_ev_leave(user_id, owner_id, tracking_code, link, JOIN_REWARD, LEAVE_REFUND_TO_OWNER)
 
 
 # ===================== فاکتورها (مشترک: شاهی و اسپانسری) =====================
@@ -1002,7 +1009,7 @@ def handle_jfj_wait_link(chat_id, user_id, text, data):
     existing = get_active_request_for_chat(user_id, chat_id_num)
     if existing:
         _, _, ex_status, ex_last_requested_at = existing
-        if ex_status not in ("completed", "cancelled", "removed", "deleted"):
+        if ex_status not in ("completed", "cancelled", "removed", "deleted", "relinked"):
             try:
                 elapsed = (now_local() - datetime.fromisoformat(ex_last_requested_at)).total_seconds()
             except (TypeError, ValueError):
@@ -1224,6 +1231,7 @@ def cancel_request_not_admin(code, why=""):
         c.execute("DELETE FROM mini_seen WHERE code=?", (code,)) if _table_exists(c, "mini_seen") else None
     if cur.rowcount:
         logging.warning("request %s cancelled: bot is not admin (%s)", code, why)
+        rep_ev_request_state(code, "removed")
     return bool(cur.rowcount)
 
 
@@ -1246,9 +1254,60 @@ def request_sweeper():
                     time.sleep(0.2)
                 if checked[key] is False:
                     cancel_request_not_admin(code, "sweep")
+                    continue
+                ck = ("chg", chat_id_num, extract_chat_identifier(link or ""))
+                if ck not in checked:
+                    checked[ck] = link_changed_check(chat_id_num, link)
+                    time.sleep(0.2)
+                if checked[ck][0] is True:
+                    relink_cancel_request(code, checked[ck][1])
         except Exception:
             logging.exception("request_sweeper")
-        time.sleep(1800)
+        time.sleep(900)
+
+
+def relink_cancel_request(code, new_note=""):
+    """لینک کانال/گروه عوض شده: سفارش حذف می‌شود و هزینه‌ی باقی‌مانده (به نسبت ممبرهای نیامده) برمی‌گردد.
+    True یعنی همین الان کنسل شد (فقط یک‌بار اجرا می‌شود)"""
+    with get_db() as c:
+        r = c.execute("SELECT user_id, member_count, token_cost, link, status FROM requests WHERE tracking_code=?", (code,)).fetchone()
+        if not r or r[4] != "in_progress":
+            return False
+        cur = c.execute("UPDATE requests SET status='relinked' WHERE tracking_code=? AND status='in_progress'", (code,))
+        if cur.rowcount != 1:
+            return False
+        if _table_exists(c, "mini_seen"):
+            c.execute("DELETE FROM mini_seen WHERE code=?", (code,))
+    uid, cnt, cost, link, _ = r
+    done = get_join_count(code)
+    rest = max(cnt - done, 0)
+    amt = round(float(cost) * rest / max(cnt, 1), 2)
+    if amt > 0:
+        add_tokens(uid, amt)
+    send(uid, "🔔 شما لینک کانال-گروه خود را تغییر دادید.\n\n"
+              f"📊 لینک ({link}) تغییر یافت ، سفارش شما کنسل خواهد شد و مبلغ باقی مانده به کیف پول شما بازمیگردد.\n"
+              f"💎 تعداد {fmt_tokens(amt)} شاهی به موجودی شما برگشت.", markdown=False)
+    rep_ev_request_state(code, "relinked", new_note)
+    if amt > 0:
+        rep_ev_refund(None, uid, code, amt, "بازگشت هزینه‌ی باقی‌مانده (تغییر لینک کانال/گروه)")
+    return True
+
+
+def link_changed_check(chat_id_num, link):
+    """True = لینک عمومی (@username) دیگر متعلق به این چت نیست؛ False = سالم؛ None = نامشخص/قابل‌بررسی‌نبودن"""
+    ident = extract_chat_identifier(link or "")
+    if not ident or not chat_id_num:
+        return None, ""
+    r = tg("getChat", chat_id=chat_id_num, _timeout=10)
+    if not r.get("ok"):
+        return None, ""
+    res = r["result"]
+    names = {str(res.get("username") or "").lower()} | {str(x).lower() for x in (res.get("active_usernames") or [])}
+    names.discard("")
+    if ident[1:].lower() in names:
+        return False, ""
+    cur = ("@" + res["username"]) if res.get("username") else "بدون یوزرنیم عمومی"
+    return True, f"لینک قبلی: {ident} ← لینک فعلی: {cur}"
 
 
 def chan_key(chat_id_num, link):
@@ -1266,10 +1325,14 @@ def record_join(user_id, code):
     with get_db() as c:
         cur = c.execute("INSERT OR IGNORE INTO joins (user_id, tracking_code) VALUES (?, ?)", (user_id, code))
         if cur.rowcount == 1:
-            return True
-        cur = c.execute("UPDATE joins SET left_at=NULL, joined_at=CURRENT_TIMESTAMP "
-                        "WHERE user_id=? AND tracking_code=? AND left_at IS NOT NULL", (user_id, code))
-        return cur.rowcount == 1
+            new = True
+        else:
+            cur = c.execute("UPDATE joins SET left_at=NULL, joined_at=CURRENT_TIMESTAMP "
+                            "WHERE user_id=? AND tracking_code=? AND left_at IS NOT NULL", (user_id, code))
+            new = cur.rowcount == 1
+    if new:
+        rep_count("joins")
+    return new
 
 
 def user_channel_keys(user_id, exclude_code=None):
@@ -2136,6 +2199,7 @@ def handle_admin_service_order(cq, code, ok):
     edit(chat_id, message_id, (cq["message"].get("text") or "") + f"\n\n{verdict}\nتوسط: {who}",
          {"inline_keyboard": []}, markdown=False)
     answer_callback(cq["id"], "انجام شد.")
+    rep_ev_service_result(code, ok, who)
     if ok:
         send(user_id, f"✅ *سفارش {service} شما به کد پیگیری {code} تکمیل شد.*\n{stamp('زمان تکمیل')}")
     else:
@@ -2186,6 +2250,8 @@ def handle_receipt(message):
         set_invoice_status(code, "awaiting_receipt", expected_status="review")
         send(chat_id, "⚠️ *ارسال رسید به پشتیبانی انجام نشد؛ لطفاً چند لحظه بعد دوباره رسید را بفرستید.*")
         return True
+    rep_ev_receipt(code, user["id"], chat_id, message["message_id"],
+                   media=bool(message.get("photo") or message.get("document")), txt=txt)
     send(chat_id, f"✅ *رسید شما دریافت شد.*\n🔍 *کد فاکتور: {code}*\n{stamp('زمان دریافت رسید')}\n\n⏳ *بعد از بررسی ادمین، نتیجه همین‌جا اطلاع داده می‌شود.*")
     return True
 
@@ -2218,6 +2284,7 @@ def handle_admin_invoice(cq, code, ok):
         send(buyer_id, f"❌ *رسید شما برای فاکتور {code} تأیید نشد.*\n{stamp('زمان بررسی')}\n\n☎️ *در صورت اشتباه بودن، به پشتیبانی پیام دهید: {SUPPORT_ID}*")
         verdict = "❌ رد شد"
         dc_release(meta.get("dc"))
+    rep_ev_receipt_result(code, ok, who)
     _edit_any(chat_id, message_id, old + f"\n\n{verdict}\nتوسط: {who}")
     answer_callback(cq["id"], "انجام شد.")
 
@@ -2450,7 +2517,7 @@ def admin_dashboard(chat_id):
     sales = _q1("SELECT COALESCE(SUM(final_amount),0) FROM invoices WHERE status='paid' AND created_at >= ?", (today,))
     pend_so = _q1("SELECT COUNT(*) FROM service_orders WHERE status='pending'")
     pend_inv = _q1("SELECT COUNT(*) FROM invoices WHERE status='review'")
-    active_req = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted')")
+    active_req = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted','relinked')")
     on = get_setting("bot_enabled", "1") != "0"
     text = (
         "🖌 <b>پنل مدیریت</b>\n"
@@ -2486,7 +2553,8 @@ def render_general():
         f"📢 جوین اجباری: <b>{_onoff(sbool('fj_enabled'))}</b> ({_n(fj)} کانال/گروه فعال)\n"
         f"📱 احراز شماره‌ی تلفن (برای کارت به کارت): <b>{_onoff(sbool('phone_verify'))}</b>\n"
         f"⏱ کرون ارسال اطلاعیه: <b>{_fmt_dur(cron_sec())}</b> بین هر دو نفر\n"
-        f"📛 متن قوانین: {'✏️ سفارشی' if get_setting('rules_text') else '📄 پیش‌فرض'}\n\n"
+        f"📛 متن قوانین: {'✏️ سفارشی' if get_setting('rules_text') else '📄 پیش‌فرض'}\n"
+        f"📣 گزارشات ربات: {'🟢 فعال' if rep_ready() else '🔴 تنظیم نشده'}\n\n"
         "👇 <i>برای تغییر هر مورد، دکمه‌اش را بزنید.</i>"
     )
     kb = _kb(
@@ -2499,6 +2567,7 @@ def render_general():
         [_ab("📡 همگانی درخواست JFJ", "adm_p:x:cb", SUCCESS), _ab("🛑 فعال/غیرفعال کردن بخش‌ها", "adm_p:x:sec", PRIMARY)],
         [_ab("📛 ویرایش قوانین", "adm_p:g:in:rules", SUCCESS), _ab("♻️ قوانین پیش‌فرض", "adm_p:g:rr", DANGER)],
         [_ab("👁 پیش‌نمایش قوانین", "adm_p:g:rv")],
+        [_ab("📣 گزارشات ربات", "adm_p:x:rep", SUCCESS if rep_ready() else DANGER)],
     )
     return text, kb
 
@@ -2660,7 +2729,7 @@ def render_referral():
 
 def render_requests():
     tot = _q1("SELECT COUNT(*) FROM requests")
-    act = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted')")
+    act = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted','relinked')")
     joins = _q1("SELECT COUNT(*) FROM joins")
     left = _q1("SELECT COUNT(*) FROM joins WHERE left_at IS NOT NULL")
     text = (
@@ -2689,7 +2758,7 @@ def render_orders():
     so = _q1("SELECT COUNT(*) FROM service_orders WHERE status='pending'")
     rv = _q1("SELECT COUNT(*) FROM invoices WHERE status='review'")
     aw = _q1("SELECT COUNT(*) FROM invoices WHERE status='awaiting_receipt'")
-    rq = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted')")
+    rq = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted','relinked')")
     text = (
         "🧾 <b>سفارشات تکمیل نشده</b>\n"
         f"{LINE}\n"
@@ -2743,7 +2812,7 @@ def _user_card(uid):
     if not u:
         return "❌ کاربر پیدا نشد.", _kb(_back("u"))
     reqs = _q1("SELECT COUNT(*) FROM requests WHERE user_id=?", (uid,))
-    act = _q1("SELECT COUNT(*) FROM requests WHERE user_id=? AND status NOT IN ('completed','cancelled','removed','deleted')", (uid,))
+    act = _q1("SELECT COUNT(*) FROM requests WHERE user_id=? AND status NOT IN ('completed','cancelled','removed','deleted','relinked')", (uid,))
     joins = _q1("SELECT COUNT(*) FROM joins WHERE user_id=? AND left_at IS NULL", (uid,))
     lefts = _q1("SELECT COUNT(*) FROM joins WHERE user_id=? AND left_at IS NOT NULL", (uid,))
     svc = _q1("SELECT COUNT(*) FROM service_orders WHERE user_id=?", (uid,))
@@ -2896,6 +2965,7 @@ def admin_handle_input(chat_id, user, text, data):
             else:
                 c.execute("UPDATE users SET tokens = ? WHERE id=?", (n, uid))
         bal = get_balance(uid)
+        rep_ev_admin_balance(admin_id, uid, name, n, old_bal)
         note = {"uadd": f"🎁 مدیر {_t(n)} شاهی به حساب شما اضافه کرد.\n🪙 دارایی فعلی: {_t(bal)} شاهی",
                 "usub": f"➖ مدیر {_t(n)} شاهی از حساب شما کم کرد.\n🪙 دارایی فعلی: {_t(bal)} شاهی",
                 "uset": f"🪙 دارایی شما توسط مدیر روی {_t(n)} شاهی تنظیم شد."}[name]
@@ -3046,12 +3116,12 @@ def _send_list(ctx_chat, sec_key, offset):
 
 
 def _send_requests(chat_id, offset):
-    total = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted')")
+    total = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted','relinked')")
     with get_db() as c:
         rows = c.execute(
             "SELECT r.tracking_code, r.user_id, r.member_count, r.link, r.created_at, "
             "(SELECT COUNT(*) FROM joins j WHERE j.tracking_code=r.tracking_code AND j.left_at IS NULL) "
-            "FROM requests r WHERE r.status NOT IN ('completed','cancelled','removed','deleted') ORDER BY r.created_at LIMIT 8 OFFSET ?", (offset,)).fetchall()
+            "FROM requests r WHERE r.status NOT IN ('completed','cancelled','removed','deleted','relinked') ORDER BY r.created_at LIMIT 8 OFFSET ?", (offset,)).fetchall()
     if not rows:
         _hsend(chat_id, "🎉 درخواست JFJ در حال انجامی وجود ندارد.", _kb(_back("o")))
         return
@@ -3201,7 +3271,7 @@ def admin_panel_callback(cq):
                     with get_db() as c:
                         rq = c.execute("SELECT tracking_code, member_count, status FROM requests WHERE user_id=? ORDER BY created_at DESC LIMIT 5", (uid,)).fetchall()
                         so = c.execute("SELECT tracking_code, service, quantity, status FROM service_orders WHERE user_id=? ORDER BY created_at DESC LIMIT 5", (uid,)).fetchall()
-                    st = {"completed": "✅ تکمیل", "pending": "⏳ در انتظار", "cancelled": "❌ لغو", "removed": "🚫 ربات عزل شد", "deleted": "🗑 حذف شد", "in_progress": "⏳ در حال انجام"}
+                    st = {"completed": "✅ تکمیل", "pending": "⏳ در انتظار", "cancelled": "❌ لغو", "removed": "🚫 ربات عزل شد", "relinked": "🔗 لینک تغییر کرد", "deleted": "🗑 حذف شد", "in_progress": "⏳ در حال انجام"}
                     lines = [f"📦 <b>سفارش‌های کاربر</b> <code>{uid}</code>", LINE, "<b>درخواست‌های JFJ:</b>"]
                     lines += [f"• <code>{c0}</code> • {_n(m)} ممبر • {st.get(s0, s0)}" for c0, m, s0 in rq] or ["—"]
                     lines += ["", "<b>سفارش‌های خدمات:</b>"]
@@ -3749,8 +3819,8 @@ def send_orders(chat_id, user_id):
         lines = ["🔍 *وضعیت درخواست های JFJ اخیر شما:*", ""]
         for code, member_count, link, status in rows:
             status = refresh_request_status(code, member_count, status, owner_id=user_id)
-            status_emoji = "✅️" if status == "completed" else ("🚫" if status in ("removed", "deleted") else "⏳️")
-            status_text = "تکمیل شده" if status == "completed" else ("ربات عزل شد" if status == "removed" else "حذف شد توسط مدیریت" if status == "deleted" else "درحال انجام")
+            status_emoji = "✅️" if status == "completed" else ("🚫" if status in ("removed", "deleted", "relinked") else "⏳️")
+            status_text = "تکمیل شده" if status == "completed" else ("ربات عزل شد" if status == "removed" else "لینک تغییر کرد (کنسل شد)" if status == "relinked" else "حذف شد توسط مدیریت" if status == "deleted" else "درحال انجام")
             lines += [
                 f"🔐 *کد پیگیری: {code}*",
                 f"{status_emoji} *وضعیت: {status_text}*",
@@ -3833,9 +3903,14 @@ def handle_message(message):
     upsert_user(user, referred_by=referrer_id)
 
     if is_new and referrer_id:
-        notify_new_referral(referrer_id)
+        notify_new_referral(referrer_id, user)
 
     state, data = get_state(user["id"])
+    if is_admin(user["id"]) and message["chat"].get("type") == "private":
+        try:
+            rep_nag_admin(chat_id, user["id"], state, data)
+        except Exception:
+            logging.exception("rep_nag_admin")
 
     if message.get("contact"):
         handle_contact(message)
@@ -4897,6 +4972,7 @@ def zp_verify_invoice(code):
         return False
     if set_invoice_status(code, "paid", expected_status=status):
         apply_paid_invoice(code)
+        rep_ev_gateway(code)
         return True
     return "already"
 
@@ -4954,6 +5030,7 @@ def apply_paid_invoice(code):
                 "VALUES (?,?,?,?,?,?,?,?)",
                 (buyer, code, meta.get("hours", 0), "pending", si.get("kind"), si.get("lk"), si.get("ref"), si.get("link")))
             sid = cur.lastrowid
+        rep_ev_sponsor_new(sid, code)
         send(buyer, f"✅ *پرداخت شما تأیید شد.*\n🔍 *کد فاکتور: {code}*\n{stamp('زمان تأیید')}\n\n🎗 *اسپانسری شما بعد از بررسی ادمین فعال می‌شود و همین‌جا اطلاع می‌دهیم.*")
         txt = (f"🎗 اشتراک اسپانسری جدید (منتظر فعال‌سازی)\n{stamp('زمان تأیید پرداخت', md=False)}\n\n🔍 فاکتور: {code}\n📦 {product}\n"
                f"👤 {_user_label(buyer)}\n{_sponsor_info_text(si)}")
@@ -4962,6 +5039,7 @@ def apply_paid_invoice(code):
             tg("sendMessage", chat_id=admin_id, text=txt, reply_markup=kb)
     else:
         send(buyer, f"✅ *پرداخت شما تأیید شد.*\n🔍 *کد فاکتور: {code}*\n{stamp('زمان تأیید')}")
+    rep_ev_invoice_paid(code)
 
 
 def _sponsor_info_text(si):
@@ -5153,6 +5231,7 @@ def sponsor_activate(sid):
     with get_db() as c:
         c.execute("UPDATE sponsor_subs SET status='active', started_at=?, ends_at=? WHERE id=?",
                   (_utcnow_str(now), _utcnow_str(now + timedelta(hours=hours)), sid))
+    rep_ev_sponsor("act", sid)
     send(r[1], f"🎗 *اسپانسری شما فعال شد!*\n{stamp('زمان فعال‌سازی')}\n\n⏳ *مدت: {fmt_tokens(hours)} ساعت*\n"
                "📢 *کانال/گروه شما در جوین اجباری ربات قرار گرفت.*")
     return True
@@ -5170,6 +5249,7 @@ def sponsor_shift(sid, hours):
             c.execute("UPDATE sponsor_subs SET ends_at=?, hours=MAX(hours+?,0) WHERE id=?", (_utcnow_str(e), hours, sid))
         else:
             c.execute("UPDATE sponsor_subs SET hours=MAX(hours+?,0) WHERE id=?", (hours, sid))
+    rep_ev_sponsor("ah" if hours > 0 else "sh", sid, f"{fmt_tokens(abs(hours))} ساعت")
     if hours > 0:
         send(r[1], f"🎁 *{fmt_tokens(hours)} ساعت به اشتراک اسپانسری شما اضافه شد.*\n{stamp('زمان ثبت')}")
     return True
@@ -5379,11 +5459,11 @@ def _req_short(code, link):
 
 def render_req_manage(offset=0):
     PG = 8
-    total = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted')")
+    total = _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted','relinked')")
     with get_db() as c:
         rows = c.execute(
             "SELECT tracking_code, link, member_count, (SELECT COUNT(*) FROM joins j WHERE j.tracking_code=r.tracking_code AND j.left_at IS NULL) "
-            "FROM requests r WHERE status NOT IN ('completed','cancelled','removed','deleted') ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            "FROM requests r WHERE status NOT IN ('completed','cancelled','removed','deleted','relinked') ORDER BY created_at DESC LIMIT ? OFFSET ?",
             (PG, offset)).fetchall()
     text = ("🗑 <b>حذف درخواست JFJ</b>\n" + LINE + "\n"
             f"درخواست‌های در حال انجام: <b>{_n(total)}</b>\n\n"
@@ -5415,7 +5495,7 @@ def render_req_card(code):
             f"📌 وضعیت: <b>{status}</b>\n⏰ {_fa_dt(created)}"
             + ("\n🚫 این کانال مسدود است." if blocked else ""))
     kb = []
-    if status not in ("completed", "cancelled", "removed", "deleted"):
+    if status not in ("completed", "cancelled", "removed", "deleted", "relinked"):
         kb.append([_ab("🗑 حذف + بازگرداندن شاهی", f"adm_p:x:rmd:{code}:1", DANGER)])
         kb.append([_ab("🗑 حذف بدون بازگرداندن", f"adm_p:x:rmd:{code}:0", DANGER)])
         if not blocked:
@@ -5436,15 +5516,16 @@ def render_block_list():
     return text, _kb(*kb)
 
 
-def delete_request_admin(code, refund):
+def delete_request_admin(code, refund, admin_id=None):
     """True اگر حذف شد. refund=True: هزینه‌ی باقی‌مانده (به نسبت ممبرهای نیامده) به صاحب برمی‌گردد"""
     with get_db() as c:
         r = c.execute("SELECT user_id, member_count, token_cost, status FROM requests WHERE tracking_code=?", (code,)).fetchone()
-        if not r or r[3] in ("completed", "cancelled", "removed", "deleted"):
+        if not r or r[3] in ("completed", "cancelled", "removed", "deleted", "relinked"):
             return False
         c.execute("UPDATE requests SET status='deleted' WHERE tracking_code=?", (code,))
         if _table_exists(c, "mini_seen"):
             c.execute("DELETE FROM mini_seen WHERE code=?", (code,))
+    rep_ev_request_state(code, "deleted", _admin_name(admin_id))
     if refund:
         uid, cnt, cost, _ = r
         done = get_join_count(code)
@@ -5452,6 +5533,7 @@ def delete_request_admin(code, refund):
         amt = round(float(cost) * rest / max(cnt, 1), 2)
         if amt > 0:
             add_tokens(uid, amt)
+            rep_ev_refund(admin_id, uid, code, amt)
     return True
 
 
@@ -5521,6 +5603,8 @@ def v2_handle_input(chat_id, user, text, data):
     name = data.get("name")
     text = text.strip()
     t = text.translate(_ASCII_DIGITS)
+    if name == "rep_chat":
+        return rep_handle_chat_input(chat_id, admin_id, text, data)
     if name == "cron":
         m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(ثانیه|ث|s|sec|دقیقه|د|m|min)?", t, re.I)
         if not m:
@@ -5886,6 +5970,7 @@ def v2_admin_callback(cq):
                     else:
                         cur = c.execute("UPDATE users SET tokens = tokens - ?", (amt,))
                 ack("انجام شد.")
+                rep_ev_mass(admin_id, mode, amt, cur.rowcount)
                 set_state(admin_id, "admin_panel")
                 show(f"✅ <b>{'شارژ' if mode == 'add' else 'کسر'} همگانی انجام شد</b>\n{LINE}\n"
                      f"🪙 مقدار: <b>{_t(amt)}</b> شاهی\n👥 کاربران: <b>{_n(cur.rowcount)}</b>\n🔕 به کاربران خبری داده نشد.",
@@ -5900,7 +5985,7 @@ def v2_admin_callback(cq):
                 t, k = render_req_card(args[0])
                 return show(t, k) or True
             if act == "rmd":
-                ok = delete_request_admin(args[0], args[1] == "1")
+                ok = delete_request_admin(args[0], args[1] == "1", admin_id)
                 ack("درخواست حذف شد." if ok else "این درخواست دیگر فعال نیست.", not ok)
                 t, k = render_req_manage(0)
                 return show(t, k) or True
@@ -5914,10 +5999,10 @@ def v2_admin_callback(cq):
                 block_chan(keys)
                 n = 0
                 with get_db() as c:
-                    rows = c.execute("SELECT tracking_code, link, chat_id FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted')").fetchall()
+                    rows = c.execute("SELECT tracking_code, link, chat_id FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted','relinked')").fetchall()
                 for code, l2, c2 in rows:
                     if is_chan_blocked(extract_chat_identifier(l2 or ""), c2):
-                        n += 1 if delete_request_admin(code, False) else 0
+                        n += 1 if delete_request_admin(code, False, admin_id) else 0
                 ack(f"کانال مسدود شد؛ {n} درخواست حذف شد.", True)
                 t, k = render_req_manage(0)
                 return show(t, k) or True
@@ -5928,6 +6013,76 @@ def v2_admin_callback(cq):
                     unblock_chan(keys[i])
                 ack("مسدودی برداشته شد.")
                 return page("bk") or True
+            if act == "rep_in":
+                ack()
+                return _ask2(chat_id, admin_id, "rep_chat", "rep", rep_ask_text()) or True
+            if act == "rep_ic":
+                cid, _tp = rep_conf()
+                if not cid:
+                    return ack("ابتدا گروه را ثبت کنید.", True) or True
+                ack("در حال تنظیم آیکن‌ها…")
+                n_ic = rep_apply_icons(cid)
+                _hsend(chat_id, f"🎨 آیکن <b>{_rp_n(n_ic)}</b> تاپیک از {_rp_n(len(REPORT_TOPICS))} تنظیم شد.\n"
+                                "ℹ️ تلگرام فقط تعداد محدودی ایموجی را برای آیکن تاپیک مجاز می‌داند؛ تاپیکی که ایموجی نامش در آن لیست نباشد بدون آیکن می‌ماند.")
+                return True
+            if act == "rep_dl":
+                ack()
+                t, k = render_report_delete_list()
+                return show(t, k) or True
+            if act == "rep_dc":
+                key = args[0] if args else ""
+                if key not in _REP_ICON:
+                    return ack("پیدا نشد.", True) or True
+                ack()
+                return show(f"🗑 <b>حذف {_REP_ICON[key]}</b>\n\nمطمئنید؟ این تاپیک با همه‌ی پیام‌هایش از گروه پاک می‌شود و تا وقتی دوباره نسازید، گزارش آن ارسال نمی‌شود.",
+                            _kb([_ab("✅ بله، حذف شود", f"adm_p:x:rep_dd:{key}", DANGER), _ab("❌ انصراف", "adm_p:x:rep_dl", SUCCESS)])) or True
+            if act == "rep_dd":
+                key = args[0] if args else ""
+                cid, _tp = rep_conf()
+                if key not in _REP_ICON or not cid:
+                    return ack("پیدا نشد.", True) or True
+                ok_d = rep_delete_topic(cid, key)
+                ack("تاپیک حذف شد." if ok_d else "حذف انجام نشد؛ دسترسی ربات را بررسی کنید.", not ok_d)
+                return page("rep") or True
+            if act == "rep_mk1":
+                key = args[0] if args else ""
+                cid, _tp = rep_conf()
+                if key not in _REP_ICON or not cid:
+                    return ack("پیدا نشد.", True) or True
+                rep_set_off(key, False)
+                ack("در حال ساخت…")
+                tid_new = rep_make_topic(cid, key)
+                if not tid_new:
+                    _hsend(chat_id, f"❌ ساخت تاپیک نشد: {_h(_rep_err.get(key, 'نامشخص'))}")
+                return page("rep") or True
+            if act == "rep_test":
+                cid, _tp = rep_conf()
+                if not cid:
+                    return ack("ابتدا گروه را ثبت کنید.", True) or True
+                ack("در حال تست…")
+                ok_n = rep_connection_test(cid)
+                _hsend(chat_id, f"📡 تست اتصال: <b>{_rp_n(ok_n)} از ۳</b> پیام ارسال شد " + ("✅ اتصال برقرار است." if ok_n == 3 else "⚠️ اتصال کامل نیست."))
+                return True
+            if act == "rep_mk":
+                cid, _tp = rep_conf()
+                if not cid:
+                    return ack("ابتدا گروه را ثبت کنید.", True) or True
+                ack("در حال بررسی…")
+                made, failed = rep_ensure_topics(cid)
+                _hsend(chat_id, f"♻️ تاپیک‌های تازه ساخته‌شده: <b>{_rp_n(made)}</b>" + (f" • ❌ ناموفق: {_rp_n(failed)}" if failed else " • همه‌ی تاپیک‌ها سالم‌اند ✅"))
+                return page("rep") or True
+            if act == "rep_bk":
+                if not rep_ready():
+                    return ack("ابتدا گروه را ثبت کنید.", True) or True
+                ack("بکاپ در حال ارسال…")
+                threading.Thread(target=rep_send_backup, daemon=True).start()
+                return True
+            if act == "rep_day":
+                if not rep_ready():
+                    return ack("ابتدا گروه را ثبت کنید.", True) or True
+                ack("گزارش در حال ارسال…")
+                rep_send_day(now_local().date().isoformat(), partial=True)
+                return True
             if act == "bk_in":
                 ack()
                 return _ask2(chat_id, admin_id, "bk_add", "bk",
@@ -6065,6 +6220,7 @@ def v2_admin_callback(cq):
             if act == "can":
                 with get_db() as c:
                     c.execute("UPDATE sponsor_subs SET status='cancelled' WHERE id=?", (key,))
+                rep_ev_sponsor("can", key, admin_id=admin_id)
                 ack("لغو شد (به کاربر خبر داده نشد).")
                 t, k = render_sub(key)
                 return show(t, k) or True
@@ -6073,6 +6229,7 @@ def v2_admin_callback(cq):
                 return show(f"🗑 <b>حذف اشتراک #{key}</b>\n\nمطمئنید؟ (به کاربر خبر داده نمی‌شود)",
                             _kb([_ab("✅ بله، حذف شود", f"adm_p:sp:delc:{key}", DANGER), _ab("❌ انصراف", f"adm_p:sp:sub:{key}", SUCCESS)])) or True
             if act == "delc":
+                rep_ev_sponsor("del", key, admin_id=admin_id)
                 with get_db() as c:
                     c.execute("DELETE FROM sponsor_subs WHERE id=?", (key,))
                 ack("حذف شد.")
@@ -6180,6 +6337,956 @@ def handle_chat_member_update(cm):
         handle_member_left(chat_numeric_id, user_id)
 
 
+# ===================== 📣 گزارشات ربات (گروه تاپیک‌دار مدیریت) =====================
+import queue as _queue
+import gzip as _gzip
+
+REPORT_NAG_SEC = 600  # حداقل فاصله‌ی یادآوری برای هر ادمین تا زمانی که گزارشات تنظیم نشده
+REPORT_BACKUP_SEC = 6 * 3600
+REPORT_SEND_GAP = 3.2  # تلگرام: حداکثر ۲۰ پیام در دقیقه برای هر گروه
+REPORT_TOPICS = [
+    ("buy", "🛍 گزارش خرید", "گزارش خرید خدمات، خرید شاهی، اسپانسری و نتیجه‌ی سفارش‌ها."),
+    ("fin", "💰 گزارش مالی", "گزارش افزایش/کاهش موجودی کاربران (خرید شاهی، شارژ و کسر مدیر، شارژ همگانی، بازگشت هزینه)."),
+    ("bak", "🗃 بکاپ ربات", "هر ۶ ساعت یک‌بار فایل بکاپ دیتابیس (با فرمت .sql) اینجا ارسال می‌شود."),
+    ("ref", "👥️ گزارش زیرمجموعه", "گزارش زیرمجموعه‌گیری کاربران و قبولی‌ها (پاداش معرف)."),
+    ("rcp", "🧾 گزارش رسید", "گزارش رسیدهای واریزی، تأیید/رد رسید و پرداخت‌های آنلاین کاربران."),
+    ("jfj", "🎗 گزارش درخواست JFJ", "گزارش ثبت، تکمیل، عزل ربات و حذف درخواست‌های JFJ کاربران."),
+    ("spn", "🌟 گزارش اسپانسری", "گزارش خرید، ثبت مشخصات کانال، فعال‌سازی، افزودن/کسر ساعت و لغو اشتراک‌های اسپانسری."),
+    ("lft", "📖 گزارش لفت", "گزارش لفت دادن کاربران با اطلاعات دقیق (کانال، جریمه، بازگشت به صاحب سفارش)."),
+    ("xfr", "💸 گزارش بانک انتقال", "گزارش انتقال شاهی از کاربری به کاربر دیگر با اطلاعات دقیق."),
+    ("day", "📊 گزارش شبانه", "گزارش آمار روزانه‌ی ربات (فقط همان روز، نه آمار کل). هر شب بعد از نیمه‌شب ارسال می‌شود."),
+]
+_REP_ICON = {k: n for k, n, _ in REPORT_TOPICS}
+_rep_q = _queue.Queue(maxsize=5000)
+_rep_nag = {}
+_rep_db_ready = [False]
+_rep_lock = threading.Lock()
+_rep_err = {}          # آخرین خطای ساخت هر تاپیک (برای نمایش به ادمین)
+_rep_icons = {}        # کش ایموجی -> custom_emoji_id
+_rep_lock_topic = threading.RLock()
+_rep_recreate = set()
+
+
+def rep_conf():
+    """(chat_id یا None، دیکشنری تاپیک‌ها)"""
+    cid = get_setting("rep_chat")
+    try:
+        cid = int(cid) if cid else None
+    except Exception:
+        cid = None
+    try:
+        topics = json.loads(get_setting("rep_topics", "{}") or "{}")
+    except Exception:
+        topics = {}
+    return cid, topics
+
+
+def rep_off():
+    try:
+        return set(json.loads(get_setting("rep_off", "[]") or "[]"))
+    except Exception:
+        return set()
+
+
+def rep_set_off(key, off=True):
+    cur = rep_off()
+    (cur.add if off else cur.discard)(key)
+    set_setting("rep_off", json.dumps(sorted(cur)))
+
+
+def rep_msg_set(key, mid):
+    if not key or not mid:
+        return
+    with _rep_lock:
+        with get_db() as c:
+            c.execute("CREATE TABLE IF NOT EXISTS rep_msgs (k TEXT PRIMARY KEY, mid INTEGER NOT NULL)")
+            c.execute("INSERT INTO rep_msgs (k, mid) VALUES (?,?) ON CONFLICT(k) DO UPDATE SET mid=excluded.mid", (key, int(mid)))
+
+
+def rep_msg_get(key):
+    if not key:
+        return None
+    try:
+        with get_db() as c:
+            if not _table_exists(c, "rep_msgs"):
+                return None
+            r = c.execute("SELECT mid FROM rep_msgs WHERE k=?", (key,)).fetchone()
+        return r[0] if r else None
+    except Exception:
+        return None
+
+
+def rep_ready():
+    cid, _ = rep_conf()
+    return bool(cid) and get_setting("rep_enabled", "0") == "1"
+
+
+def rep_count(key, n=1):
+    """شمارنده‌ی روزانه برای گزارش شبانه (حتی وقتی گزارشات خاموش است ثبت می‌شود)"""
+    try:
+        day = now_local().date().isoformat()
+        with _rep_lock:
+            with get_db() as c:
+                if not _rep_db_ready[0]:
+                    c.execute("CREATE TABLE IF NOT EXISTS rep_daily (day TEXT NOT NULL, k TEXT NOT NULL, n REAL NOT NULL DEFAULT 0, PRIMARY KEY (day, k))")
+                    _rep_db_ready[0] = True
+                c.execute("INSERT INTO rep_daily (day, k, n) VALUES (?,?,?) ON CONFLICT(day,k) DO UPDATE SET n = n + excluded.n",
+                          (day, key, float(n)))
+    except Exception:
+        logging.exception("rep_count")
+
+
+def report(topic, builder, key=None, reply=None):
+    """builder: متن یا تابعی که متن را می‌سازد (کمی بعد اجرا می‌شود تا موجودی‌ها به‌روز باشند).
+    key: شناسه‌ی این پیام (برای ریپلای‌های بعدی)؛ reply: شناسه‌ی پیام ثبتی که این پیام باید روی آن ریپلای شود.
+    هیچ‌وقت exception پرتاب نمی‌کند و جریان اصلی را کند نمی‌کند."""
+    try:
+        if not rep_ready() or topic in rep_off():
+            return
+
+        def _go():
+            try:
+                txt = builder() if callable(builder) else builder
+                if txt:
+                    _rep_q.put_nowait({"kind": "text", "topic": topic, "b": txt, "key": key, "reply": reply, "n": 0})
+            except Exception:
+                logging.exception("report build failed")
+        tm = threading.Timer(1.0, _go)
+        tm.daemon = True
+        tm.start()
+    except Exception:
+        logging.warning("report failed")
+
+
+def report_copy(topic, from_chat, message_id, caption=None, key=None):
+    """رسید (عکس/فایل) همراه با متن در یک پیام"""
+    try:
+        if not rep_ready() or topic in rep_off():
+            return
+
+        def _go():
+            try:
+                cap = caption() if callable(caption) else caption
+                _rep_q.put_nowait({"kind": "copy", "topic": topic, "from": from_chat, "mid": message_id,
+                                   "cap": (cap or "")[:1024], "key": key, "n": 0})
+            except Exception:
+                logging.exception("report_copy build failed")
+        tm = threading.Timer(1.0, _go)
+        tm.daemon = True
+        tm.start()
+    except Exception:
+        pass
+
+
+def _admin_name(admin_id):
+    if not admin_id:
+        return "مدیر"
+    try:
+        with get_db() as c:
+            r = c.execute("SELECT first_name FROM users WHERE id=?", (admin_id,)).fetchone()
+        return (r[0] if r and r[0] else "مدیر")
+    except Exception:
+        return "مدیر"
+
+
+def _rp_user(uid, label="👤 کاربر"):
+    with get_db() as c:
+        r = c.execute("SELECT first_name, username FROM users WHERE id=?", (uid,)).fetchone()
+    name = ((r[0] if r else "") or "کاربر").strip()
+    un = ("@" + r[1]) if r and r[1] else "بدون یوزرنیم"
+    return f'{label}: <a href="tg://user?id={uid}">{_h(name)}</a> • {_h(un)} • <code>{uid}</code>'
+
+
+def _rp_bal(uid):
+    try:
+        return fa_digits(fmt_tokens(get_balance(uid)))
+    except Exception:
+        return "؟"
+
+
+def _rp_t(v):
+    return fa_digits(fmt_tokens(v))
+
+
+def _rp_n(v):
+    return fa_digits(fmt_num(v))
+
+
+def _rp_head(topic, title):
+    n = _REP_ICON.get(topic, "").split(" ", 1)[0]
+    return f"{n} <b>{title}</b>\n━━━━━━━━━━━━━━\n"
+
+
+def _rp_time(label="زمان"):
+    return "\n" + stamp(label, md=False)
+
+
+# ---------- ارسال به تاپیک‌ها ----------
+def _rep_post(method, topic, **params):
+    """هیچ‌وقت در تاپیک General ارسال نمی‌کند؛ اگر تاپیک نبود می‌سازد و اگر نشد، خطای no_topic می‌دهد"""
+    cid, topics = rep_conf()
+    if not cid:
+        return {"ok": False, "description": "no chat"}
+    if topic in rep_off():
+        return {"ok": False, "description": "off", "off": True}
+    tid = topics.get(topic) or rep_make_topic(cid, topic)
+    if not tid:
+        return {"ok": False, "description": "no_topic"}
+    p = dict(params)
+    p["chat_id"] = cid
+    p["message_thread_id"] = tid
+    r = tg(method, **p)
+    desc = str(r.get("description", r.get("error_description", ""))).lower()
+    if not r.get("ok") and ("thread not found" in desc or "topic_deleted" in desc or "topic_id_invalid" in desc
+                            or ("topic" in desc and "not" in desc)):
+        new_tid = rep_make_topic(cid, topic)
+        if not new_tid:
+            return {"ok": False, "description": "no_topic"}
+        p["message_thread_id"] = new_tid
+        p.pop("reply_to_message_id", None)
+        r = tg(method, **p)
+    return r
+
+
+def _rep_upload_doc(topic, filename, data, caption):
+    cid, topics = rep_conf()
+    if not cid or topic in rep_off():
+        return {"ok": False, "description": "off"}
+    tid = topics.get(topic) or rep_make_topic(cid, topic)
+    if not tid:
+        return {"ok": False, "description": "no_topic"}
+    boundary = "----jfjrep" + hashlib.md5(os.urandom(8)).hexdigest()
+    fields = {"chat_id": str(cid), "caption": caption[:1000], "parse_mode": "HTML", "message_thread_id": str(tid)}
+    body = b""
+    for k, v in fields.items():
+        body += f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
+    body += (f'--{boundary}\r\nContent-Disposition: form-data; name="document"; filename="{filename}"\r\n'
+             f'Content-Type: application/octet-stream\r\n\r\n').encode() + data + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument", data=body,
+                                 headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        try:
+            return json.loads(e.read() or b"{}")
+        except Exception:
+            return {"ok": False, "description": str(e)}
+    except Exception as e:
+        return {"ok": False, "description": str(e)}
+
+
+def _plain_emoji(s):
+    return (s or "").replace("\ufe0f", "").replace("\ufe0e", "").strip()
+
+
+def rep_icon_for(key):
+    """custom_emoji_id ایموجی داخل نام تاپیک (اگر در لیست مجاز تلگرام باشد)"""
+    if not _rep_icons:
+        r = tg("getForumTopicIconStickers", _timeout=20)
+        for st in (r.get("result") or []):
+            if st.get("emoji") and st.get("custom_emoji_id"):
+                _rep_icons.setdefault(_plain_emoji(st["emoji"]), st["custom_emoji_id"])
+        if not _rep_icons:
+            _rep_icons["_"] = ""
+    name = _REP_ICON.get(key, "")
+    return _rep_icons.get(_plain_emoji(name.split(" ", 1)[0]))
+
+
+def rep_make_topic(cid, key):
+    """ساخت تاپیک با ایموجی پروفایل؛ در صورت محدودیت تلگرام (429) صبر و تکرار می‌کند. None = ناموفق (خطا در _rep_err)"""
+    with _rep_lock_topic:
+        _, topics = rep_conf()
+        if topics.get(key) and key not in _rep_recreate:
+            return topics[key]
+        name = _REP_ICON[key]
+        icon = None
+        try:
+            icon = rep_icon_for(key)
+        except Exception:
+            icon = None
+        r = None
+        for attempt in range(4):
+            params = {"chat_id": cid, "name": name}
+            if icon:
+                params["icon_custom_emoji_id"] = icon
+            r = tg("createForumTopic", **params)
+            if r.get("ok"):
+                break
+            desc = str(r.get("description", r.get("error_description", "")))
+            ra = (r.get("parameters") or {}).get("retry_after")
+            if ra:
+                time.sleep(min(int(ra) + 1, 90))
+                continue
+            if icon and ("icon" in desc.lower() or "emoji" in desc.lower()):
+                icon = None  # ایموجی مجاز نبود؛ بدون آیکن
+                continue
+            break
+        if not r or not r.get("ok"):
+            _rep_err[key] = str((r or {}).get("description", (r or {}).get("error_description", "نامشخص")))
+            logging.warning("createForumTopic %s failed: %s", key, r)
+            return None
+        _rep_err.pop(key, None)
+        _rep_recreate.discard(key)
+        tid = r["result"]["message_thread_id"]
+        _, topics = rep_conf()
+        topics[key] = tid
+        set_setting("rep_topics", json.dumps(topics))
+    desc = next((d for k, n, d in REPORT_TOPICS if k == key), "")
+    tg("sendMessage", chat_id=cid, message_thread_id=tid, text=f"✅ این تاپیک فعال شد.\n\n📌 {desc}")
+    return tid
+
+
+def rep_ensure_topics(cid):
+    """فقط تاپیک‌های ساخته‌نشده (و حذف‌نشده توسط ادمین) را می‌سازد. (ساخته‌شده، ناموفق)"""
+    made = failed = 0
+    off = rep_off()
+    for key, _, _ in REPORT_TOPICS:
+        _, topics = rep_conf()
+        if topics.get(key) or key in off:
+            continue
+        if rep_make_topic(cid, key):
+            made += 1
+        else:
+            failed += 1
+        time.sleep(3)
+    return made, failed
+
+
+def rep_apply_icons(cid):
+    """ایموجی پروفایل همه‌ی تاپیک‌ها را بر اساس ایموجی داخل نامشان تنظیم می‌کند. تعداد موفق را برمی‌گرداند"""
+    _, topics = rep_conf()
+    done = 0
+    for key, tid in topics.items():
+        try:
+            icon = rep_icon_for(key)
+        except Exception:
+            icon = None
+        if not icon:
+            continue
+        r = tg("editForumTopic", chat_id=cid, message_thread_id=tid, name=_REP_ICON.get(key, ""), icon_custom_emoji_id=icon)
+        if r.get("ok") or "not modified" in str(r.get("description", "")).lower():
+            done += 1
+        time.sleep(1.2)
+    return done
+
+
+def rep_delete_topic(cid, key):
+    """حذف تاپیک از گروه (با همه‌ی پیام‌هایش) و خاموش‌کردن آن؛ دیگر خودکار ساخته نمی‌شود تا ادمین دوباره بسازد"""
+    _, topics = rep_conf()
+    tid = topics.get(key)
+    ok = True
+    if tid:
+        r = tg("deleteForumTopic", chat_id=cid, message_thread_id=tid)
+        desc = str(r.get("description", "")).lower()
+        ok = bool(r.get("ok")) or "not found" in desc or "topic_id_invalid" in desc
+    if ok:
+        topics.pop(key, None)
+        set_setting("rep_topics", json.dumps(topics))
+        rep_set_off(key, True)
+    return ok
+
+
+def rep_connection_test(cid):
+    ok = 0
+    for _ in range(3):
+        r = tg("sendMessage", chat_id=cid, text="تست اتصال ربات")
+        ok += 1 if r.get("ok") else 0
+        time.sleep(1.2)
+    return ok
+
+
+def rep_check_group(cid):
+    """(True, None) یا (False, پیام خطای فارسی)"""
+    g = tg("getChat", chat_id=cid, _timeout=15)
+    if not g.get("ok"):
+        return False, "گروهی با این آیدی پیدا نشد یا ربات عضو آن نیست. مطمئن شوید ربات را داخل گروه اضافه و ادمین کرده‌اید."
+    ch = g["result"]
+    if ch.get("type") != "supergroup":
+        return False, "این چت «سوپرگروه» نیست. یک گروه بسازید و حالت Topics (انجمن) را از تنظیمات گروه روشن کنید."
+    if not ch.get("is_forum"):
+        return False, "حالت Topics (انجمن) در این گروه روشن نیست. از تنظیمات گروه آن را فعال کنید و دوباره آیدی را بفرستید."
+    m = tg("getChatMember", chat_id=cid, user_id=BOT_ID, _timeout=15)
+    st = (m.get("result") or {}).get("status")
+    if not m.get("ok") or st != "administrator":
+        return False, "ربات در این گروه ادمین نیست. آن را ادمین گروه کنید و دوباره بفرستید."
+    res = m["result"]
+    if res.get("can_manage_topics") is False:
+        return False, "ربات اجازه‌ی «مدیریت تاپیک‌ها» (Manage Topics) را ندارد. هنگام ادمین‌کردن این دسترسی را روشن کنید."
+    return True, None
+
+
+def rep_setup_run(cid, admin_chat, admin_id):
+    """در پس‌زمینه: ساخت تاپیک‌ها، تست اتصال، گزارش نتیجه به ادمین"""
+    try:
+        made, failed = rep_ensure_topics(cid)
+        ok = rep_connection_test(cid)
+        icons = 0
+        try:
+            icons = rep_apply_icons(cid)
+        except Exception:
+            logging.exception("rep_apply_icons")
+        txt = ("📣 <b>نتیجه‌ی راه‌اندازی گزارشات</b>\n━━━━━━━━━━━━━━\n"
+               f"📂 تاپیک‌های ساخته‌شده: <b>{_rp_n(made)}</b>" + (f" • ❌ ناموفق: <b>{_rp_n(failed)}</b>" if failed else "") + "\n"
+               f"🎨 آیکن تاپیک‌ها: <b>{_rp_n(icons)}</b> از {_rp_n(len(REPORT_TOPICS))}\n"
+               f"📡 تست اتصال: <b>{_rp_n(ok)} از ۳</b> پیام با موفقیت ارسال شد "
+               + ("✅ اتصال برقرار است." if ok == 3 else "⚠️ اتصال کامل نیست؛ دسترسی‌های ربات در گروه را بررسی کنید."))
+        if failed:
+            errs = "\n".join(f"• {_REP_ICON[k]}: {_h(v)[:120]}" for k, v in _rep_err.items() if k in _REP_ICON)
+            txt += ("\n\n⚠️ <b>ساخت این تاپیک‌ها نشد:</b>\n" + errs +
+                    "\n\n♻️ ربات هر چند دقیقه خودکار دوباره تلاش می‌کند؛ یا از «📣 گزارشات ربات» دکمه‌ی «بررسی/ساخت تاپیک‌ها» را بزنید."
+                    "\nتا ساخته‌شدن تاپیک، گزارش آن در General ارسال <b>نمی‌شود</b> و در صف می‌ماند.")
+        _hsend(admin_chat, txt, _kb([_ab("📣 مدیریت گزارشات", "adm_p:x:rep", PRIMARY)]))
+        set_setting("rep_last_backup", "0")
+        set_setting("rep_last_day", (now_local().date() - timedelta(days=1)).isoformat())
+        set_setting("rep_icons_v", "2")
+    except Exception:
+        logging.exception("rep_setup_run")
+
+
+def rep_nag_admin(chat_id, user_id, state, data):
+    """ادمین هر فعالیتی کند و گزارشات تنظیم نشده باشد: درخواست اجباری فعال‌سازی"""
+    if rep_ready():
+        return
+    if state == "adm_in" and (data or {}).get("name") == "rep_chat":
+        return
+    now = time.time()
+    if now - _rep_nag.get(user_id, 0) < REPORT_NAG_SEC:
+        return
+    _rep_nag[user_id] = now
+    _hsend(chat_id, "سلام من روشن شدم.\nحالا برای شروع گزارشات منو تنظیم کن! 📖",
+           _kb([_ab("📣 گزارشات ربات", "adm_p:x:rep_in", PRIMARY)]))
+
+
+def rep_ask_text():
+    cid, _ = rep_conf()
+    cur = f"<code>{cid}</code>" if cid else "❌ هنوز ثبت نشده"
+    return (
+        "📣 در این بخش می‌توانید آیدی عددی گروه را برای ارسال اعلان ارسال نمایید.\n\n"
+        "🚥 <b>آموزش تنظیم گروه:</b>\n"
+        "۱. ابتدا یک گروه تلگرامی بسازید.\n"
+        "۲. ربات ( @myidbot ) را عضو و ادمین گروه کنید.\n"
+        "۳. حالت Topics یا انجمن گروه را از تنظیمات گروه روشن کنید.\n"
+        "۴. ربات خودتان را ادمین گروه کنید.\n"
+        "۵. حالا دستور زیر را در گروه ارسال کنید:\n"
+        "<code>/getgroupid@myidbot</code>\n"
+        "۶. آیدی عددی که ربات ارسال کرده را در همینجا ارسال کنید.\n\n"
+        f"🆔 آیدی عددی فعلی شما: {cur}")
+
+
+def rep_handle_chat_input(chat_id, admin_id, text, data):
+    t = text.strip().translate(_ASCII_DIGITS)
+    if not re.fullmatch(r"-?\d{6,20}", t):
+        _err(chat_id, "آیدی عددی گروه را بفرستید؛ مثل -1001234567890")
+        return True
+    if t.startswith("-"):
+        cid = int(t)
+    elif t.startswith("100") and len(t) >= 13:
+        cid = -int(t)
+    else:
+        cid = int("-100" + t)
+    ok, why = rep_check_group(cid)
+    if not ok:
+        _err(chat_id, why)
+        return True
+    old, _ = rep_conf()
+    if old != cid:
+        set_setting("rep_topics", "{}")
+        set_setting("rep_off", "[]")
+    set_setting("rep_chat", cid)
+    set_setting("rep_enabled", "1")
+    set_state(admin_id, "admin_panel")
+    _hsend(chat_id, "🔰 کانال با موفقیت تنظیم گردید. 🎉\n\n"
+                    "⏰️ لطفاً چند لحظه صبر کنید تا تاپیک‌ ها به‌صورت خودکار ساخته شوند.\n\n"
+                    "🚥 در صورتی که هنوز کامل ساخته نشده‌ صبر کنید!\nسیستم به‌طور خودکار آن‌ها را ایجاد میکند.")
+    threading.Thread(target=rep_setup_run, args=(cid, chat_id, admin_id), daemon=True).start()
+    return True
+
+
+def render_report():
+    cid, topics = rep_conf()
+    on = rep_ready()
+    off = rep_off()
+    lines = []
+    for key, name, _ in REPORT_TOPICS:
+        mark = "⏸" if key in off else ("✅" if topics.get(key) else "❌")
+        lines.append(f"{mark} {name}" + (" (حذف‌شده)" if key in off else ""))
+    text = ("📣 <b>گزارشات ربات</b>\n" + LINE + "\n"
+            f"📡 وضعیت: {'🟢 فعال' if on else '🔴 تنظیم نشده'}\n"
+            f"🆔 گروه: {('<code>' + str(cid) + '</code>') if cid else '—'}\n\n"
+            + "\n".join(lines)
+            + f"\n\n📬 صف ارسال: <b>{_rp_n(_rep_q.qsize())}</b> گزارش")
+    rows = [
+        [_ab("📌 ثبت / تغییر گروه", "adm_p:x:rep_in", SUCCESS)],
+        [_ab("🧪 تست اتصال", "adm_p:x:rep_test", PRIMARY), _ab("♻️ بررسی/ساخت تاپیک‌ها", "adm_p:x:rep_mk", PRIMARY)],
+        [_ab("💾 بکاپ همین الان", "adm_p:x:rep_bk", PRIMARY), _ab("📊 گزارش امروز", "adm_p:x:rep_day", PRIMARY)],
+        [_ab("🎨 تنظیم آیکن تاپیک‌ها", "adm_p:x:rep_ic", PRIMARY), _ab("🗑 حذف تاپیک", "adm_p:x:rep_dl", DANGER)],
+    ]
+    for key in [k for k, _, _ in REPORT_TOPICS if k in off]:
+        rows.append([_ab(f"➕ ساخت مجدد: {_REP_ICON[key]}", f"adm_p:x:rep_mk1:{key}", SUCCESS)])
+    rows.append([_ab("🔙 تنظیمات عمومی", "adm_p:g:home")])
+    return text, _kb(*rows)
+
+
+def render_report_delete_list():
+    _, topics = rep_conf()
+    rows = [[_ab(f"🗑 {n}", f"adm_p:x:rep_dc:{k}", DANGER)] for k, n, _ in REPORT_TOPICS if topics.get(k)]
+    rows.append([_ab("🔙 گزارشات ربات", "adm_p:x:rep")])
+    return ("🗑 <b>حذف تاپیک</b>\n" + LINE + "\nکدام تاپیک حذف شود؟\n⚠️ تاپیک با <b>همه‌ی پیام‌هایش</b> از گروه پاک می‌شود و گزارش آن دیگر ارسال نمی‌شود "
+            "(هر وقت خواستید از همین صفحه دوباره ساخته می‌شود)."), _kb(*rows)
+
+
+# ---------- بکاپ SQL ----------
+def rep_make_backup():
+    """(نام فایل، بایت‌ها، تعداد خط) — خروجی .sql؛ اگر بزرگ‌تر از حد تلگرام بود gzip می‌شود"""
+    src = get_db()
+    try:
+        dump = "\n".join(src.iterdump()).encode("utf-8")
+    finally:
+        src.close()
+    stamp_s = now_local().strftime("%Y%m%d_%H%M")
+    name = f"jfj_backup_{stamp_s}.sql"
+    if len(dump) > 48 * 1024 * 1024:
+        return name + ".gz", _gzip.compress(dump), dump.count(b"\n")
+    return name, dump, dump.count(b"\n")
+
+
+def rep_send_backup():
+    if "bak" in rep_off():
+        return False
+    name, data, lines = rep_make_backup()
+    users = 0
+    try:
+        users = _q1("SELECT COUNT(*) FROM users")
+    except Exception:
+        pass
+    cap = (f"🗃 <b>بکاپ ربات</b>\n━━━━━━━━━━━━━━\n📄 {name}\n💽 حجم: {_rp_n(round(len(data) / 1024, 1))} کیلوبایت\n"
+           f"👥 کاربران: {_rp_n(users)}" + _rp_time("زمان بکاپ"))
+    r = _rep_upload_doc("bak", name, data, cap)
+    if r.get("ok"):
+        set_setting("rep_last_backup", str(time.time()))
+        return True
+    desc = str(r.get("description", ""))
+    if "thread" in desc.lower():
+        cid, _ = rep_conf()
+        if cid and rep_make_topic(cid, "bak"):
+            r = _rep_upload_doc("bak", name, data, cap)
+            if r.get("ok"):
+                set_setting("rep_last_backup", str(time.time()))
+                return True
+    logging.warning("backup send failed: %s", r)
+    return False
+
+
+# ---------- گزارش شبانه ----------
+def rep_day_text(day, partial=False):
+    d0 = datetime.fromisoformat(day)
+    s = d0.replace(tzinfo=ZoneInfo(TIMEZONE)).astimezone(timezone.utc)
+    e = s + timedelta(days=1)
+    a, b = s.strftime("%Y-%m-%d %H:%M:%S"), e.strftime("%Y-%m-%d %H:%M:%S")
+    with get_db() as c:
+        cnt = dict(c.execute("SELECT k, n FROM rep_daily WHERE day=?", (day,)).fetchall()) if _rep_db_ready[0] or _table_exists(c, "rep_daily") else {}
+        new_users = c.execute("SELECT COUNT(*) FROM users WHERE created_at>=? AND created_at<?", (a, b)).fetchone()[0]
+        via_ref = c.execute("SELECT COUNT(*) FROM users WHERE created_at>=? AND created_at<? AND referred_by IS NOT NULL", (a, b)).fetchone()[0]
+        total_users = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    g = lambda k: cnt.get(k, 0)
+    jy, jm, jd = gregorian_to_jalali(d0.year, d0.month, d0.day)
+    jdate = fa_digits(f"{jy:04d}/{jm:02d}/{jd:02d}")
+    title = "گزارش امروز تا این لحظه" if partial else "گزارش شبانه"
+    return (
+        f"📊 <b>{title}</b> — {jdate}\n━━━━━━━━━━━━━━\n"
+        f"👥 <b>کاربران</b>\n• کاربر جدید: {_rp_n(new_users)} (از زیرمجموعه‌گیری: {_rp_n(via_ref)})\n"
+        f"• پاداش معرف پرداخت‌شده: {_rp_n(g('ref_ok'))} مورد\n\n"
+        f"🎗 <b>درخواست‌های JFJ</b>\n• ثبت‌شده: {_rp_n(g('req_new'))} (جمع ممبر: {_rp_n(g('req_members'))} • هزینه: {_rp_t(g('req_cost'))} شاهی)\n"
+        f"• تکمیل‌شده: {_rp_n(g('req_done'))} • عزل ربات: {_rp_n(g('req_removed'))} • تغییر لینک: {_rp_n(g('req_relinked'))} • حذف مدیر: {_rp_n(g('req_deleted'))}\n"
+        f"• جوین موفق: {_rp_n(g('joins'))} • لفت: {_rp_n(g('leaves'))}\n\n"
+        f"🛍 <b>خرید</b>\n• سفارش خدمات: {_rp_n(g('svc_new'))} (هزینه: {_rp_t(g('svc_cost'))} شاهی)\n"
+        f"• تکمیل: {_rp_n(g('svc_done'))} • لغو: {_rp_n(g('svc_cancel'))}\n"
+        f"• خرید شاهی/اسپانسری تأییدشده: {_rp_n(g('inv_paid'))} (مبلغ: {_rp_n(g('inv_toman'))} تومان • شاهی فروخته‌شده: {_rp_t(g('tok_sold'))})\n\n"
+        f"🧾 <b>رسیدها</b>\n• دریافت‌شده: {_rp_n(g('rcp_new'))} • تأیید: {_rp_n(g('rcp_ok'))} • رد: {_rp_n(g('rcp_no'))}\n\n"
+        f"💸 <b>بانک انتقال</b>\n• تعداد انتقال: {_rp_n(g('xfr_n'))} • مجموع: {_rp_t(g('xfr_sum'))} شاهی\n\n"
+        f"💰 <b>مدیریت موجودی</b>\n• افزایش دستی/همگانی: {_rp_t(g('adm_add'))} شاهی • کاهش: {_rp_t(g('adm_sub'))} شاهی\n\n"
+        f"👤 کل کاربران ربات (لحظه‌ی گزارش): {_rp_n(total_users)}"
+        + _rp_time("زمان تهیه گزارش"))
+
+
+def rep_send_day(day, partial=False):
+    try:
+        txt = rep_day_text(day, partial)
+    except Exception:
+        logging.exception("rep_day_text")
+        return
+    report("day", txt)
+
+
+def rep_scheduler():
+    """بکاپ هر ۶ ساعت + گزارش شبانه بعد از نیمه‌شب + ترمیم خودکار تاپیک‌های ناقص"""
+    time.sleep(20)
+    last_heal = 0.0
+    while True:
+        try:
+            if rep_ready():
+                cid, topics = rep_conf()
+                if time.time() - last_heal > 300:
+                    last_heal = time.time()
+                    off = rep_off()
+                    if any(not topics.get(k) and k not in off for k, _, _ in REPORT_TOPICS):
+                        rep_ensure_topics(cid)
+                        rep_apply_icons(cid)
+                    elif get_setting("rep_icons_v", "") != "2":
+                        rep_apply_icons(cid)
+                        set_setting("rep_icons_v", "2")
+                try:
+                    last = float(get_setting("rep_last_backup", "0") or 0)
+                except Exception:
+                    last = 0
+                if "bak" not in rep_off() and time.time() - last >= REPORT_BACKUP_SEC:
+                    set_setting("rep_last_backup", str(time.time() - REPORT_BACKUP_SEC + 300))
+                    rep_send_backup()
+                yday = (now_local().date() - timedelta(days=1)).isoformat()
+                if get_setting("rep_last_day", "") != yday:
+                    set_setting("rep_last_day", yday)
+                    rep_send_day(yday)
+        except Exception:
+            logging.exception("rep_scheduler")
+        time.sleep(45)
+
+
+def rep_worker():
+    while True:
+        item = _rep_q.get()
+        try:
+            if not rep_ready() or item["topic"] in rep_off():
+                continue
+            reply_to = rep_msg_get(item.get("reply")) if item.get("reply") else None
+            if item["kind"] == "text":
+                kw = dict(text=item["b"][:4000], parse_mode="HTML", disable_web_page_preview=True)
+                if reply_to:
+                    kw.update(reply_to_message_id=reply_to, allow_sending_without_reply=True)
+                r = None
+                for attempt in range(3):
+                    r = _rep_post("sendMessage", item["topic"], **kw)
+                    if r.get("ok"):
+                        rep_msg_set(item.get("key"), (r.get("result") or {}).get("message_id"))
+                        break
+                    ra = (r.get("parameters") or {}).get("retry_after")
+                    if ra:
+                        time.sleep(min(int(ra) + 1, 60))
+                        continue
+                    break
+            else:
+                kw = dict(from_chat_id=item["from"], message_id=item["mid"], caption=item.get("cap") or None, parse_mode="HTML")
+                r = _rep_post("copyMessage", item["topic"], **kw)
+                if r.get("ok"):
+                    rep_msg_set(item.get("key"), (r.get("result") or {}).get("message_id"))
+                elif "parse" in str(r.get("description", "")).lower():
+                    kw.pop("parse_mode")
+                    r = _rep_post("copyMessage", item["topic"], **kw)
+            if r and not r.get("ok") and not r.get("off"):
+                logging.warning("report send failed: %s", r)
+                if r.get("description") == "no_topic" and item.get("n", 0) < 6:
+                    item["n"] = item.get("n", 0) + 1
+                    tm = threading.Timer(90, lambda it=item: _rep_q.put_nowait(it))  # بعد از ساخته‌شدن تاپیک دوباره تلاش می‌شود
+                    tm.daemon = True
+                    tm.start()
+        except Exception:
+            logging.exception("rep_worker")
+        time.sleep(REPORT_SEND_GAP)
+
+
+# ---------- سازنده‌ی گزارش هر رویداد ----------
+def rep_ev_service(code):
+    def b():
+        with get_db() as c:
+            r = c.execute("SELECT user_id, service, quantity, extra, token_cost, link FROM service_orders WHERE tracking_code=?", (code,)).fetchone()
+        if not r:
+            return None
+        uid, svc, qty, extra, cost, link = r
+        return (_rp_head("buy", "سفارش جدید خدمات") + f"🔍 کد پیگیری: <code>{code}</code>\n🛒 خدمت: {_h(svc)}\n🔢 تعداد: {_rp_n(qty)}\n"
+                + (f"😀 ری‌اکشن: {_h(extra)}\n" if extra else "") + f"🔗 لینک: {_h(link)}\n💎 هزینه: {_rp_t(cost)} شاهی\n"
+                + _rp_user(uid) + f"\n🪙 موجودی فعلی کاربر: {_rp_bal(uid)} شاهی" + _rp_time("زمان ثبت"))
+    rep_count("svc_new")
+    try:
+        with get_db() as c:
+            r = c.execute("SELECT token_cost FROM service_orders WHERE tracking_code=?", (code,)).fetchone()
+        rep_count("svc_cost", r[0] if r else 0)
+    except Exception:
+        pass
+    report("buy", b, key=f"svc:{code}")
+
+
+def rep_ev_service_result(code, ok, admin_name):
+    def b():
+        with get_db() as c:
+            r = c.execute("SELECT user_id, service, quantity, token_cost, link FROM service_orders WHERE tracking_code=?", (code,)).fetchone()
+        if not r:
+            return None
+        uid, svc, qty, cost, link = r
+        return (_rp_head("buy", "سفارش خدمات تکمیل شد ✅" if ok else "سفارش خدمات لغو شد ❌")
+                + f"🔍 کد پیگیری: <code>{code}</code>\n🛒 {_h(svc)} • {_rp_n(qty)}\n🔗 {_h(link)}\n"
+                + _rp_user(uid) + f"\n👮 توسط: {_h(admin_name)}"
+                + ("" if ok else f"\n💰 بازگشت هزینه: {_rp_t(cost)} شاهی (موجودی فعلی: {_rp_bal(uid)})") + _rp_time())
+    rep_count("svc_done" if ok else "svc_cancel")
+    report("buy", b, reply=f"svc:{code}")
+    if not ok:
+        def f():
+            with get_db() as c:
+                r = c.execute("SELECT user_id, token_cost, service FROM service_orders WHERE tracking_code=?", (code,)).fetchone()
+            if not r:
+                return None
+            return (_rp_head("fin", "افزایش موجودی (بازگشت هزینه‌ی سفارش لغوشده)") + f"🔍 سفارش: <code>{code}</code> • {_h(r[2])}\n"
+                    f"➕ مقدار: {_rp_t(r[1])} شاهی\n" + _rp_user(r[0]) + f"\n🪙 موجودی فعلی: {_rp_bal(r[0])} شاهی" + _rp_time())
+        report("fin", f)
+
+
+def rep_ev_invoice_paid(code):
+    try:
+        with get_db() as c:
+            _k = c.execute("SELECT kind FROM invoices WHERE code=?", (code,)).fetchone()
+        topic = "spn" if _k and _k[0] == "sponsor" else "buy"
+    except Exception:
+        topic = "buy"
+
+    def b():
+        with get_db() as c:
+            r = c.execute("SELECT buyer_id, kind, product_name, final_amount, method, meta FROM invoices WHERE code=?", (code,)).fetchone()
+        if not r:
+            return None
+        uid, kind, product, amount, method, meta = r
+        try:
+            meta = json.loads(meta or "{}")
+        except Exception:
+            meta = {}
+        what = {"jtoken": "خرید شاهی", "sponsor": "خرید اسپانسری"}.get(kind, "خرید")
+        extra = ""
+        if kind == "jtoken":
+            extra = f"🪙 شاهی: {_rp_t(meta.get('tokens', 0))}" + (f" + بونوس {_rp_t(meta.get('bonus'))}" if meta.get("bonus") else "") + "\n"
+        elif kind == "sponsor":
+            extra = f"⏳ مدت: {_rp_n(meta.get('hours', 0))} ساعت\n"
+        return (_rp_head(topic, f"{what} (پرداخت تأیید شد)") + f"🔍 کد فاکتور: <code>{code}</code>\n📦 محصول: {_h(product)}\n"
+                + extra + f"💵 مبلغ: {_rp_n(amount)} تومان\n💳 روش: {_h(METHOD_LABELS.get(method, method or '—'))}\n"
+                + _rp_user(uid) + f"\n🪙 موجودی فعلی: {_rp_bal(uid)} شاهی" + _rp_time("زمان تأیید"))
+    report(topic, b, key=f"spi:{code}" if topic == "spn" else None)
+    try:
+        with get_db() as c:
+            r = c.execute("SELECT buyer_id, kind, final_amount, meta, product_name FROM invoices WHERE code=?", (code,)).fetchone()
+        if not r:
+            return
+        meta = json.loads(r[3] or "{}")
+        rep_count("inv_paid")
+        rep_count("inv_toman", r[2])
+        if r[1] == "jtoken":
+            tk = (meta.get("tokens", 0) or 0) + (meta.get("bonus", 0) or 0)
+            rep_count("tok_sold", tk)
+
+            def f():
+                return (_rp_head("fin", "افزایش موجودی (خرید شاهی)") + f"🔍 فاکتور: <code>{code}</code> • {_h(r[4])}\n"
+                        f"➕ مقدار: {_rp_t(tk)} شاهی\n💵 مبلغ پرداختی: {_rp_n(r[2])} تومان\n" + _rp_user(r[0])
+                        + f"\n🪙 موجودی فعلی: {_rp_bal(r[0])} شاهی" + _rp_time())
+            report("fin", f)
+    except Exception:
+        logging.exception("rep_ev_invoice_paid")
+
+
+def rep_ev_receipt(code, uid, from_chat, mid, media=True, txt=""):
+    """رسید + اطلاعات در یک پیام (عکس/فایل با کپشن)؛ برای رسید متنی (هش ارزی) متن گزارش شامل هش است"""
+    rep_count("rcp_new")
+
+    def info():
+        with get_db() as c:
+            r = c.execute("SELECT product_name, final_amount, method FROM invoices WHERE code=?", (code,)).fetchone()
+        if not r:
+            return None
+        return (_rp_head("rcp", "رسید جدید دریافت شد") + f"🔍 کد فاکتور: <code>{code}</code>\n📦 محصول: {_h(r[0])}\n💵 مبلغ فاکتور: {_rp_n(r[1])} تومان\n"
+                f"💳 روش: {_h(METHOD_LABELS.get(r[2], r[2] or '—'))}\n" + _rp_user(uid)
+                + ("" if media else f"\n🔗 هش/متن رسید: <code>{_h(txt)[:300]}</code>")
+                + "\n⏳ وضعیت: در انتظار بررسی ادمین" + _rp_time("زمان دریافت"))
+    if media:
+        report_copy("rcp", from_chat, mid, info, key=f"rcp:{code}")
+    else:
+        report("rcp", info, key=f"rcp:{code}")
+
+
+def rep_ev_receipt_result(code, ok, admin_name):
+    rep_count("rcp_ok" if ok else "rcp_no")
+
+    def b():
+        with get_db() as c:
+            r = c.execute("SELECT buyer_id, product_name, final_amount FROM invoices WHERE code=?", (code,)).fetchone()
+        if not r:
+            return None
+        return (_rp_head("rcp", "رسید تأیید شد ✅" if ok else "رسید رد شد ❌") + f"🔍 کد فاکتور: <code>{code}</code>\n📦 {_h(r[1])}\n💵 {_rp_n(r[2])} تومان\n"
+                + _rp_user(r[0]) + f"\n👮 توسط: {_h(admin_name)}" + _rp_time("زمان بررسی"))
+    report("rcp", b, reply=f"rcp:{code}")
+
+
+def rep_ev_gateway(code):
+    def b():
+        with get_db() as c:
+            r = c.execute("SELECT buyer_id, product_name, final_amount, ref FROM invoices WHERE code=?", (code,)).fetchone()
+        if not r:
+            return None
+        return (_rp_head("rcp", "پرداخت آنلاین موفق ✅") + f"🔍 کد فاکتور: <code>{code}</code>\n📦 {_h(r[1])}\n💵 {_rp_n(r[2])} تومان\n"
+                f"🔖 شناسه تراکنش: <code>{_h(r[3] or '—')}</code>\n" + _rp_user(r[0]) + _rp_time("زمان پرداخت"))
+    report("rcp", b)
+
+
+def rep_ev_admin_balance(admin_id, uid, kind, n, old_bal):
+    rep_count("adm_add" if kind == "uadd" else "adm_sub", n if kind != "uset" else 0)
+
+    def b():
+        title = {"uadd": "افزایش موجودی توسط مدیر", "usub": "کاهش موجودی توسط مدیر", "uset": "تنظیم موجودی توسط مدیر"}[kind]
+        sign = {"uadd": "➕", "usub": "➖", "uset": "🟰"}[kind]
+        return (_rp_head("fin", title) + f"{sign} مقدار: {_rp_t(n)} شاهی\n" + _rp_user(uid)
+                + f"\n🪙 موجودی قبل: {_rp_t(old_bal)} ← بعد: {_rp_bal(uid)} شاهی\n" + _rp_user(admin_id, "👮 مدیر") + _rp_time())
+    report("fin", b)
+
+
+def rep_ev_mass(admin_id, mode, amt, n_users):
+    rep_count("adm_add" if mode == "add" else "adm_sub", amt * n_users)
+    report("fin", lambda: (_rp_head("fin", "شارژ همگانی" if mode == "add" else "کسر همگانی")
+                           + f"{'➕' if mode == 'add' else '➖'} مقدار برای هر کاربر: {_rp_t(amt)} شاهی\n👥 تعداد کاربران: {_rp_n(n_users)}\n"
+                           + f"💎 مجموع: {_rp_t(amt * n_users)} شاهی\n" + _rp_user(admin_id, "👮 مدیر") + _rp_time()))
+
+
+def rep_ev_refund(admin_id, uid, code, amt, note=None):
+    rep_count("adm_add", amt)
+    report("fin", lambda: (_rp_head("fin", "افزایش موجودی (" + (note or "بازگشت هزینه‌ی درخواست JFJ حذف‌شده") + ")") + f"🔍 درخواست: <code>{code}</code>\n"
+                           f"➕ مقدار: {_rp_t(amt)} شاهی\n" + _rp_user(uid) + f"\n🪙 موجودی فعلی: {_rp_bal(uid)} شاهی"
+                           + ("\n" + _rp_user(admin_id, "👮 مدیر") if admin_id else "") + _rp_time()))
+
+
+def rep_ev_ref_new(referrer_id, new_user):
+    rep_count("ref_new")
+    nid = (new_user or {}).get("id")
+
+    def b():
+        total = get_referral_count(referrer_id)
+        return (_rp_head("ref", "زیرمجموعه جدید") + _rp_user(referrer_id, "🧲 معرف") + "\n"
+                + (_rp_user(nid, "🆕 کاربر جدید") + "\n" if nid else "") + f"👥 مجموع زیرمجموعه‌های معرف: {_rp_n(total)}"
+                + f"\n⏳ پاداش بعد از کسب {_rp_t(REFERRAL_ACTIVITY_THRESHOLD)} شاهی توسط زیرمجموعه پرداخت می‌شود." + _rp_time())
+    report("ref", b, key=f"ref:{nid}" if nid else None)
+
+
+def rep_ev_ref_ok(referrer_id, user_id):
+    rep_count("ref_ok")
+    report("ref", lambda: (_rp_head("ref", "قبولی زیرمجموعه ✅ (پاداش معرف پرداخت شد)") + _rp_user(referrer_id, "🧲 معرف") + "\n"
+                           + _rp_user(user_id, "✅ زیرمجموعه") + f"\n🎁 پاداش: {_rp_t(REFERRAL_REWARD)} شاهی\n🪙 موجودی فعلی معرف: {_rp_bal(referrer_id)} شاهی" + _rp_time()),
+           reply=f"ref:{user_id}")
+
+
+def rep_ev_request(code):
+    rep_count("req_new")
+    try:
+        with get_db() as c:
+            r0 = c.execute("SELECT member_count, token_cost FROM requests WHERE tracking_code=?", (code,)).fetchone()
+        if r0:
+            rep_count("req_members", r0[0])
+            rep_count("req_cost", r0[1])
+    except Exception:
+        pass
+
+    def b():
+        with get_db() as c:
+            r = c.execute("SELECT user_id, member_count, token_cost, link, chat_id FROM requests WHERE tracking_code=?", (code,)).fetchone()
+        if not r:
+            return None
+        return (_rp_head("jfj", "درخواست JFJ جدید") + f"🔍 کد پیگیری: <code>{code}</code>\n🔗 لینک: {_h(r[3])}\n"
+                f"🆔 آیدی چت: <code>{r[4] if r[4] else '—'}</code>\n🔢 تعداد ممبر: {_rp_n(r[1])}\n💎 هزینه: {_rp_t(r[2])} شاهی\n"
+                + _rp_user(r[0]) + f"\n🪙 موجودی فعلی: {_rp_bal(r[0])} شاهی" + _rp_time("زمان ثبت"))
+    report("jfj", b, key=f"req:{code}")
+
+
+def rep_ev_request_state(code, state, admin_name=None):
+    rep_count({"completed": "req_done", "removed": "req_removed", "deleted": "req_deleted", "relinked": "req_relinked"}.get(state, "req_x"))
+
+    def b():
+        with get_db() as c:
+            r = c.execute("SELECT user_id, member_count, token_cost, link FROM requests WHERE tracking_code=?", (code,)).fetchone()
+        if not r:
+            return None
+        done = get_join_count(code)
+        title, extra = {
+            "completed": ("درخواست JFJ تکمیل شد ✅", ""),
+            "removed": ("ربات از کانال/گروه عزل شد ⛔", "\n📌 وضعیت: «ربات عزل شد» (هزینه برگشت داده نشد)"),
+            "deleted": ("درخواست توسط مدیریت حذف شد 🗑", f"\n👮 توسط: {_h(admin_name or 'مدیر')}"),
+            "relinked": ("لینک کانال/گروه تغییر کرد؛ درخواست کنسل شد 🔗", f"\n📌 {_h(admin_name or '')}"),
+        }[state]
+        return (_rp_head("jfj", title) + f"🔍 کد پیگیری: <code>{code}</code>\n🔗 {_h(r[3])}\n👥 پیشرفت: {_rp_n(done)} از {_rp_n(r[1])}\n"
+                + _rp_user(r[0]) + extra + _rp_time())
+    report("jfj", b, reply=f"req:{code}")
+
+
+def _rp_sub_lines(sid):
+    r = sub_row(sid)
+    if not r:
+        return None, ""
+    _, uid, inv, hours, status, started, ends, ckind, lkind, cref, invite = r
+    st = _SUB_ST.get(sub_state(status, ends), status)
+    lines = (f"🆔 اشتراک: <code>{sid}</code> • فاکتور: <code>{_h(inv or '—')}</code>\n⏳ مدت: {_rp_t(hours)} ساعت\n📌 وضعیت: {st}\n"
+             f"📢 نوع: {'عمومی' if ckind == 'public' else 'خصوصی'} • آیدی: {_h(cref or '—')}\n")
+    if invite:
+        lines += f"🔗 لینک: {_h(invite)}\n"
+    if ends:
+        lines += f"⏰ پایان: {_h(_fa_dt(ends))}\n"
+    return uid, lines
+
+
+def rep_ev_sponsor_new(sid, code):
+    def b():
+        uid, lines = _rp_sub_lines(sid)
+        if not uid:
+            return None
+        return (_rp_head("spn", "اشتراک اسپانسری جدید (منتظر فعال‌سازی)") + lines + _rp_user(uid) + _rp_time("زمان ثبت"))
+    report("spn", b, key=f"sub:{sid}", reply=f"spi:{code}")
+
+
+def rep_ev_sponsor(kind, sid, detail="", admin_id=None):
+    """kind: act / ah / sh / can / del"""
+    title = {"act": "اسپانسری فعال شد ✅", "ah": "افزودن ساعت به اسپانسری ➕", "sh": "کسر ساعت از اسپانسری ➖",
+             "can": "اشتراک اسپانسری لغو شد ⛔", "del": "اشتراک اسپانسری حذف شد 🗑"}[kind]
+    snap = {}
+    try:
+        uid, lines = _rp_sub_lines(sid)
+        snap = {"uid": uid, "lines": lines}
+    except Exception:
+        pass
+
+    def b():
+        if not snap.get("uid"):
+            return None
+        if kind in ("del",):
+            lines = snap["lines"]
+        else:
+            uid2, lines = _rp_sub_lines(sid)
+            lines = lines or snap["lines"]
+        return (_rp_head("spn", title) + lines + (f"📝 {_h(detail)}\n" if detail else "") + _rp_user(snap["uid"])
+                + ("\n" + _rp_user(admin_id, "👮 مدیر") if admin_id else "") + _rp_time())
+    report("spn", b, reply=f"sub:{sid}")
+
+
+def rep_ev_leave(user_id, owner_id, code, link, penalty, refund):
+    rep_count("leaves")
+
+    def b():
+        return (_rp_head("lft", "لفت کاربر") + f"🔍 سفارش: <code>{code}</code>\n🔗 کانال/گروه: {_h(link)}\n"
+                + _rp_user(user_id, "🚪 لفت‌دهنده") + f"\n⛔ جریمه: {_rp_t(penalty)} شاهی • موجودی فعلی: {_rp_bal(user_id)}\n"
+                + _rp_user(owner_id, "👑 صاحب سفارش") + f"\n🔔 بازگشت به صاحب: {_rp_t(refund)} شاهی • موجودی فعلی: {_rp_bal(owner_id)}" + _rp_time("زمان لفت"))
+    report("lft", b)
+
+
+def rep_ev_transfer(sender_id, recipient_id, amount):
+    rep_count("xfr_n")
+    rep_count("xfr_sum", amount)
+    report("xfr", lambda: (_rp_head("xfr", "انتقال شاهی") + f"💎 مقدار: {_rp_t(amount)} شاهی\n" + _rp_user(sender_id, "📤 فرستنده")
+                           + f"\n🪙 موجودی فعلی فرستنده: {_rp_bal(sender_id)}\n" + _rp_user(recipient_id, "📥 گیرنده")
+                           + f"\n🪙 موجودی فعلی گیرنده: {_rp_bal(recipient_id)}" + _rp_time("زمان انتقال")))
+
+
+
+XPAGES["rep"] = render_report
+
+
 # ===================== اجرا =====================
 def main():
     global BOT_USERNAME, BOT_ID
@@ -6203,6 +7310,8 @@ def main():
     threading.Thread(target=invoice_watcher, daemon=True).start()
     threading.Thread(target=bc_worker, daemon=True).start()
     threading.Thread(target=request_sweeper, daemon=True).start()
+    threading.Thread(target=rep_worker, daemon=True).start()
+    threading.Thread(target=rep_scheduler, daemon=True).start()
     offset = 0
     pool = ThreadPoolExecutor(max_workers=8)
     fails = 0
