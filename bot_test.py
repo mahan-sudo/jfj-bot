@@ -128,6 +128,8 @@ def kb_sig(uid):
 def main_menu(user_id):
     mu = miniapp_url()
     buy_row = [btn(BTN_BUY_JTOKEN, SUCCESS), btn(BTN_BUY_SERVICES, SUCCESS)]
+    if mu and "mi" in sections_off() and not is_admin(user_id):
+        mu = None
     if mu:  # دکمه‌ی مینی‌اپ دقیقاً بین «خرید شاهی» و «خرید ممبر و سین»
         buy_row.insert(1, {"text": BTN_MINIAPP, "web_app": {"url": mu + ("&" if "?" in mu else "?") + f"kb={int(user_id)}.{kb_sig(user_id)}"}, "style": SUCCESS})
     rows = [
@@ -1071,7 +1073,8 @@ def account_keyboard():
 
 
 def send_account(chat_id, user_id, first_name):
-    send(chat_id, account_text(user_id, first_name), account_keyboard())
+    kb = account_keyboard() if ("rf" not in sections_off() or is_admin(user_id)) else None
+    send(chat_id, account_text(user_id, first_name), kb)
 
 
 def referral_link(user_id):
@@ -1110,6 +1113,10 @@ def handle_callback(cq):
         uid = cq["from"]["id"]
         clear_state(uid)
         send_main_menu(cq["message"]["chat"]["id"], uid, back=True)
+        return
+    _cbblk = callback_section_blocked(cq["from"]["id"], data)
+    if _cbblk:
+        answer_callback(cq["id"], f"🛑 بخش ({_cbblk}) فعلا غیرفعال میباشد!", show_alert=True)
         return
     if data.startswith("adm_"):
         handle_admin_callback(cq)
@@ -2554,7 +2561,8 @@ def render_general():
         f"📱 احراز شماره‌ی تلفن (برای کارت به کارت): <b>{_onoff(sbool('phone_verify'))}</b>\n"
         f"⏱ کرون ارسال اطلاعیه: <b>{_fmt_dur(cron_sec())}</b> بین هر دو نفر\n"
         f"📛 متن قوانین: {'✏️ سفارشی' if get_setting('rules_text') else '📄 پیش‌فرض'}\n"
-        f"📣 گزارشات ربات: {'🟢 فعال' if rep_ready() else '🔴 تنظیم نشده'}\n\n"
+        f"📣 گزارشات ربات: {'🟢 فعال' if rep_ready() else '🔴 تنظیم نشده'}\n"
+        f"🃏 بازی‌های گروهی: {'🟢 فعال' if get_setting('casino_on', '1') != '0' else '🔴 خاموش'}\n\n"
         "👇 <i>برای تغییر هر مورد، دکمه‌اش را بزنید.</i>"
     )
     kb = _kb(
@@ -2568,6 +2576,7 @@ def render_general():
         [_ab("📛 ویرایش قوانین", "adm_p:g:in:rules", SUCCESS), _ab("♻️ قوانین پیش‌فرض", "adm_p:g:rr", DANGER)],
         [_ab("👁 پیش‌نمایش قوانین", "adm_p:g:rv")],
         [_ab("📣 گزارشات ربات", "adm_p:x:rep", SUCCESS if rep_ready() else DANGER)],
+        [_ab("🃏 بازی‌های گروهی", "adm_p:x:gm", SUCCESS if get_setting("casino_on", "1") != "0" else DANGER)],
     )
     return text, kb
 
@@ -3176,6 +3185,10 @@ def admin_panel_callback(cq):
             if act == "tg":
                 set_setting("bot_enabled", "1" if get_setting("bot_enabled", "1") == "0" else "0")
                 ack("وضعیت ربات تغییر کرد.")
+                return home()
+            if act == "cas":
+                set_setting("casino_on", "1" if get_setting("casino_on", "1") == "0" else "0")
+                ack("وضعیت کازینو تغییر کرد.")
                 return home()
             if act == "rr":
                 with get_db() as c:
@@ -5405,12 +5418,32 @@ def render_chan_bc():
 SECTIONS = [("rj", "درخواست JFJ", BTN_REQUEST_JFJ), ("sj", "شروع JFJ", BTN_START_JFJ),
             ("ac", "حساب من", BTN_MY_ACCOUNT), ("bk", "بانک انتقال", BTN_TRANSFER_BANK),
             ("bt", "خرید شاهی", BTN_BUY_JTOKEN), ("su", "پشتیبانی", BTN_SUPPORT),
-            ("od", "سفارش من", BTN_MY_ORDERS), ("ru", "قوانین", BTN_RULES), ("hp", "راهنما", "/help")]
+            ("od", "سفارش من", BTN_MY_ORDERS), ("ru", "قوانین", BTN_RULES), ("hp", "راهنما", "/help"),
+            ("sv", "خرید ممبر و سین", BTN_BUY_SERVICES), ("mi", "مینی‌اپ", BTN_MINIAPP),
+            ("sp", "اسپانسری", "/sponser"), ("rf", "زیرمجموعه‌گیری", "__rf__")]
 _SEC_BY_BTN = {b: (k, n) for k, n, b in SECTIONS}
 
 
 def sections_off():
     return set(sjson("sec_off", []))
+
+
+# دکمه‌های شیشه‌ای (callback) هر بخش؛ پیشوند → کلید بخش (پرداخت فاکتورهای موجود عمداً مسدود نمی‌شود)
+_CB_SEC = (("sp_pick:", "sp"), ("sps:", "sp"), ("acc_ref", "rf"), ("jt_pick:", "bt"),
+           ("svc_", "sv"), ("react_", "sv"), ("premium", "sv"), ("jfj_join", "sj"), ("jfj_next", "sj"))
+_SEC_NAME = {k: n for k, n, _b in SECTIONS}
+
+
+def callback_section_blocked(uid, data):
+    if is_admin(uid):
+        return None
+    off = sections_off()
+    if not off:
+        return None
+    for pre, k in _CB_SEC:
+        if data.startswith(pre) and k in off:
+            return _SEC_NAME.get(k)
+    return None
 
 
 def render_sections():
@@ -5537,7 +5570,35 @@ def delete_request_admin(code, refund, admin_id=None):
     return True
 
 
-XPAGES = {"mc": render_mass_charge, "bk": render_block_list, "us": render_users, "cb": render_chan_bc, "sec": render_sections, "cron": render_cron, "fj": render_fj, "pay": render_pay, "bon": render_bonus, "disc": render_disc}
+GAME_KEYS = (("s", "🎰 گردونه شانس"), ("d", "🎲 تاس"), ("x", "❌⭕ دوز شاهی"))
+
+
+def game_setting_on(key):
+    return get_setting(f"g_{key}_on", "1") != "0"
+
+
+def render_games():
+    master = get_setting("casino_on", "1") != "0"
+    text = ("🃏 <b>بازی‌های گروهی</b>\n" + LINE + "\n"
+            f"🕹 همه‌ی بازی‌ها: {'🟢 روشن' if master else '🔴 خاموش'}\n"
+            + "\n".join(f"{n}: {'🟢 روشن' if game_setting_on(k) else '🔴 خاموش'}" for k, n in GAME_KEYS) +
+            f"\n💸 انتقال شاهی در گروه: {'🟢 روشن' if game_setting_on('t') else '🔴 خاموش'}"
+            "\n\nℹ️ بازی خاموش اصلاً در گروه پاسخ نمی‌دهد و هیچ پیامی نمی‌فرستد "
+            "(خاموش‌شدن تاس فقط دکمه‌اش را از منوی کازینو برمی‌دارد). "
+            "میزهایی که هم‌اکنون در جریان‌اند تا پایان بازی می‌شوند تا شاهیِ کسی نسوزد."
+            "\n\n👇 <i>برای تغییر، روی هر مورد بزنید.</i>")
+    rows = [[_ab(("🔴 خاموش کردن همه‌ی بازی‌ها" if master else "🟢 روشن کردن همه‌ی بازی‌ها"), "adm_p:x:gmt:all",
+                 DANGER if master else SUCCESS)]]
+    for k, n in GAME_KEYS:
+        on = game_setting_on(k)
+        rows.append([_ab(("🟢 " if on else "🔴 ") + n, f"adm_p:x:gmt:{k}", SUCCESS if on else DANGER)])
+    _t_on = game_setting_on("t")
+    rows.append([_ab(("🟢 " if _t_on else "🔴 ") + "💸 انتقال شاهی در گروه", "adm_p:x:gmt:t", SUCCESS if _t_on else DANGER)])
+    rows.append([_ab("🔙 تنظیمات عمومی", "adm_p:g:home")])
+    return text, _kb(*rows)
+
+
+XPAGES = {"gm": render_games, "mc": render_mass_charge, "bk": render_block_list, "us": render_users, "cb": render_chan_bc, "sec": render_sections, "cron": render_cron, "fj": render_fj, "pay": render_pay, "bon": render_bonus, "disc": render_disc}
 
 
 # =====================================================================
@@ -5812,6 +5873,12 @@ def v2_admin_callback(cq):
                 ack()
                 set_state(admin_id, "admin_panel")
                 return page(act) or True
+            if act == "gmt":
+                key = "casino_on" if args[0] == "all" else f"g_{args[0]}_on"
+                if args[0] == "all" or args[0] in ("s", "d", "x", "t"):
+                    set_setting(key, "1" if get_setting(key, "1") == "0" else "0")
+                ack("انجام شد.")
+                return page("gm") or True
             if act == "sect":
                 off = sections_off()
                 off.symmetric_difference_update({args[0]})
@@ -6269,6 +6336,49 @@ def release_update(update_id):
         c.execute("DELETE FROM processed_updates WHERE update_id = ?", (update_id,))
 
 
+class _GlobalsProxy:
+    """دسترسی games.py به توابع/متغیرهای همین فایل؛ مستقل از اینکه فایل چطور اجرا شده باشد
+    (python bot_test.py، import، یا اجرا از طریق runpy/لانچر) و همیشه آخرین مقدار را می‌خواند"""
+
+    def __getattr__(self, name):
+        try:
+            return globals()[name]
+        except KeyError:
+            raise AttributeError(name)
+
+
+GAMES = None  # ماژول games (اگر لود شود)
+
+
+def _games_dispatch(update_id, message=None, callback=None):
+    """پیام/کال‌بک گروه را به games.py می‌دهد؛ هر خطایی اینجا مهار می‌شود تا بقیه‌ی ربات سالم بماند"""
+    if GAMES is None:
+        return
+    try:
+        if callback is not None:
+            if not str(callback.get("data", "")).startswith("g:"):
+                return
+            uid = callback["from"]["id"]
+        else:
+            uid = message["from"]["id"]
+            if not GAMES.relevant(message):
+                return      # پیام عادی گروه: بدون قفل و بدون دیتابیس رد می‌شود
+        lock = user_lock(uid)
+        if not lock.acquire(timeout=10):
+            return
+        try:
+            if not claim_update(update_id):
+                return
+            if callback is not None:
+                GAMES.on_callback(callback)
+            else:
+                GAMES.on_group_message(message)
+        finally:
+            lock.release()
+    except Exception:
+        logging.exception("games dispatch")
+
+
 def handle_update(update):
     update_id = update["update_id"]
     message = update.get("message")
@@ -6284,10 +6394,12 @@ def handle_update(update):
     else:
         return
 
-    # گروه/سوپرگروه/کانال: فعلاً هیچ واکنشی ندارد (خام)
+    # گروه/سوپرگروه/کانال: فقط بخش بازی‌ها (کازینو شاهنشاهی)؛ بقیه‌ی پیام‌های گروه نادیده گرفته می‌شود
     if message and message["chat"].get("type") != "private":
+        _games_dispatch(update_id, message=message)
         return
     if callback and (callback.get("message") or {}).get("chat", {}).get("type", "private") != "private":
+        _games_dispatch(update_id, callback=callback)
         return
 
     lock = user_lock(user_id)
@@ -7312,6 +7424,15 @@ def main():
     threading.Thread(target=request_sweeper, daemon=True).start()
     threading.Thread(target=rep_worker, daemon=True).start()
     threading.Thread(target=rep_scheduler, daemon=True).start()
+    global GAMES
+    try:
+        import games as _games
+        _games.init(_GlobalsProxy())
+        _games.start()
+        GAMES = _games
+        logging.info("🃏 بخش بازی‌ها (games.py) فعال شد")
+    except Exception:
+        logging.exception("games.py لود نشد؛ ربات بدون بخش بازی ادامه می‌دهد")
     offset = 0
     pool = ThreadPoolExecutor(max_workers=8)
     fails = 0
