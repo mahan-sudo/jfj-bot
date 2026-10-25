@@ -28,6 +28,7 @@ TRIGGER_XO = "دوز"
 XO_MIN_STAKE = 2
 XFER_SEC = 60                 # فرصت تأیید انتقال
 XFER_WORD = "انتقال"
+LB_WORD = "لیدربرد"
 PROF_SELF = ("پروفایل", "شاهیام", "شاهی ام")          # پروفایل خودم
 PROF_OTHER = ("پروفایلش", "شاهیاش", "شاهی اش")        # فقط با ریپلای روی کاربر
 XO_SEC = 150                  # کل زمان بازی دوز؛ بعد از آن بازیکنِ نوبت‌دار بازنده است
@@ -760,7 +761,7 @@ def relevant(m):
     t = _norm(m.get("text") or "")
     if not t:
         return False
-    if t == TRIGGER or t.lower() in TRIGGERS_XO or t.startswith(XFER_WORD) or t in PROF_SELF or t in PROF_OTHER:
+    if t == TRIGGER or t.lower() in TRIGGERS_XO or t.startswith(XFER_WORD) or t in PROF_SELF or t in PROF_OTHER or t == LB_WORD:
         return True
     return bool(rp and (rp.get("from") or {}).get("id") == B.BOT_ID)
 
@@ -777,6 +778,8 @@ def on_group_message(m):
     if not text:
         return
     nt = _norm(text)
+    if nt == LB_WORD:
+        return _on_lb(m, u)
     if nt in PROF_SELF or nt in PROF_OTHER:
         return _on_profile(m, u, nt in PROF_OTHER)
     if nt == XFER_WORD or nt.startswith(XFER_WORD + " "):
@@ -1160,6 +1163,128 @@ def _on_profile(m, u, other):
     _tgh("sendMessage", text=text, **base)
 
 
+# ---------------- 🏆 لیدربرد جهانی ----------------
+LB_FIRST = 5          # صفحه‌ی اول فقط ۵ نفر
+LB_PER_PAGE = 10      # صفحه‌های بعدی ۱۰ نفر
+LB_MAX = 100          # حداکثر نفرات لیست
+LB_TITLES = ["پادشاه شاهنشاهی", "قهرمان شاهنشاهی", "وزیراعظم شاهنشاهی", "وزیر شاهنشاهی", "ارشد شاهنشاهی"]
+LB_MEDALS = ["🥇", "🥈", "🥉", "🏅", "🎖"]
+LB_EMOJIS = ["🍟", "🍿", "🍱", "🍩", "🍭", "🌽", "🥨", "🥐", "🍔", "🍺", "🍷", "🧸", "🔥", "☃️", "⛄️"]
+LB_KINDS = {
+    "t": {"btn": "شاهی 💎", "desc": "💎 لیدربرد شاهی ها › ثروتمند ترین های شاهنشاهی با بیشترین شاهی"},
+    "r": {"btn": "زیرمجموعه‌گیری 💟", "desc": "👥️ لیدربرد زیرمجموعه‌گیری › پر سر و صدا ترین های شاهنشاهی با بیشترین دعوت"},
+    "q": {"btn": "درخواست JFJ 👑", "desc": "📋 لیدربرد درخواست JFJ › بهترین های شاهنشاهی با بیشترین درخواست"},
+    "j": {"btn": "شروع JFJ 🏆", "desc": "🏁 لیدربرد شروع JFJ › فعالترین های شاهنشاهی با بیشترین جفج"},
+}
+# هر نوع: (کوئری لیست، کوئری ارزش یک کاربر، کوئری تعداد افراد با ارزش بیشتر) ؛ کاربران مسدود در لیست نمی‌آیند
+_LB_SQL = {
+    "t": ("SELECT id AS uid, first_name, tokens AS v FROM users WHERE COALESCE(banned,0)=0 "
+          "ORDER BY tokens DESC, id LIMIT ?",
+          "SELECT tokens AS v FROM users WHERE id=?",
+          "SELECT COUNT(*) AS n FROM users WHERE COALESCE(banned,0)=0 AND tokens > ?"),
+    "r": ("SELECT u.id AS uid, u.first_name, COUNT(*) AS v FROM users u JOIN users r ON r.referred_by=u.id "
+          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id ORDER BY v DESC, u.id LIMIT ?",
+          "SELECT COUNT(*) AS v FROM users WHERE referred_by=?",
+          "SELECT COUNT(*) AS n FROM (SELECT u.id, COUNT(*) AS c FROM users u JOIN users r ON r.referred_by=u.id "
+          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id) WHERE c > ?"),
+    "q": ("SELECT u.id AS uid, u.first_name, COUNT(*) AS v FROM users u JOIN requests q ON q.user_id=u.id "
+          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id ORDER BY v DESC, u.id LIMIT ?",
+          "SELECT COUNT(*) AS v FROM requests WHERE user_id=?",
+          "SELECT COUNT(*) AS n FROM (SELECT u.id, COUNT(*) AS c FROM users u JOIN requests q ON q.user_id=u.id "
+          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id) WHERE c > ?"),
+    "j": ("SELECT u.id AS uid, u.first_name, COUNT(*) AS v FROM users u JOIN joins j ON j.user_id=u.id "
+          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id ORDER BY v DESC, u.id LIMIT ?",
+          "SELECT COUNT(*) AS v FROM joins WHERE user_id=?",
+          "SELECT COUNT(*) AS n FROM (SELECT u.id, COUNT(*) AS c FROM users u JOIN joins j ON j.user_id=u.id "
+          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id) WHERE c > ?"),
+}
+_LB_LAST = {}
+
+
+def _lb_menu_text():
+    return ("🏆 لیدربرد جهانی شاهنشاهی 👑\n\n🔻 لطفا نوع لیدربرد را انتخاب کنید 🔍\n\n"
+            + "\n".join(LB_KINDS[k]["desc"] for k in ("t", "r", "q", "j")))
+
+
+def _lb_menu_kb(owner):
+    b = lambda k: _btn(LB_KINDS[k]["btn"], f"g:lb:{owner}:{k}:0")
+    return _kb([b("t"), b("r")], [b("q"), b("j")])
+
+
+def _lb_pages(n):
+    return 1 + (max(n - LB_FIRST, 0) + LB_PER_PAGE - 1) // LB_PER_PAGE
+
+
+def _lb_value_line(kind, v):
+    if kind == "t":
+        return f"💎 موجودی ›› {_t(v)} شاهی"
+    if kind == "r":
+        return f"👥️ زیرمجموعه ها ›› {_n(v)} دعوت"
+    if kind == "q":
+        return f"📋 درخواست ها ›› {_n(v)} درخواست"
+    return f"🏁 جفج ›› {_n(v)} جفج رفته"
+
+
+def _lb_view(kind, page, viewer):
+    rows = _rows(_LB_SQL[kind][0], (LB_MAX,))
+    pages = _lb_pages(len(rows))
+    page = max(0, min(page, pages - 1))
+    lo = 0 if page == 0 else LB_FIRST + (page - 1) * LB_PER_PAGE
+    hi = LB_FIRST if page == 0 else lo + LB_PER_PAGE
+    blocks = []
+    for i in range(lo, min(hi, len(rows))):
+        r = rows[i]
+        who = f"{_mention(r['uid'], _name({'first_name': r['first_name']}))} {random.choice(LB_EMOJIS)}"
+        head = (f"{LB_MEDALS[i]} {LB_TITLES[i]} › {who}" if i < len(LB_TITLES)
+                else f"🔹 رتبه {_n(i + 1)} › {who}")
+        blocks.append(f"{head}\n{_lb_value_line(kind, r['v'])}")
+    txt = f"🏆 لیدربرد جهانی شاهنشاهی 👑\n\n{LB_KINDS[kind]['desc']}\n\n"
+    txt += "\n\n".join(blocks) if blocks else "🔻 هنوز کاربری در این لیدربرد ثبت نشده است."
+    me = _row(_LB_SQL[kind][1], (viewer,))
+    if me and B.user_exists(viewer):
+        cnt = _row(_LB_SQL[kind][2], (me["v"] or 0,))
+        txt += f"\n\n🎖️ رتبه شما › {_n((cnt['n'] if cnt else 0) + 1)}ام لیدربرد"
+    nav = []
+    if page > 0:
+        nav.append(_btn("قبلی ◁", f"g:lb:{viewer}:{kind}:{page - 1}"))
+    if page < pages - 1:
+        nav.append(_btn("▷ بعدی", f"g:lb:{viewer}:{kind}:{page + 1}"))
+    kb = _kb(nav, [_btn("بازگشت ◁", f"g:lb:{viewer}:m:0", B.DANGER)])
+    return txt, kb
+
+
+def _on_lb(m, u):
+    now = time.time()
+    if now - _LB_LAST.get(u["id"], 0) < 3:
+        return                      # ضد اسپم: بی‌صدا
+    _LB_LAST[u["id"]] = now
+    base = {"chat_id": m["chat"]["id"], "thread_id": _thread(m)}
+    _send(base, _lb_menu_text(), _lb_menu_kb(u["id"]), reply_to=m["message_id"])
+
+
+def _cb_lb(cq, owner, parts, ans):
+    uid = cq["from"]["id"]
+    if uid != owner:
+        r = _row("SELECT first_name FROM users WHERE id=?", (owner,))
+        return ans(f"🃏 این پنل مخصوص {_name({'first_name': r['first_name'] if r else None})} است. خودتان بنویسید «{LB_WORD}».", True)
+    kind = parts[3] if len(parts) > 3 else "m"
+    try:
+        page = int(parts[4]) if len(parts) > 4 else 0
+    except ValueError:
+        page = 0
+    msg = cq.get("message") or {}
+    if not msg.get("message_id"):
+        return ans()
+    ans()
+    if kind == "m":
+        txt, kb = _lb_menu_text(), _lb_menu_kb(owner)
+    elif kind in LB_KINDS:
+        txt, kb = _lb_view(kind, page, uid)
+    else:
+        return
+    _tgh("editMessageText", chat_id=msg["chat"]["id"], message_id=msg["message_id"], text=txt, reply_markup=kb)
+
+
 # ---------------- کال‌بک‌ها ----------------
 def on_callback(cq):
     data = cq.get("data", "")
@@ -1181,6 +1306,8 @@ def on_callback(cq):
         return ans()
     arg = parts[3] if len(parts) > 3 else None
 
+    if act == "lb":
+        return _cb_lb(cq, tid, parts, ans)
     if act == "jn":
         return _cb_join(cq, tid, ans)
     if act == "pk":
