@@ -1072,8 +1072,9 @@ def _cb_xfer(cq, xid, arg, ans):
         _xfer_edit(x, _xfer_text(x, True))
         try:        # مثل بانک انتقال: به گیرنده در پیوی اطلاع داده می‌شود
             date_str, time_str = B.jalali_now_strings()
-            _say(x["recipient"], f"✅️ مقدار {int(x['amount'])} شاهی از کاربر {x['sender']} دریافت شد.\n"
-                                 f"⏰️ زمان دریافت: {time_str} - {date_str}")
+            _tgh("sendMessage", chat_id=x["recipient"],
+                 text=f"✅️ مقدار {int(x['amount'])} شاهی از کاربر <code>{int(x['sender'])}</code> دریافت شد.\n"
+                      f"⏰️ زمان دریافت: {time_str} - {date_str}")
         except Exception:
             logging.exception("xfer notify")
         try:
@@ -1106,9 +1107,9 @@ def _profile_text(uid, name, tokens):
         return f"برد ›› {_n(r['wins'] if r else 0)} باخت ›› {_n(r['losses'] if r else 0)}"
     return ("👑 پروفایل شاهنشاهی\n\n"
             f"👤 کاربر › {_mention(uid, name)} {random.choice(PLAYER_EMOJIS)}\n"
-            f"\u200f🪪 آیدی عددی ›› {int(uid)}\n\n"
-            f"🏦 شاهی ها ››› {_t(tokens)} 💎\n"
-            f"🎖️ رتبه › {_n(_rank_of(tokens))}\n\n"
+            f"\u200f🪪 آیدی عددی ›› <code>{int(uid)}</code>\n\n"
+            f"🏦 موجودی ››› {_t(tokens)} شاهی 💎\n"
+            f"🎖️ رتبه › {_n(_rank_of(tokens))}ام جدول\n\n"
             "📊 آمار بازی ها\n🃏 کازینو\n"
             f"⤫ 🎲 تاس › {line('d')}\n"
             f"⤫ 🎰 اسلات › {line('s')}\n\n"

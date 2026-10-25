@@ -788,6 +788,14 @@ def _md_to_html(t):
     return "".join(out)
 
 
+# آیدی عددی کاربران در همه‌ی متن‌های ربات به‌صورت Mono (قابل کپی با یک لمس) نمایش داده می‌شود
+_UID_RE = re.compile(r"((?:آیدی|ایدی|آی\u200cدی)\s*عددی\s*[:›：]*\s*|کاربر\s*[:›：]?\s*)(\d{6,15})(?!\d)")
+
+
+def _mono_ids(h):
+    return _UID_RE.sub(lambda m: m.group(1) + "<code>" + m.group(2) + "</code>", h)
+
+
 def _boldify(method, params):
     """همه‌ی متن‌های ربات bold می‌شوند. اگر تلگرام HTML را نپذیرفت، نسخه‌ی اصلی ارسال می‌شود."""
     key = "caption" if method in ("sendPhoto", "sendDocument", "editMessageCaption", "sendVideo") else (
@@ -807,7 +815,7 @@ def _boldify(method, params):
     else:
         return None
     q = dict(params)
-    q[key] = "<b>" + h + "</b>"
+    q[key] = "<b>" + _mono_ids(h) + "</b>"
     q["parse_mode"] = "HTML"
     return q
 
