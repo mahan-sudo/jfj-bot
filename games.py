@@ -1109,7 +1109,7 @@ def _profile_text(uid, name, tokens):
             f"👤 کاربر › {_mention(uid, name)} {random.choice(PLAYER_EMOJIS)}\n"
             f"\u200f🪪 آیدی عددی ›› <code>{int(uid)}</code>\n\n"
             f"🏦 موجودی ››› {_t(tokens)} شاهی 💎\n"
-            f"🎖️ رتبه › {_n(_rank_of(tokens))}ام جدول\n\n"
+            f"🎖️ رتبه › {_n(_rank_of(tokens))}ام لیدربرد\n\n"
             "📊 آمار بازی ها\n🃏 کازینو\n"
             f"⤫ 🎲 تاس › {line('d')}\n"
             f"⤫ 🎰 اسلات › {line('s')}\n\n"
