@@ -13,15 +13,18 @@ import html as _html
 import logging
 import random
 import re
+import json
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 B = None            # ماژول bot_test
 _LK = threading.RLock()   # علاوه بر قفل دیتابیس؛ تراکنش‌های هم‌پردازشی را صف می‌کند
 
 # ---------------- تنظیمات ----------------
-TRIGGER = "کازینو شاهی"          # فقط خودِ همین متن (نه «حاوی» آن)
-TRIGGER_XO = "دوز شاهی"
+TRIGGER = "کازینو"               # فقط خودِ همین متن (نه «حاوی» آن)
+TRIGGERS_XO = ("دوز", "xo")        # هر دو؛ فقط متن دقیق (xo بدون حساسیت به بزرگی حروف)
+TRIGGER_XO = "دوز"
 XO_MIN_STAKE = 2
 XFER_SEC = 60                 # فرصت تأیید انتقال
 XFER_WORD = "انتقال"
@@ -158,6 +161,14 @@ def _parse_num(text):
     return float(t)
 
 
+def _parse_int(text):
+    """مبلغ بازی/انتقال فقط عدد صحیح؛ اعشاری = None (نامعتبر)"""
+    v = _parse_num(text)
+    if v is None or v != int(v):
+        return None
+    return float(int(v))
+
+
 def enabled():
     return B.get_setting("casino_on", "1") != "0"
 
@@ -268,6 +279,12 @@ def init(bot):
             amount REAL NOT NULL, state TEXT NOT NULL, deadline REAL NOT NULL)""")
         c.execute("CREATE TABLE IF NOT EXISTS g_cool (user_id INTEGER PRIMARY KEY, ts REAL NOT NULL)")
         c.execute("CREATE INDEX IF NOT EXISTS g_tables_state ON g_tables(state)")
+        c.execute("CREATE INDEX IF NOT EXISTS g_xfer_st ON g_xfer(state, deadline)")
+        c.execute("CREATE INDEX IF NOT EXISTS g_xfer_snd ON g_xfer(sender, state)")
+        c.execute("""CREATE TABLE IF NOT EXISTS g_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, game TEXT, chat_id INTEGER, tid INTEGER,
+            kind TEXT, stake_total REAL, payout_total REAL, detail TEXT)""")
+        c.execute("CREATE INDEX IF NOT EXISTS g_log_ts ON g_log(ts)")
         for tbl, col, ddl in (("g_tables", "game", "TEXT NOT NULL DEFAULT 's'"), ("g_tables", "mode", "TEXT"),
                               ("g_players", "pick", "TEXT"), ("g_tables", "board", "TEXT"),
                               ("g_tables", "turn", "INTEGER"), ("g_tables", "oemo", "TEXT"), ("g_players", "mid", "INTEGER")):
@@ -306,13 +323,30 @@ def _x(q, args=()):
 
 
 def _purge(tid):
-    """بازیِ تمام‌شده (برد/باخت/مساوی/لغو/منقضی) کاملاً از دیتابیس ربات پاک می‌شود؛ فقط پیام داخل گروه می‌ماند"""
+    """بازیِ تمام‌شده کاملاً از دیتابیس ربات پاک می‌شود؛ فقط پیام داخل گروه می‌ماند.
+    محافظ: بازیکنانِ یک میزِ «فعال» هرگز پاک نمی‌شوند (پول بازیکن‌ها فقط با پایان بازی حذف می‌شود)."""
     try:
         with _Tx() as c:
-            c.execute("DELETE FROM g_players WHERE table_id=?", (tid,))
-            c.execute("DELETE FROM g_tables WHERE id=? AND state IN ('done','cancelled','expired')", (tid,))
+            cur = c.execute("DELETE FROM g_tables WHERE id=? AND state IN ('done','cancelled','expired')", (tid,))
+            if cur.rowcount == 1 or not c.execute("SELECT 1 FROM g_tables WHERE id=?", (tid,)).fetchone():
+                c.execute("DELETE FROM g_players WHERE table_id=?", (tid,))
     except Exception:
         logging.exception("games purge")
+    with _ELK_G:
+        _ELK.pop(tid, None)
+
+
+# ---- قفل ویرایش هر میز: ویرایش‌ها پشت‌سرهم و همیشه با «آخرین وضعیت» انجام می‌شوند ----
+_ELK = {}
+_ELK_G = threading.Lock()
+
+
+def _elock(tid):
+    with _ELK_G:
+        lk = _ELK.get(tid)
+        if lk is None:
+            lk = _ELK[tid] = threading.RLock()
+        return lk
 
 
 def _table(tid):
@@ -344,12 +378,24 @@ def _active_table_of(uid):
 
 
 def _pay_in(c, uid, amount):
-    c.execute("UPDATE users SET tokens = tokens + ? WHERE id=?", (amount, uid))
+    cur = c.execute("UPDATE users SET tokens = ROUND(tokens + ?, 2) WHERE id=?", (amount, uid))
+    if cur.rowcount != 1:
+        logging.error("games: payout to missing user %s amount %s", uid, amount)
+    return cur.rowcount == 1
 
 
 def _charge_in(c, uid, amount):
-    cur = c.execute("UPDATE users SET tokens = tokens - ? WHERE id=? AND tokens >= ?", (amount, uid, amount))
+    cur = c.execute("UPDATE users SET tokens = ROUND(tokens - ?, 2) WHERE id=? AND ROUND(tokens, 2) >= ROUND(?, 2)",
+                    (amount, uid, amount))
     return cur.rowcount == 1
+
+
+def _log_in(c, t, ps, kind):
+    """دفتر مالی فشرده (۳۰ روز نگهداری) برای رسیدگی به اعتراض‌ها و گزارش شبانه"""
+    det = [[p["user_id"], p.get("name"), p.get("stake"), p.get("payout") or 0.0, int(bool(p.get("sent")))] for p in ps]
+    c.execute("INSERT INTO g_log (ts, game, chat_id, tid, kind, stake_total, payout_total, detail) VALUES (?,?,?,?,?,?,?,?)",
+              (time.time(), t["game"], t["chat_id"], t["id"], kind, round(sum(p["stake"] or 0 for p in ps), 2),
+               round(sum(p.get("payout") or 0 for p in ps), 2), json.dumps(det, ensure_ascii=False)))
 
 
 # ---------------- ارسال/ویرایش ----------------
@@ -380,14 +426,71 @@ def _send(t, text, kb=None, reply_to=None):
     return _tgh("sendMessage", **p)
 
 
+def _retry_after(r):
+    ra = (r.get("parameters") or {}).get("retry_after")
+    if ra:
+        return float(ra)
+    m_ = re.search(r"retry after (\d+)", str(r.get("description", "")), re.I)
+    return float(m_.group(1)) if m_ else None
+
+
 def _edit(t, text, kb=None):
+    """ویرایش همان پیام (بدون ارسال پیام جدید). خطای شبکه/فشار تلگرام → چند بار تلاش مجدد.
+    ویرایش‌های یک میز پشت‌سرهم (با قفل) انجام می‌شوند."""
     if not t.get("msg_id"):
         return
     p = {"chat_id": t["chat_id"], "message_id": t["msg_id"], "text": text,
          "reply_markup": kb or {"inline_keyboard": []}}
-    r = _tgh("editMessageText", **p)
-    if not r.get("ok") and "not modified" not in str(r.get("description", "")):
-        logging.warning("games edit failed: %s", r)
+    with _elock(t["id"]):
+        for attempt in range(4):
+            r = _tgh("editMessageText", **p)
+            d = str(r.get("description", ""))
+            if r.get("ok") or "not modified" in d:
+                return
+            flood = "Too Many Requests" in d or _retry_after(r) is not None
+            if d.startswith("Bad Request") and not flood:
+                logging.warning("games edit failed: %s", r)       # خطای دائمی (پیام حذف شده و…)؛ تلاش مجدد بی‌فایده است
+                return
+            if attempt < 3:
+                time.sleep(min(_retry_after(r) or 1.5 * (attempt + 1), 10) + 0.3)
+        logging.warning("games edit failed after retries: %s", r)
+
+
+def _render(tid):
+    """وضعیت «فعلی» میز را از دیتابیس می‌خواند و همان‌جا (زیر قفل) در همان پیام ویرایش می‌کند"""
+    with _elock(tid):
+        t = _table(tid)
+        if not t:
+            return
+        st = t["state"]
+        if st == "play":
+            txt, kb = _xo_view(t, _players(tid))
+        elif st == "send":
+            txt, kb = _send_view(t, _players(tid))
+        elif st == "join":
+            txt, kb = _join_view(t, _players(tid))
+        elif st == "menu":
+            txt, kb = _menu_text(), _menu_kb(tid)
+        elif st in PRE:
+            txt, kb = _setup_view(t)
+        else:
+            return
+        _edit(t, txt, kb)
+
+
+EXPIRE_NOTE = {"menu": "گردونه", "s": "گردونه", "d": "میز تاس", "x": "میز دوز"}
+
+
+def _expire_note(t):
+    """پنل قبل از شروع بازی منقضی شد: متن میز سر جایش می‌ماند، دکمه‌ها برداشته می‌شود و یک خط انتهای همان پیام اضافه می‌شود"""
+    try:
+        if t["state"] == "menu" or not t.get("game"):
+            body, noun = _menu_text(), EXPIRE_NOTE["menu"]
+        else:
+            body, noun = _setup_view(t)[0], EXPIRE_NOTE.get(t["game"], "میز")
+        _edit(t, f"{body}\n\n🛑 این {noun} دیگر اعتبار ندارد...")
+    except Exception:
+        logging.exception("expire note")
 
 
 def _say(chat_id, text, thread_id=None, reply_to=None):
@@ -637,14 +740,14 @@ def _gate(uid):
 
 def relevant(m):
     """فیلتر سبک پیش از هر قفل/دیتابیس: فقط پیام‌هایی که به بازی‌ها مربوط‌اند"""
+    rp = m.get("reply_to_message")
     if m.get("dice"):
-        return True
+        return bool(rp and (rp.get("from") or {}).get("id") == B.BOT_ID)    # فقط ایموجیِ ریپلای‌شده روی ربات
     t = _norm(m.get("text") or "")
     if not t:
         return False
-    if t in (TRIGGER, TRIGGER_XO) or t.startswith(XFER_WORD):
+    if t == TRIGGER or t.lower() in TRIGGERS_XO or t.startswith(XFER_WORD):
         return True
-    rp = m.get("reply_to_message")
     return bool(rp and (rp.get("from") or {}).get("id") == B.BOT_ID)
 
 
@@ -666,7 +769,7 @@ def on_group_message(m):
         if not casino_games():
             return          # خاموش: بی‌صدا
         return _on_trigger(m, u, "c")
-    if nt == TRIGGER_XO:
+    if nt.lower() in TRIGGERS_XO:
         if not game_on("x"):
             return
         return _on_trigger(m, u, "x")
@@ -710,8 +813,7 @@ def _on_trigger(m, u, kind="c"):
                             "VALUES (?,?,?,?, 'menu', ?, ?)", (chat_id, th, uid, _name(u), now, now))
         tid = cur.lastrowid
     for o in olds:
-        if o.get("msg_id"):
-            B.tg("deleteMessage", _timeout=NET_TIMEOUT, chat_id=chat_id, message_id=o["msg_id"])
+        _expire_note(o)
         _purge(o["id"])
     t = _table(tid)
     if kind == "x":
@@ -734,7 +836,7 @@ def _on_reply_text(m, u, rp, text):
         return
     if not game_on(t0["game"]):
         return
-    val = _parse_num(text)
+    val = _parse_int(text)
     if val is None or val < _min_stake(t0["game"]):
         return
     err = None
@@ -752,9 +854,7 @@ def _on_reply_text(m, u, rp, text):
     if err:
         _say(t["chat_id"], err, t.get("thread_id"), m["message_id"])
         return
-    t = _table(t["id"])
-    txt, kb = _setup_view(t)
-    _edit(t, txt, kb)
+    _render(t["id"])
     B.tg("deleteMessage", _timeout=NET_TIMEOUT, chat_id=t["chat_id"], message_id=m["message_id"])
 
 
@@ -763,39 +863,42 @@ def _is_forward(m):
 
 
 def _on_dice(m, u):
+    """فقط 🎰/🎲 که «در جواب (ریپلای) پنل همین بازی» فرستاده شود و بازی در مرحله‌ی ارسال باشد پذیرفته می‌شود؛
+    هر چیز دیگر بی‌صدا نادیده گرفته می‌شود."""
     d = m["dice"]
     emo = d.get("emoji")
     if emo not in ("🎰", "🎲") or _is_forward(m):
         return
+    rp = m.get("reply_to_message") or {}
+    if (rp.get("from") or {}).get("id") != B.BOT_ID or not rp.get("message_id"):
+        return
     uid = u["id"]
-    reply = None
     pre = _row("SELECT t.id FROM g_tables t JOIN g_players p ON p.table_id=t.id "
-               "WHERE p.user_id=? AND t.state='send' AND t.chat_id=?", (uid, m["chat"]["id"]))
+               "WHERE p.user_id=? AND t.state='send' AND t.chat_id=? AND t.msg_id=?",
+               (uid, m["chat"]["id"], rp["message_id"]))
     if not pre:
-        return          # بیشتر 🎰/🎲‌های گروه به بازی ربطی ندارند؛ بدون قفل نوشتن رد می‌شوند
+        return          # بدون قفل نوشتن رد می‌شود
     with _Tx() as c:
         r = c.execute("SELECT t.* FROM g_tables t JOIN g_players p ON p.table_id=t.id "
-                      "WHERE p.user_id=? AND t.state='send'", (uid,)).fetchone()
-        if not r or r["chat_id"] != m["chat"]["id"] or GAMES[r["game"]]["emoji"] != emo:
+                      "WHERE p.user_id=? AND t.state='send' AND t.id=?", (uid, pre["id"])).fetchone()
+        if not r or r["chat_id"] != m["chat"]["id"] or r["msg_id"] != rp["message_id"] \
+                or GAMES[r["game"]]["emoji"] != emo:
             return
         p = c.execute("SELECT * FROM g_players WHERE table_id=? AND user_id=?", (r["id"], uid)).fetchone()
         mid = m.get("message_id") or 0
         if r.get("msg_id") and mid < r["msg_id"]:
             return      # قبل از ساخت پنل فرستاده شده؛ حساب نمی‌شود
         if p["sent"]:
-            # فقط «اولین» 🎰 حساب می‌شود. اگر به‌خاطر هم‌زمانی، پیام اول دیرتر از دومی پردازش شد
+            # فقط «اولین» ایموجی حساب می‌شود. اگر به‌خاطر هم‌زمانی، پیام اول دیرتر از دومی پردازش شد
             # (message_id کوچک‌تر = زودتر فرستاده شده) و هنوز نتیجه نمایش داده نشده، همان اولی جایگزین می‌شود.
             if (not p["shown"]) and p["mid"] and mid and mid < p["mid"]:
                 c.execute("UPDATE g_players SET value=?, mid=? WHERE table_id=? AND user_id=? AND shown=0",
                           (int(d["value"]), mid, r["id"], uid))
             return
         if r["game"] == "d" and r["maxp"] == 1 and not p["pick"]:
-            reply = "❌ ابتدا از دکمه‌های پنل انتخاب خود را بزنید، سپس تاس بیندازید."
-        else:
-            c.execute("UPDATE g_players SET sent=1, sent_at=?, value=?, mid=? WHERE table_id=? AND user_id=? AND sent=0",
-                      (time.time(), int(d["value"]), mid, r["id"], uid))
-    if reply:
-        _say(m["chat"]["id"], reply, r.get("thread_id"), m["message_id"])
+            return      # تاس تک‌نفره: تا انتخاب با دکمه‌ها ثبت نشده ورودی پذیرفته نمی‌شود (بدون هشدار)
+        c.execute("UPDATE g_players SET sent=1, sent_at=?, value=?, mid=? WHERE table_id=? AND user_id=? AND sent=0",
+                  (time.time(), int(d["value"]), mid, r["id"], uid))
 
 
 # ---------------- 💎 انتقال شاهی در گروه ----------------
@@ -833,8 +936,8 @@ def _xfer_target(m, rest_tokens):
 
 
 def _on_transfer(m, u, nt):
-    if not xfer_on():
-        return              # خاموش: بی‌صدا
+    if not xfer_on() or "bk" in B.sections_off():
+        return              # خاموش (کلید انتقال گروهی یا بخش «بانک انتقال»): بی‌صدا
     uid = u["id"]
     chat_id = m["chat"]["id"]
     th = _thread(m)
@@ -844,7 +947,7 @@ def _on_transfer(m, u, nt):
     if len(toks) >= 2 and toks[1] != "شاهی":
         return              # «انتقال دادم…» و مانند آن یعنی گفتگوی عادی
     rest = toks[2:]
-    amount = _parse_num(rest[0]) if rest else None
+    amount = _parse_int(rest[0]) if rest else None      # فقط عدد صحیح (مثل بانک انتقال)
     target = _xfer_target(m, rest[1:]) if amount is not None else None
     if amount is None or target is None:
         _say(chat_id, XFER_HELP, th, mid)
@@ -863,6 +966,9 @@ def _on_transfer(m, u, nt):
         return
     if to_id == uid:
         _say(chat_id, "🛑 نمی‌توانید به خودتان انتقال دهید!", th, mid)
+        return
+    if B.is_banned(to_id):
+        _say(chat_id, "🛑 این کاربر قابل دریافت شاهی نیست.", th, mid)
         return
     mn = float(getattr(B, "MIN_TRANSFER_AMOUNT", 5))
     if amount < mn:
@@ -935,7 +1041,7 @@ def _cb_xfer(cq, xid, arg, ans):
             if not _charge_in(c, uid, x["amount"]):
                 return ans("🛑 موجودی شما کافی نیست!", True)
             if not c.execute("SELECT 1 FROM users WHERE id=?", (x["recipient"],)).fetchone():
-                c.execute("UPDATE users SET tokens = tokens + ? WHERE id=?", (x["amount"], uid))
+                _pay_in(c, uid, x["amount"])
                 return ans("🛑 کاربر عضو ربات نیست, بهش بگو /start کنه!", True)
             _pay_in(c, x["recipient"], x["amount"])
             c.execute("INSERT INTO transfers (sender_id, recipient_id, amount) VALUES (?,?,?)",
@@ -945,9 +1051,15 @@ def _cb_xfer(cq, xid, arg, ans):
             result = "ok"
     ans()
     if result == "cancel":
-        _xfer_edit(x, "انتقال شاهی لغو شد. ❌")
+        _xfer_edit(x, "🛑 انتقال شاهی لغو شد.")
     else:
         _xfer_edit(x, _xfer_text(x, True))
+        try:        # مثل بانک انتقال: به گیرنده در پیوی اطلاع داده می‌شود
+            date_str, time_str = B.jalali_now_strings()
+            _say(x["recipient"], f"✅️ مقدار {int(x['amount'])} شاهی از کاربر {x['sender']} دریافت شد.\n"
+                                 f"⏰️ زمان دریافت: {time_str} - {date_str}")
+        except Exception:
+            logging.exception("xfer notify")
         try:
             B.rep_ev_transfer(x["sender"], x["recipient"], x["amount"])
         except Exception:
@@ -958,7 +1070,7 @@ def _tick_xfer(now):
     for x in _rows("SELECT * FROM g_xfer WHERE state='pending' AND deadline<=?", (now,)):
         cur = _x("DELETE FROM g_xfer WHERE id=? AND state='pending'", (x["id"],))
         if cur.rowcount == 1:
-            _xfer_edit(x, "انتقال شاهی خودکار لغو شد. ❌")
+            _xfer_edit(x, "🛑 انتقال شاهی خودکار لغو شد.")
 
 
 # ---------------- کال‌بک‌ها ----------------
@@ -1010,20 +1122,20 @@ def on_callback(cq):
             if arg not in ("s", "d") or t["game"] == "x":
                 return ans()
             mp = GAMES[arg]["maxp"]
-            U("UPDATE g_tables SET game=?, state='setup', maxp=CASE WHEN maxp>? THEN NULL ELSE maxp END, touched=? WHERE id=?",
+            U("UPDATE g_tables SET game=?, state='setup', mode=NULL, maxp=CASE WHEN maxp>? THEN NULL ELSE maxp END, touched=? WHERE id=?",
               (arg, mp, now, tid))
         elif act == "menu":
             U("UPDATE g_tables SET state='menu', touched=? WHERE id=?", (now, tid))
         elif act == "stk":
             U("UPDATE g_tables SET state='stake_wait', touched=? WHERE id=?", (now, tid))
         elif act == "np":
-            U("UPDATE g_tables SET state='pick', touched=? WHERE id=?", (now, tid))
+            U("UPDATE g_tables SET state='pick', mode=NULL, touched=? WHERE id=?", (now, tid))
         elif act == "bk":
             U("UPDATE g_tables SET state='setup', touched=? WHERE id=?", (now, tid))
         elif act == "n":
             if arg not in [str(i) for i in range(1, GAMES[t["game"]]["maxp"] + 1)]:
                 return ans()
-            U("UPDATE g_tables SET maxp=?, state='setup', touched=? WHERE id=?", (int(arg), now, tid))
+            U("UPDATE g_tables SET maxp=?, state='setup', mode=NULL, touched=? WHERE id=?", (int(arg), now, tid))
         elif act == "md":
             if arg not in ("max", "min") or t["game"] != "d":
                 return ans()
@@ -1048,11 +1160,7 @@ def on_callback(cq):
     if cancelled:
         _edit(t, "❌ میز لغو شد.")
         return _purge(tid)
-    if t["state"] == "menu":
-        _edit(t, _menu_text(), _menu_kb(tid))
-    else:
-        txt, kb = _setup_view(t)
-        _edit(t, txt, kb)
+    _render(tid)
 
 
 def _make_table_in(c, t, uid):
@@ -1077,17 +1185,7 @@ def _make_table_in(c, t, uid):
 
 
 def _after_make(tid):
-    t = _table(tid)
-    ps = _players(tid)
-    if t["state"] == "play":
-        txt, kb = _xo_view(t, ps)
-        _edit(t, txt, kb)
-    elif t["state"] == "send":
-        txt, kb = _send_view(t, ps)
-        _edit(t, txt, kb)
-    else:
-        txt, kb = _join_view(t, ps)
-        _edit(t, txt, kb)
+    _render(tid)
 
 
 def _cb_join(cq, tid, ans):
@@ -1103,9 +1201,7 @@ def _cb_join(cq, tid, ans):
             return ans("❌ ظرفیت میز تکمیل است.", True)
         if not c.execute("SELECT 1 FROM users WHERE id=?", (uid,)).fetchone():
             return ans(f"👑 ابتدا ربات را استارت کنید: @{B.BOT_USERNAME}", True)
-        left = _cool_left_c(c, uid) if t["game"] != "x" else 0
-        if left > 0:
-            return ans(_cool_msg(left), True)
+        # محدودیت ۲ دقیقه‌ای فقط برای «سازنده‌ی میز» است؛ پیوستن به میز دیگران محدودیتی ندارد
         if _active_in(c, uid):
             return ans("🃏 شما همین الان پشت یک میز دیگر نشسته‌اید!", True)
         if not _charge_in(c, uid, t["stake"]):
@@ -1138,9 +1234,7 @@ def _cb_pick(cq, tid, arg, ans):
             return ans("✅ انتخاب شما قبلاً ثبت شده است.", True)
         c.execute("UPDATE g_players SET pick=? WHERE table_id=? AND user_id=? AND pick IS NULL", (arg, tid, uid))
     ans("✅ ثبت شد! حالا 🎲 را بفرستید.")
-    t = _table(tid)
-    txt, kb = _send_view(t, _players(tid))
-    _edit(t, txt, kb)
+    _render(tid)
 
 
 # ---------------- دوز (نوبتی، اتمیک) ----------------
@@ -1168,6 +1262,7 @@ def _xo_finish_in(c, t, ps, board, winner_uid):
         if p["payout"]:
             _pay_in(c, p["user_id"], p["payout"])
         c.execute("UPDATE g_players SET payout=? WHERE table_id=? AND user_id=?", (p["payout"], t["id"], p["user_id"]))
+    _log_in(c, t, ps, "draw" if winner_uid is None else "win")
     return True
 
 
@@ -1214,8 +1309,7 @@ def _cb_xo(cq, tid, arg, ans):
         _edit(t, _xo_result(t, ps, win, False))
         _purge(tid)
     else:
-        txt, kb = _xo_view(t, ps)
-        _edit(t, txt, kb)
+        _render(tid)
 
 
 def _xo_timeout(tid):
@@ -1285,8 +1379,10 @@ def _settle(tid):
                 _pay_in(c, p["user_id"], p["payout"])
             c.execute("UPDATE g_players SET mult=?, score=?, payout=?, value=? WHERE table_id=? AND user_id=?",
                       (p["mult"], p["score"], p["payout"], p["value"], tid, p["user_id"]))
-            c.execute("INSERT INTO g_cool (user_id, ts) VALUES (?, ?) "
-                      "ON CONFLICT(user_id) DO UPDATE SET ts=excluded.ts", (p["user_id"], now))
+            if p["user_id"] == t["owner"]:      # فقط سازنده‌ی میز محدود می‌شود
+                c.execute("INSERT INTO g_cool (user_id, ts) VALUES (?, ?) "
+                          "ON CONFLICT(user_id) DO UPDATE SET ts=excluded.ts", (p["user_id"], now))
+        _log_in(c, t, ps, "solo" if len(ps) == 1 else ("win" if winners else (note or "burn")))
     txt = _result_text(t, ps, winners, note)
     _edit(t, txt)
     _purge(tid)
@@ -1322,17 +1418,21 @@ def _result_text(t, ps, winners, note):
     return txt.strip()
 
 
-def _cancel_join(tid):
+def _cancel_join(tid, n=1):
     with _Tx() as c:
         cur = c.execute("UPDATE g_tables SET state='cancelled' WHERE id=? AND state='join'", (tid,))
         if cur.rowcount != 1:
             return
         t = c.execute("SELECT * FROM g_tables WHERE id=?", (tid,)).fetchone()
-        for p in c.execute("SELECT * FROM g_players WHERE table_id=?", (tid,)).fetchall():
+        cps = c.execute("SELECT * FROM g_players WHERE table_id=?", (tid,)).fetchall()
+        for p in cps:
             _pay_in(c, p["user_id"], p["stake"])
+            p["payout"] = p["stake"]
+        _log_in(c, t, cps, "cancel")
     g = GAMES[t["game"]]
-    _edit(t, f"{g['short']}\n\n❌ میز بسته شد چون بازیکنی نپیوست.\n"
-             f"💎 {_t(t['stake'])} شاهی به موجودی شما برگشت.")
+    why = "بازیکنی نپیوست" if n <= 1 else "تعداد بازیکنان تکمیل نشد"
+    _edit(t, f"{g['short']}\n\n❌ میز بسته شد چون {why}.\n"
+             f"💎 {_t(t['stake'])} شاهی به موجودی همه‌ی بازیکنان برگشت.")
     _purge(tid)
 
 
@@ -1348,8 +1448,7 @@ def _guard(fn, *a):
 def _tick_pre(t, ph, now):
     cur = _x(f"UPDATE g_tables SET state='expired' WHERE id=? AND state IN ({ph})", (t["id"], *PRE))
     if cur.rowcount == 1:
-        _edit(t, "⌛ این پنل منقضی شد. برای شروع دوباره بنویسید: «"
-              + (TRIGGER_XO if t["game"] == "x" else TRIGGER) + "»")
+        _expire_note(t)
         _purge(t["id"])
 
 
@@ -1357,15 +1456,16 @@ def _tick_join(t, now):
     with _Tx() as c:
         n = c.execute("SELECT COUNT(*) AS n FROM g_players WHERE table_id=?", (t["id"],)).fetchone()["n"]
         moved = False
-        if n >= 2:
+        full = n >= t["maxp"]       # بازی فقط با «همان تعداد انتخاب‌شده» شروع می‌شود، نه کمتر
+        if full:
             cur = c.execute("UPDATE g_tables SET state='send', send_dl=?, touched=? WHERE id=? AND state='join'",
                             (now + SEND_SEC, now, t["id"]))
             moved = cur.rowcount == 1
-    if n >= 2:
+    if full:
         if moved:
             _after_make(t["id"])
     else:
-        _cancel_join(t["id"])
+        _cancel_join(t["id"], n)
 
 
 def _tick_send(t, now):
@@ -1386,35 +1486,106 @@ def _tick_send(t, now):
     if all(p["sent"] and p["shown"] for p in ps) or now >= t["send_dl"]:
         _settle(t["id"])
     elif changed:
-        txt, kb = _send_view(t, ps)
-        _edit(t, txt, kb)
+        _render(t["id"])
 
 
-def _tick():
+_POOL = ThreadPoolExecutor(6, thread_name_prefix="gtick")
+_INFL = set()
+_INFL_L = threading.Lock()
+
+
+def _submit(key, fn, *a):
+    """هر میز هم‌زمان فقط یک کار در حال اجرا دارد؛ میزهای مختلف موازی پردازش می‌شوند (تماس کند تلگرام بقیه را معطل نمی‌کند)"""
+    with _INFL_L:
+        if key in _INFL:
+            return None
+        _INFL.add(key)
+
+    def run():
+        try:
+            _guard(fn, *a)
+        finally:
+            with _INFL_L:
+                _INFL.discard(key)
+    return _POOL.submit(run)
+
+
+_LAST_LOGCLEAN = [0.0]
+LOG_KEEP_SEC = 30 * 86400
+
+
+def _tick(wait=True):
     now = time.time()
     ph = ",".join("?" * len(PRE))
+    futs = []
     for t in _rows(f"SELECT * FROM g_tables WHERE state IN ({ph}) AND touched<?", (*PRE, now - STALE_SEC)):
-        _guard(_tick_pre, t, ph, now)
+        futs.append(_submit(("t", t["id"]), _tick_pre, t, ph, now))
     for t in _rows("SELECT * FROM g_tables WHERE state='play' AND send_dl<=?", (now,)):
-        _guard(_xo_timeout, t["id"])
+        futs.append(_submit(("t", t["id"]), _xo_timeout, t["id"]))
     for t in _rows("SELECT * FROM g_tables WHERE state='join' AND join_dl<=?", (now,)):
-        _guard(_tick_join, t, now)
+        futs.append(_submit(("t", t["id"]), _tick_join, t, now))
     for t in _rows("SELECT * FROM g_tables WHERE state='send'"):
-        _guard(_tick_send, t, now)
+        futs.append(_submit(("t", t["id"]), _tick_send, t, now))
     # نظافت: بازی‌های تمام‌شده‌ی جامانده (مثلاً بعد از کرش) و کول‌داون‌های گذشته
     for t in _rows("SELECT id FROM g_tables WHERE state IN ('done','cancelled','expired')"):
-        _guard(_purge, t["id"])
+        futs.append(_submit(("t", t["id"]), _purge, t["id"]))
     _x("DELETE FROM g_cool WHERE ts<?", (now - COOLDOWN_SEC - 5,))
-    _guard(_tick_xfer, now)
+    futs.append(_submit(("x",), _tick_xfer, now))
+    if now - _LAST_LOGCLEAN[0] > 3600:
+        _LAST_LOGCLEAN[0] = now
+        _x("DELETE FROM g_log WHERE ts<?", (now - LOG_KEEP_SEC,))
+    if wait:
+        for f in futs:
+            if f is not None:
+                f.result()
 
 
 def worker():
     while True:
         try:
-            _tick()
+            _tick(wait=False)
         except Exception:
             logging.exception("games worker")
         time.sleep(1)
+
+
+# ---------------- گزارش شبانه‌ی کازینو ----------------
+def casino_day_block(day):
+    """بخش کازینو برای گزارش شبانه (HTML)؛ رشته‌ی خالی اگر آن روز بازی‌ای نبوده"""
+    from datetime import datetime
+    d0 = datetime.fromisoformat(day).replace(tzinfo=B.ZoneInfo(B.TIMEZONE)).timestamp()
+    rows = _rows("SELECT * FROM g_log WHERE ts>=? AND ts<?", (d0, d0 + 86400))
+    rows = [r for r in rows if r["kind"] != "cancel"]
+    if not rows:
+        return ""
+    names = {"s": "🎰 گردونه", "d": "🎲 تاس", "x": "❌⭕ دوز"}
+    agg, big = {}, None
+    for r in rows:
+        a = agg.setdefault(r["game"], [0, 0.0, 0.0])
+        a[0] += 1
+        a[1] += r["stake_total"] or 0
+        a[2] += r["payout_total"] or 0
+        try:
+            for uid, nm, stk, pay, _sent in json.loads(r["detail"] or "[]"):
+                gain = (pay or 0) - (stk or 0)
+                if big is None or gain > big[0]:
+                    big = (gain, nm, r["game"])
+        except Exception:
+            pass
+    lines = []
+    tot_s = tot_p = 0.0
+    for k in ("s", "d", "x"):
+        if k in agg:
+            n, st, pa = agg[k]
+            tot_s += st
+            tot_p += pa
+            lines.append(f"• {names[k]}: {B._rp_n(n)} بازی • ورودی {B._rp_t(st)} • پرداختی {B._rp_t(pa)}")
+    prof = round(tot_s - tot_p, 2)
+    sign = "سود ربات" if prof >= 0 else "ضرر ربات"
+    txt = "🃏 <b>کازینو</b>\n" + "\n".join(lines) + f"\n• {sign}: {B._rp_t(abs(prof))} شاهی"
+    if big and big[0] > 0:
+        txt += f"\n• بزرگ‌ترین برد: {_html.escape(big[1] or 'کاربر', quote=False)} ({B._rp_t(big[0])} شاهی) در {names.get(big[2], '')}"
+    return txt + "\n\n"
 
 
 def start():

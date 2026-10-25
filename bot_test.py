@@ -6142,7 +6142,7 @@ def v2_admin_callback(cq):
                 if not rep_ready():
                     return ack("ابتدا گروه را ثبت کنید.", True) or True
                 ack("بکاپ در حال ارسال…")
-                threading.Thread(target=rep_send_backup, daemon=True).start()
+                threading.Thread(target=rep_send_backup, args=(chat_id,), daemon=True).start()
                 return True
             if act == "rep_day":
                 if not rep_ready():
@@ -6660,24 +6660,21 @@ def _rep_post(method, topic, **params):
     return r
 
 
-def _rep_upload_doc(topic, filename, data, caption):
-    cid, topics = rep_conf()
-    if not cid or topic in rep_off():
-        return {"ok": False, "description": "off"}
-    tid = topics.get(topic) or rep_make_topic(cid, topic)
-    if not tid:
-        return {"ok": False, "description": "no_topic"}
+def _send_doc(chat_id, thread_id, filename, data, caption, timeout=180):
+    """ارسال فایل با multipart (بدون وابستگی). همیشه dict برمی‌گرداند و exception پرتاب نمی‌کند."""
     boundary = "----jfjrep" + hashlib.md5(os.urandom(8)).hexdigest()
-    fields = {"chat_id": str(cid), "caption": caption[:1000], "parse_mode": "HTML", "message_thread_id": str(tid)}
+    fields = {"chat_id": str(chat_id), "caption": caption[:1000], "parse_mode": "HTML"}
+    if thread_id:
+        fields["message_thread_id"] = str(thread_id)
     body = b""
     for k, v in fields.items():
-        body += f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
+        body += f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode("utf-8")
     body += (f'--{boundary}\r\nContent-Disposition: form-data; name="document"; filename="{filename}"\r\n'
              f'Content-Type: application/octet-stream\r\n\r\n').encode() + data + f"\r\n--{boundary}--\r\n".encode()
     req = urllib.request.Request(f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument", data=body,
                                  headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
     try:
-        with urllib.request.urlopen(req, timeout=180) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
         try:
@@ -6686,6 +6683,16 @@ def _rep_upload_doc(topic, filename, data, caption):
             return {"ok": False, "description": str(e)}
     except Exception as e:
         return {"ok": False, "description": str(e)}
+
+
+def _rep_upload_doc(topic, filename, data, caption):
+    cid, topics = rep_conf()
+    if not cid or topic in rep_off():
+        return {"ok": False, "description": "off"}
+    tid = topics.get(topic) or rep_make_topic(cid, topic)
+    if not tid:
+        return {"ok": False, "description": "no_topic"}
+    return _send_doc(cid, tid, filename, data, caption)
 
 
 def _plain_emoji(s):
@@ -6953,7 +6960,33 @@ def rep_make_backup():
     """(نام فایل، بایت‌ها، تعداد خط) — خروجی .sql؛ اگر بزرگ‌تر از حد تلگرام بود gzip می‌شود"""
     src = get_db()
     try:
-        dump = "\n".join(src.iterdump()).encode("utf-8")
+        try:
+            dump = "\n".join(src.iterdump()).encode("utf-8", "replace")
+        except Exception:
+            logging.exception("iterdump failed; per-table fallback")
+            parts = ["BEGIN TRANSACTION;"]
+            for (nm, ddl) in src.execute("SELECT name, sql FROM sqlite_master WHERE type='table' AND sql IS NOT NULL"):
+                if nm.startswith("sqlite_"):
+                    continue
+                parts.append(ddl + ";")
+                try:
+                    for row in src.execute(f'SELECT * FROM "{nm}"'):
+                        vals = []
+                        for v in row:
+                            if v is None:
+                                vals.append("NULL")
+                            elif isinstance(v, (int, float)):
+                                vals.append(repr(v))
+                            elif isinstance(v, bytes):
+                                vals.append("X'" + v.hex() + "'")
+                            else:
+                                vals.append("'" + str(v).replace("'", "''") + "'")
+                        parts.append(f'INSERT INTO "{nm}" VALUES(' + ",".join(vals) + ");")
+                except Exception:
+                    logging.exception("backup table %s", nm)
+                    parts.append(f"-- table {nm} could not be dumped")
+            parts.append("COMMIT;")
+            dump = "\n".join(parts).encode("utf-8", "replace")
     finally:
         src.close()
     stamp_s = now_local().strftime("%Y%m%d_%H%M")
@@ -6963,34 +6996,77 @@ def rep_make_backup():
     return name, dump, dump.count(b"\n")
 
 
-def rep_send_backup():
-    if "bak" in rep_off():
-        return False
-    name, data, lines = rep_make_backup()
-    users = 0
+_bak_warn = [0.0]
+
+
+def _bak_notify(requester, text, name=None, data=None, cap=None):
+    """نتیجه‌ی بکاپ را به ادمین می‌گوید؛ در صورت شکست، فایل را مستقیم در پیوی ادمین می‌فرستد"""
+    targets = [requester] if requester else list(ADMIN_IDS)
+    for aid in targets:
+        if not requester and time.time() - _bak_warn[0] < 3600:
+            return
+        if name and data:
+            _send_doc(aid, None, name, data, (cap or "") + "\n\n" + text, timeout=120)
+        else:
+            tg("sendMessage", chat_id=aid, text=text)
+    if not requester:
+        _bak_warn[0] = time.time()
+
+
+def rep_send_backup(requester=None):
+    """requester = آیدی ادمینی که دکمه را زده (نتیجه را همان‌جا می‌گیرد)؛ None = بکاپ خودکار.
+    اگر ارسال به تاپیک ممکن نباشد، دلیل دقیق + خودِ فایل بکاپ به پیوی ادمین می‌آید (بی‌صدا شکست نمی‌خورد)."""
+    name = data = cap = None
     try:
-        users = _q1("SELECT COUNT(*) FROM users")
-    except Exception:
-        pass
-    cap = (f"🗃 <b>بکاپ ربات</b>\n━━━━━━━━━━━━━━\n📄 {name}\n💽 حجم: {_rp_n(round(len(data) / 1024, 1))} کیلوبایت\n"
-           f"👥 کاربران: {_rp_n(users)}" + _rp_time("زمان بکاپ"))
-    r = _rep_upload_doc("bak", name, data, cap)
-    if r.get("ok"):
-        set_setting("rep_last_backup", str(time.time()))
-        return True
-    desc = str(r.get("description", ""))
-    if "thread" in desc.lower():
-        cid, _ = rep_conf()
-        if cid and rep_make_topic(cid, "bak"):
-            r = _rep_upload_doc("bak", name, data, cap)
-            if r.get("ok"):
-                set_setting("rep_last_backup", str(time.time()))
-                return True
-    logging.warning("backup send failed: %s", r)
-    return False
+        off = "bak" in rep_off()
+        if off and not requester:
+            return False                       # تاپیک بکاپ عمداً خاموش/حذف شده؛ بکاپ خودکار نمی‌رود
+        name, data, lines = rep_make_backup()
+        users = 0
+        try:
+            users = _q1("SELECT COUNT(*) FROM users")
+        except Exception:
+            pass
+        cap = (f"🗃 <b>بکاپ ربات</b>\n━━━━━━━━━━━━━━\n📄 {name}\n💽 حجم: {_rp_n(round(len(data) / 1024, 1))} کیلوبایت\n"
+               f"👥 کاربران: {_rp_n(users)}" + _rp_time("زمان بکاپ"))
+        if off:
+            _bak_notify(requester, "ℹ️ تاپیک بکاپ حذف/غیرفعال است، برای همین فایل اینجا ارسال شد. "
+                                   "(از «📣 گزارشات ربات» ← بررسی/ساخت تاپیک‌ها دوباره بسازید.)", name, data, cap)
+            return True
+        r = _rep_upload_doc("bak", name, data, cap)
+        if not r.get("ok"):
+            desc = str(r.get("description", ""))
+            if "thread" in desc.lower():
+                cid, _ = rep_conf()
+                if cid and rep_make_topic(cid, "bak"):
+                    r = _rep_upload_doc("bak", name, data, cap)
+        if r.get("ok"):
+            set_setting("rep_last_backup", str(time.time()))
+            if requester:
+                tg("sendMessage", chat_id=requester, text="✅ بکاپ در تاپیک ارسال شد.")
+            return True
+        why = str(r.get("description", r))
+        logging.warning("backup send failed: %s", r)
+        _bak_notify(requester, f"❌ ارسال بکاپ به تاپیک ناموفق بود: {why}\n📎 فایل بکاپ همین‌جا فرستاده شد.", name, data, cap)
+        return False
+    except Exception as e:
+        logging.exception("rep_send_backup")
+        try:
+            _bak_notify(requester, f"❌ خطا در بکاپ: {type(e).__name__}: {e}", name, data, cap)
+        except Exception:
+            pass
+        return False
 
 
 # ---------- گزارش شبانه ----------
+def _rep_casino(day):
+    try:
+        return GAMES.casino_day_block(day) if GAMES else ""
+    except Exception:
+        logging.exception("casino report")
+        return ""
+
+
 def rep_day_text(day, partial=False):
     d0 = datetime.fromisoformat(day)
     s = d0.replace(tzinfo=ZoneInfo(TIMEZONE)).astimezone(timezone.utc)
@@ -7018,7 +7094,8 @@ def rep_day_text(day, partial=False):
         f"🧾 <b>رسیدها</b>\n• دریافت‌شده: {_rp_n(g('rcp_new'))} • تأیید: {_rp_n(g('rcp_ok'))} • رد: {_rp_n(g('rcp_no'))}\n\n"
         f"💸 <b>بانک انتقال</b>\n• تعداد انتقال: {_rp_n(g('xfr_n'))} • مجموع: {_rp_t(g('xfr_sum'))} شاهی\n\n"
         f"💰 <b>مدیریت موجودی</b>\n• افزایش دستی/همگانی: {_rp_t(g('adm_add'))} شاهی • کاهش: {_rp_t(g('adm_sub'))} شاهی\n\n"
-        f"👤 کل کاربران ربات (لحظه‌ی گزارش): {_rp_n(total_users)}"
+        + _rep_casino(day)
+        + f"👤 کل کاربران ربات (لحظه‌ی گزارش): {_rp_n(total_users)}"
         + _rp_time("زمان تهیه گزارش"))
 
 
