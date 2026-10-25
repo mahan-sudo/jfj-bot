@@ -28,9 +28,11 @@ TRIGGER_XO = "دوز"
 XO_MIN_STAKE = 2
 XFER_SEC = 60                 # فرصت تأیید انتقال
 XFER_WORD = "انتقال"
+PROF_SELF = ("پروفایل", "شاهیام", "شاهی ام")          # پروفایل خودم
+PROF_OTHER = ("پروفایلش", "شاهیاش", "شاهی اش")        # فقط با ریپلای روی کاربر
 XO_SEC = 150                  # کل زمان بازی دوز؛ بعد از آن بازیکنِ نوبت‌دار بازنده است
 MIN_STAKE = 5
-MAX_STAKE_DEFAULT = 1000      # سقف مبلغ ورودی؛ کلید تنظیمات casino_max (0 = بدون سقف)
+MAX_STAKE_DEFAULT = 100       # سقف مبلغ ورودی؛ کلید تنظیمات casino_max (0 = بدون سقف)
 JOIN_SEC = 60
 SEND_SEC = 60
 COOLDOWN_SEC = 120
@@ -288,6 +290,9 @@ def init(bot):
             id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, game TEXT, chat_id INTEGER, tid INTEGER,
             kind TEXT, stake_total REAL, payout_total REAL, detail TEXT)""")
         c.execute("CREATE INDEX IF NOT EXISTS g_log_ts ON g_log(ts)")
+        c.execute("""CREATE TABLE IF NOT EXISTS g_stats (
+            user_id INTEGER NOT NULL, game TEXT NOT NULL, wins INTEGER NOT NULL DEFAULT 0,
+            losses INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, game))""")
         for tbl, col, ddl in (("g_tables", "game", "TEXT NOT NULL DEFAULT 's'"), ("g_tables", "mode", "TEXT"),
                               ("g_players", "pick", "TEXT"), ("g_tables", "board", "TEXT"),
                               ("g_tables", "turn", "INTEGER"), ("g_tables", "oemo", "TEXT"), ("g_players", "mid", "INTEGER")):
@@ -399,6 +404,12 @@ def _log_in(c, t, ps, kind):
     c.execute("INSERT INTO g_log (ts, game, chat_id, tid, kind, stake_total, payout_total, detail) VALUES (?,?,?,?,?,?,?,?)",
               (time.time(), t["game"], t["chat_id"], t["id"], kind, round(sum(p["stake"] or 0 for p in ps), 2),
                round(sum(p.get("payout") or 0 for p in ps), 2), json.dumps(det, ensure_ascii=False)))
+    for p in ps:        # آمار دائمی برد/باخت برای پروفایل: سود خالص > 0 = برد ، < 0 = باخت ، صفر = هیچ‌کدام
+        net = round((p.get("payout") or 0) - (p.get("stake") or 0), 2)
+        if net:
+            c.execute("INSERT INTO g_stats (user_id, game, wins, losses) VALUES (?,?,?,?) "
+                      "ON CONFLICT(user_id, game) DO UPDATE SET wins=wins+excluded.wins, losses=losses+excluded.losses",
+                      (p["user_id"], t["game"], 1 if net > 0 else 0, 1 if net < 0 else 0))
 
 
 # ---------------- ارسال/ویرایش ----------------
@@ -749,7 +760,7 @@ def relevant(m):
     t = _norm(m.get("text") or "")
     if not t:
         return False
-    if t == TRIGGER or t.lower() in TRIGGERS_XO or t.startswith(XFER_WORD):
+    if t == TRIGGER or t.lower() in TRIGGERS_XO or t.startswith(XFER_WORD) or t in PROF_SELF or t in PROF_OTHER:
         return True
     return bool(rp and (rp.get("from") or {}).get("id") == B.BOT_ID)
 
@@ -766,6 +777,8 @@ def on_group_message(m):
     if not text:
         return
     nt = _norm(text)
+    if nt in PROF_SELF or nt in PROF_OTHER:
+        return _on_profile(m, u, nt in PROF_OTHER)
     if nt == XFER_WORD or nt.startswith(XFER_WORD + " "):
         return _on_transfer(m, u, nt)
     if nt == TRIGGER:
@@ -849,9 +862,9 @@ def _on_reply_text(m, u, rp, text):
             return
         bal = (c.execute("SELECT tokens FROM users WHERE id=?", (uid,)).fetchone() or {"tokens": 0})["tokens"]
         if _max_stake() and val > _max_stake():
-            err = f"❌ حداکثر مبلغ ورودی {_t(_max_stake())} شاهی است."
+            err = f"🛑 حداکثر مبلغ ورودی {_t(_max_stake())} شاهی است."
         elif bal < val:
-            err = f"❌ موجودی شما کافی نیست! موجودی فعلی: {_t(bal)} شاهی"
+            err = f"🛑 موجودی شما کافی نیست!\nموجودی فعلی ››› {_t(bal)} شاهی"
         if not err:
             c.execute("UPDATE g_tables SET stake=?, state='setup', touched=? WHERE id=?", (val, time.time(), t["id"]))
     if err:
@@ -1008,7 +1021,7 @@ def _xfer_people(x):
 
 def _xfer_text(x, done):
     if done:
-        return (f"💎 رسید انتقال شاهی 👑\n\n🏦 مبلغ انتقال یافته : {_t(x['amount'])} شاهی\n{_xfer_people(x)}\n\n"
+        return (f"💎 رسید انتقال شاهی 👑\n\n🏦 مبلغ انتقال یافته ››› {_t(x['amount'])} شاهی\n{_xfer_people(x)}\n\n"
                 "🎉 با موفقیت انتقال یافت. ✅")
     return (f"💎 انتقال شاهی 👑\n\n🏦 مبلغ درحال انتقال ›› {_t(x['amount'])} شاهی\n{_xfer_people(x)}\n\n"
             "⁉️ آیا از انتقال شاهی هاتون اطمینان دارید؟")
@@ -1074,6 +1087,76 @@ def _tick_xfer(now):
         cur = _x("DELETE FROM g_xfer WHERE id=? AND state='pending'", (x["id"],))
         if cur.rowcount == 1:
             _xfer_edit(x, "🛑 انتقال شاهی خودکار لغو شد.")
+
+
+# ---------------- 👑 پروفایل شاهنشاهی ----------------
+_PROF_LAST = {}
+
+
+def _rank_of(tokens):
+    r = _row("SELECT COUNT(*) AS n FROM users WHERE tokens > ?", (tokens,))
+    return (r["n"] if r else 0) + 1
+
+
+def _profile_text(uid, name, tokens):
+    st = {r["game"]: r for r in _rows("SELECT game, wins, losses FROM g_stats WHERE user_id=?", (uid,))}
+
+    def line(k):
+        r = st.get(k)
+        return f"برد ›› {_n(r['wins'] if r else 0)} باخت ›› {_n(r['losses'] if r else 0)}"
+    return ("👑 پروفایل شاهنشاهی\n\n"
+            f"👤 کاربر › {_mention(uid, name)} {random.choice(PLAYER_EMOJIS)}\n"
+            f"\u200f🪪 آیدی عددی ›› {int(uid)}\n\n"
+            f"🏦 شاهی ها ››› {_t(tokens)} 💎\n"
+            f"🎖️ رتبه › {_n(_rank_of(tokens))}\n\n"
+            "📊 آمار بازی ها\n🃏 کازینو\n"
+            f"⤫ 🎲 تاس › {line('d')}\n"
+            f"⤫ 🎰 اسلات › {line('s')}\n\n"
+            f"⤫🕹 دوز › {line('x')}")
+
+
+def _on_profile(m, u, other):
+    now = time.time()
+    if now - _PROF_LAST.get(u["id"], 0) < 3:
+        return                      # ضد اسپم: بی‌صدا
+    chat_id = m["chat"]["id"]
+    th = _thread(m)
+    mid = m["message_id"]
+    if other:
+        rp = m.get("reply_to_message")
+        if not rp or "forum_topic_created" in rp or not rp.get("from") or rp["from"].get("is_bot"):
+            return                  # «پروفایلش» فقط با ریپلای روی یک کاربر
+        tu = rp["from"]
+    else:
+        tu = u
+    _PROF_LAST[u["id"]] = now
+    row = _row("SELECT tokens FROM users WHERE id=?", (tu["id"],))
+    if not row:
+        if other:
+            _say(chat_id, "🛑 کاربر عضو ربات نیست, بهش بگو /start کنه!", th, mid)
+        else:
+            _say(chat_id, f"👑 ابتدا ربات را استارت کنید: @{B.BOT_USERNAME}", th, mid)
+        return
+    text = _profile_text(tu["id"], _name(tu), row["tokens"])
+    file_id = None
+    try:
+        r = B.tg("getUserProfilePhotos", _timeout=NET_TIMEOUT, user_id=tu["id"], limit=1)
+        photos = (r.get("result") or {}).get("photos") or []
+        if r.get("ok") and photos:
+            file_id = photos[0][-1]["file_id"]
+    except Exception:
+        logging.exception("profile photo")
+    base = {"chat_id": chat_id, "reply_parameters": {"message_id": mid, "allow_sending_without_reply": True}}
+    if th:
+        base["message_thread_id"] = th
+    if file_id:
+        r = B.tg("sendPhoto", _timeout=NET_TIMEOUT, photo=file_id, caption=text, parse_mode="HTML", **base)
+        if r.get("ok"):
+            return
+        r = B.tg("sendPhoto", _timeout=NET_TIMEOUT, photo=file_id, caption=_plain(text), **base)
+        if r.get("ok"):
+            return
+    _tgh("sendMessage", text=text, **base)
 
 
 # ---------------- کال‌بک‌ها ----------------
