@@ -38,8 +38,9 @@ REVEAL_DELAY = 3.6            # صبر برای تمام شدن انیمیشن �
 STALE_SEC = 600
 PLAYER_EMOJIS = "🍟🍿🍱🍩🍭"
 PRE = ("menu", "setup", "stake_wait", "pick", "mode")      # مراحل قبل از ساخت میز (بدون پول)
-DICE_MULT_PAIR = 1.9          # تاس تک‌نفره: زوج/فرد
-DICE_MULT_NUM = 5.5           # تاس تک‌نفره: حدس عدد دقیق
+DICE_MULT_PAIR = 1.5          # تاس تک‌نفره: زوج/فرد
+DICE_MULT_NUM = 1.5           # تاس تک‌نفره: حدس عدد دقیق ۱ تا ۵
+DICE_MULT_SIX = 2.0           # تاس تک‌نفره: حدس عدد ۶ و آمدن ۶
 
 # گردونه: 0=BAR 1=انگور 2=لیمو 3=هفت
 SYM = {0: "ʙᴀʀ", 1: "🍇", 2: "🍋", 3: "7️⃣"}
@@ -103,7 +104,9 @@ def dice_solo_mult(pick, value):
     if pick == "o":
         return DICE_MULT_PAIR if value % 2 == 1 else 0.0
     try:
-        return DICE_MULT_NUM if int(pick) == value else 0.0
+        if int(pick) != value:
+            return 0.0
+        return DICE_MULT_SIX if value == 6 else DICE_MULT_NUM
     except Exception:
         return 0.0
 
