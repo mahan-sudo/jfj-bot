@@ -54,14 +54,35 @@ GAMES = {
     "s": {"emoji": "🎰", "title": "🃏 کازینو گردونه شانس 🎰", "short": "🃏 گردونه شانس 🎰", "maxp": 3, "word": "گردونه"},
     "d": {"emoji": "🎲", "title": "🃏 کازینو تاس 🎲", "short": "🃏 کازینو تاس 🎲", "maxp": 2, "word": "تاس"},
     "x": {"emoji": "", "title": "🕹 دوز شاهنشاهی XO", "short": "🕹 دوز شاهنشاهی XO", "maxp": 2, "word": "دوز",
-          "min": XO_MIN_STAKE, "trigger": TRIGGER_XO},
+          "trigger": TRIGGER_XO},
 }
 XO_SYM = {"X": "❌️", "O": "⭕️", "-": "◻️"}
 XO_LINES = ((0, 1, 2), (3, 4, 5), (6, 7, 8), (0, 3, 6), (1, 4, 7), (2, 5, 8), (0, 4, 8), (2, 4, 6))
 
 
+# تنظیمات قابل‌تغییر از پنل ادمین: نام → (کلید ذخیره در settings، نام ثابت پیش‌فرض)
+_CFGK = {
+    "max": ("casino_max", "MAX_STAKE_DEFAULT"), "min": ("g_min", "MIN_STAKE"), "xmin": ("g_xmin", "XO_MIN_STAKE"),
+    "join": ("g_join", "JOIN_SEC"), "send": ("g_send", "SEND_SEC"), "xo": ("g_xo", "XO_SEC"),
+    "cool": ("g_cool", "COOLDOWN_SEC"), "xfer": ("g_xfer", "XFER_SEC"), "stale": ("g_stale", "STALE_SEC"),
+    "dp": ("g_dp", "DICE_MULT_PAIR"), "dn": ("g_dn", "DICE_MULT_NUM"), "d6": ("g_d6", "DICE_MULT_SIX"),
+}
+
+
+def cv(name):
+    """مقدار فعلی یک تنظیم: اگر ادمین تنظیم کرده همان، وگرنه پیش‌فرض داخل کد"""
+    key, const = _CFGK[name]
+    try:
+        raw = B.get_setting(key, "")
+        if raw not in (None, ""):
+            return float(raw)
+    except Exception:
+        pass
+    return float(globals()[const])
+
+
 def _min_stake(game):
-    return GAMES.get(game, {}).get("min", MIN_STAKE)
+    return cv("xmin") if game == "x" else cv("min")
 
 
 def xo_winner(board):
@@ -103,13 +124,13 @@ def evaluate(reels, rnd=random):
 def dice_solo_mult(pick, value):
     """تاس تک‌نفره: pick = 'e' زوج، 'o' فرد، یا '1'..'6'"""
     if pick == "e":
-        return DICE_MULT_PAIR if value % 2 == 0 else 0.0
+        return cv("dp") if value % 2 == 0 else 0.0
     if pick == "o":
-        return DICE_MULT_PAIR if value % 2 == 1 else 0.0
+        return cv("dp") if value % 2 == 1 else 0.0
     try:
         if int(pick) != value:
             return 0.0
-        return DICE_MULT_SIX if value == 6 else DICE_MULT_NUM
+        return cv("d6") if value == 6 else cv("dn")
     except Exception:
         return 0.0
 
@@ -189,10 +210,7 @@ def casino_games():
 
 
 def _max_stake():
-    try:
-        return float(B.get_setting("casino_max", MAX_STAKE_DEFAULT))
-    except Exception:
-        return MAX_STAKE_DEFAULT
+    return cv("max")
 
 
 def _fmt_wait(sec):
@@ -373,12 +391,12 @@ def _active_in(c, uid):
 
 def _cool_left_c(c, uid):
     r = c.execute("SELECT ts FROM g_cool WHERE user_id=?", (uid,)).fetchone()
-    return max(0, COOLDOWN_SEC - (time.time() - r["ts"])) if r else 0
+    return max(0, cv('cool') - (time.time() - r["ts"])) if r else 0
 
 
 def _cool_left(uid):
     r = _row("SELECT ts FROM g_cool WHERE user_id=?", (uid,))
-    return max(0, COOLDOWN_SEC - (time.time() - r["ts"])) if r else 0
+    return max(0, cv('cool') - (time.time() - r["ts"])) if r else 0
 
 
 def _active_table_of(uid):
@@ -557,7 +575,7 @@ def _setup_view(t):
         if t["state"] == "stake_wait":
             return (head + f"\n\n‼️ شما درحال تعیین مبلغ ورودی {g['word']} میباشید.\n\n"
                     "🔻 لطفا مبلغ ورودی را در جواب همین پنل وارد کنید.\n"
-                    f"حداقل مبلغ › {_n(XO_MIN_STAKE)} شاهی",
+                    f"حداقل مبلغ › {_n(cv('xmin'))} شاهی",
                     _kb([_btn("بازگشت ◁", f"g:bk:{tid}", B.DANGER)]))
         if not t["stake"]:
             return (head, _kb([_btn("تعیین مبلغ ورودی 💰", f"g:stk:{tid}")],
@@ -567,7 +585,7 @@ def _setup_view(t):
     if t["state"] == "stake_wait":
         return (head + f"\n\n‼️ شما درحال تعیین مبلغ ورودی {g['word']} میباشید.\n\n"
                 "🔻 لطفا مبلغ ورودی را در جواب همین پنل وارد کنید.\n"
-                f"حداقل مبلغ › {_n(MIN_STAKE)} شاهی",
+                f"حداقل مبلغ › {_n(cv('min'))} شاهی",
                 _kb([_btn("بازگشت ◁", f"g:bk:{tid}", B.DANGER)]))
     if t["state"] == "pick":
         nums = [_btn(NUM_EMO[i], f"g:n:{tid}:{i}") for i in range(1, g["maxp"] + 1)]
@@ -620,7 +638,7 @@ def _join_view(t, ps):
     g = GAMES[t["game"]]
     if t["game"] == "x":
         txt = (f"{g['short']}\n\n{_owner_line(t)}\n🏦 مبلغ ورودی › {_t(t['stake'])} شاهی 💎\n\n"
-               f"⏰️ فقط {_n(JOIN_SEC)} ثانیه فرصت پیوستن دارید…")
+               f"⏰️ فقط {_n(cv('join'))} ثانیه فرصت پیوستن دارید…")
         return txt, _kb([_btn("پیوستن به میز 🃏", f"g:jn:{t['id']}", B.SUCCESS)])
     lines = "\n".join(f"👑 {_plabel(i, len(ps))} ›› {_pname(p)}" for i, p in enumerate(ps))
     extra = f"🎯 حالت برد › {_mode_label(t['mode'])}\n" if t["game"] == "d" and t.get("mode") else ""
@@ -628,7 +646,7 @@ def _join_view(t, ps):
            f"🏦 مبلغ ورودی › {_t(t['stake'])} شاهی 💎\n{extra}"
            f"👥️ ظرفیت میز › {_n(len(ps))} از {_n(t['maxp'])}\n\n{lines}\n\n"
            "🔻 برای پیوستن به میز دکمه‌ی زیر را بزنید.\n\n"
-           f"⏰️ فقط {_n(JOIN_SEC)} ثانیه فرصت پیوستن دارید…")
+           f"⏰️ فقط {_n(cv('join'))} ثانیه فرصت پیوستن دارید…")
     return txt, _kb([_btn("پیوستن به میز 🃏", f"g:jn:{t['id']}", B.SUCCESS)])
 
 
@@ -648,7 +666,7 @@ def _send_view(t, ps):
                    f"🏦 مبلغ ورودی › {_t(t['stake'])} شاهی 💎\n"
                    f"👑 بازیکن ›› {_pname(p)}\n🎉 امتیاز ››› {sc}"
                    "\n\n⚠️ لطفا ایموجی '🎰' را در جواب همین پنل ارسال کنید!\n\n"
-                   f"⏰️ فقط {_n(SEND_SEC)} ثانیه فرصت دارید…")
+                   f"⏰️ فقط {_n(cv('send'))} ثانیه فرصت دارید…")
             return txt, None
         blocks = []
         for p in ps:
@@ -663,7 +681,7 @@ def _send_view(t, ps):
                f"🏦 مبلغ ورودی › {_t(t['stake'])} شاهی 💎\n\n"
                + "\n\n".join(blocks) +
                "\n\n⚠️ لطفا ایموجی '🎰' را در جواب همین پنل ارسال کنید!\n\n"
-               f"⏰️ فقط {_n(SEND_SEC)} ثانیه فرصت دارید…")
+               f"⏰️ فقط {_n(cv('send'))} ثانیه فرصت دارید…")
         return txt, None
     # تاس
     def num(p):
@@ -683,7 +701,7 @@ def _send_view(t, ps):
         warn = "⚠️ لطفا ایموجی '🎲' را در جواب همین پنل ارسال کنید."
     txt = ("🃏 کازینو تاس 🎲\n\n"
            f"🏦 مبلغ ورودی ›› {_t(t['stake'])} شاهی 💎\n\n{body}\n\n{warn}\n\n"
-           f"⏰️ فقط {_n(SEND_SEC)} ثانیه فرصت دارید…")
+           f"⏰️ فقط {_n(cv('send'))} ثانیه فرصت دارید…")
     return txt, kb
 
 
@@ -699,7 +717,7 @@ def _xo_view(t, ps):
     txt = (f"{GAMES['x']['short']}\n\n🏦 مبلغ ورودی › {_t(t['stake'])} شاهی 💎\n\n{lines}\n\n"
            f"🎯 نوبت ›› {_pname(cur)}\n\n"
            "‼️ لطفا با کلیک روی خانه های خالی دوز بازی کنید.\n\n"
-           f"⏰️ فقط {_n(XO_SEC)} ثانیه فرصت دارید…")
+           f"⏰️ فقط {_n(cv('xo'))} ثانیه فرصت دارید…")
     return txt, _xo_board_kb(t)
 
 
@@ -785,11 +803,11 @@ def on_group_message(m):
     if nt == XFER_WORD or nt.startswith(XFER_WORD + " "):
         return _on_transfer(m, u, nt)
     if nt == TRIGGER:
-        if not casino_games():
-            return          # خاموش: بی‌صدا
+        if not casino_games() or gbanned(u["id"]):
+            return          # خاموش یا محروم: بی‌صدا
         return _on_trigger(m, u, "c")
     if nt.lower() in TRIGGERS_XO:
-        if not game_on("x"):
+        if not game_on("x") or gbanned(u["id"]):
             return
         return _on_trigger(m, u, "x")
     rp = m.get("reply_to_message")
@@ -892,6 +910,8 @@ def _on_dice(m, u):
     if (rp.get("from") or {}).get("id") != B.BOT_ID or not rp.get("message_id"):
         return
     uid = u["id"]
+    if gbanned(uid):
+        return
     pre = _row("SELECT t.id FROM g_tables t JOIN g_players p ON p.table_id=t.id "
                "WHERE p.user_id=? AND t.state='send' AND t.chat_id=? AND t.msg_id=?",
                (uid, m["chat"]["id"], rp["message_id"]))
@@ -1004,7 +1024,7 @@ def _on_transfer(m, u, nt):
             c.execute("DELETE FROM g_xfer WHERE id=?", (o["id"],))
         cur = c.execute("INSERT INTO g_xfer (chat_id, thread_id, sender, sname, semo, recipient, rname, remo, amount, "
                         "state, deadline) VALUES (?,?,?,?,?,?,?,?,?, 'pending', ?)",
-                        (chat_id, th, uid, _name(u), e1, to_id, to_name, e2, amount, now + XFER_SEC))
+                        (chat_id, th, uid, _name(u), e1, to_id, to_name, e2, amount, now + cv('xfer')))
         xid = cur.lastrowid
     for o in olds:
         if o.get("msg_id"):
@@ -1112,7 +1132,7 @@ def _profile_text(uid, name, tokens):
             f"👤 کاربر › {_mention(uid, name)} {random.choice(PLAYER_EMOJIS)}\n"
             f"\u200f🪪 آیدی عددی ›› <code>{int(uid)}</code>\n\n"
             f"🏦 موجودی ››› {_t(tokens)} شاهی 💎\n"
-            f"🎖️ رتبه › {_n(_rank_of(tokens))}ام لیدربرد\n\n"
+            f"🎖️ رتبه › {_n(_lb_rank('t', uid))}ام لیدربرد\n\n"
             "📊 آمار بازی ها\n🃏 کازینو\n"
             f"⤫ 🎲 تاس › {line('d')}\n"
             f"⤫ 🎰 اسلات › {line('s')}\n\n"
@@ -1120,6 +1140,8 @@ def _profile_text(uid, name, tokens):
 
 
 def _on_profile(m, u, other):
+    if not feat_on("p"):
+        return                      # خاموش از پنل ادمین: بی‌صدا
     now = time.time()
     if now - _PROF_LAST.get(u["id"], 0) < 3:
         return                      # ضد اسپم: بی‌صدا
@@ -1172,7 +1194,7 @@ LB_MEDALS = ["🥇", "🥈", "🥉", "🏅", "🎖"]
 LB_EMOJIS = ["🍟", "🍿", "🍱", "🍩", "🍭", "🌽", "🥨", "🥐", "🍔", "🍺", "🍷", "🧸", "🔥", "☃️", "⛄️"]
 LB_KINDS = {
     "t": {"btn": "شاهی 💎", "desc": "💎 لیدربرد شاهی ها › ثروتمند ترین های شاهنشاهی با بیشترین شاهی"},
-    "r": {"btn": "زیرمجموعه‌گیری 💟", "desc": "👥️ لیدربرد زیرمجموعه‌گیری › پر سر و صدا ترین های شاهنشاهی با بیشترین دعوت"},
+    "r": {"btn": "زیرمجموعه‌گیری 👥️", "desc": "👥️ لیدربرد زیرمجموعه‌گیری › پر سر و صدا ترین های شاهنشاهی با بیشترین دعوت"},
     "q": {"btn": "درخواست JFJ 👑", "desc": "📋 لیدربرد درخواست JFJ › بهترین های شاهنشاهی با بیشترین درخواست"},
     "j": {"btn": "شروع JFJ 🏆", "desc": "🏁 لیدربرد شروع JFJ › فعالترین های شاهنشاهی با بیشترین جفج"},
 }
@@ -1181,24 +1203,35 @@ _LB_SQL = {
     "t": ("SELECT id AS uid, first_name, tokens AS v FROM users WHERE COALESCE(banned,0)=0 "
           "ORDER BY tokens DESC, id LIMIT ?",
           "SELECT tokens AS v FROM users WHERE id=?",
-          "SELECT COUNT(*) AS n FROM users WHERE COALESCE(banned,0)=0 AND tokens > ?"),
+          "SELECT COUNT(*) AS n FROM users WHERE COALESCE(banned,0)=0 AND (tokens > ? OR (tokens = ? AND id < ?))"),
     "r": ("SELECT u.id AS uid, u.first_name, COUNT(*) AS v FROM users u JOIN users r ON r.referred_by=u.id "
           "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id ORDER BY v DESC, u.id LIMIT ?",
           "SELECT COUNT(*) AS v FROM users WHERE referred_by=?",
-          "SELECT COUNT(*) AS n FROM (SELECT u.id, COUNT(*) AS c FROM users u JOIN users r ON r.referred_by=u.id "
-          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id) WHERE c > ?"),
+          "SELECT COUNT(*) AS n FROM (SELECT u.id AS uid, COUNT(*) AS c FROM users u JOIN users r ON r.referred_by=u.id "
+          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id) WHERE c > ? OR (c = ? AND uid < ?)"),
     "q": ("SELECT u.id AS uid, u.first_name, COUNT(*) AS v FROM users u JOIN requests q ON q.user_id=u.id "
           "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id ORDER BY v DESC, u.id LIMIT ?",
           "SELECT COUNT(*) AS v FROM requests WHERE user_id=?",
-          "SELECT COUNT(*) AS n FROM (SELECT u.id, COUNT(*) AS c FROM users u JOIN requests q ON q.user_id=u.id "
-          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id) WHERE c > ?"),
+          "SELECT COUNT(*) AS n FROM (SELECT u.id AS uid, COUNT(*) AS c FROM users u JOIN requests q ON q.user_id=u.id "
+          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id) WHERE c > ? OR (c = ? AND uid < ?)"),
     "j": ("SELECT u.id AS uid, u.first_name, COUNT(*) AS v FROM users u JOIN joins j ON j.user_id=u.id "
           "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id ORDER BY v DESC, u.id LIMIT ?",
           "SELECT COUNT(*) AS v FROM joins WHERE user_id=?",
-          "SELECT COUNT(*) AS n FROM (SELECT u.id, COUNT(*) AS c FROM users u JOIN joins j ON j.user_id=u.id "
-          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id) WHERE c > ?"),
+          "SELECT COUNT(*) AS n FROM (SELECT u.id AS uid, COUNT(*) AS c FROM users u JOIN joins j ON j.user_id=u.id "
+          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id) WHERE c > ? OR (c = ? AND uid < ?)"),
 }
 _LB_LAST = {}
+
+
+def _lb_rank(kind, uid):
+    """رتبه‌ی دقیق = جایگاه واقعی در همان لیستی که نمایش داده می‌شود (ترتیب: ارزش نزولی، سپس آیدی)؛
+    پروفایل و لیدربرد هر دو از همین تابع می‌خوانند. برای لیدربردهای شمارشی، ارزش صفر = بدون رتبه (None)"""
+    me = _row(_LB_SQL[kind][1], (uid,))
+    v = (me["v"] if me else 0) or 0
+    if kind != "t" and v <= 0:
+        return None
+    cnt = _row(_LB_SQL[kind][2], (v, v, uid))
+    return (cnt["n"] if cnt else 0) + 1
 
 
 def _lb_menu_text():
@@ -1207,8 +1240,8 @@ def _lb_menu_text():
 
 
 def _lb_menu_kb(owner):
-    b = lambda k: _btn(LB_KINDS[k]["btn"], f"g:lb:{owner}:{k}:0")
-    return _kb([b("t"), b("r")], [b("q"), b("j")])
+    b = lambda k: _btn(LB_KINDS[k]["btn"], f"g:lb:{owner}:{k}:0", B.SUCCESS)
+    return _kb([b("t")], [b("q"), b("j")], [b("r")])
 
 
 def _lb_pages(n):
@@ -1232,18 +1265,21 @@ def _lb_view(kind, page, viewer):
     lo = 0 if page == 0 else LB_FIRST + (page - 1) * LB_PER_PAGE
     hi = LB_FIRST if page == 0 else lo + LB_PER_PAGE
     blocks = []
+    cnt = max(0, min(hi, len(rows)) - lo)
+    emos = random.sample(LB_EMOJIS, min(cnt, len(LB_EMOJIS)))      # در هر صفحه بدون تکرار؛ فقط اگر مجبور بود تکرار می‌شود
+    while len(emos) < cnt:
+        emos.append(random.choice(LB_EMOJIS))
     for i in range(lo, min(hi, len(rows))):
         r = rows[i]
-        who = f"{_mention(r['uid'], _name({'first_name': r['first_name']}))} {random.choice(LB_EMOJIS)}"
+        who = f"{_mention(r['uid'], _name({'first_name': r['first_name']}))} {emos[i - lo]}"
         head = (f"{LB_MEDALS[i]} {LB_TITLES[i]} › {who}" if i < len(LB_TITLES)
-                else f"🔹 رتبه {_n(i + 1)} › {who}")
+                else f"🔻 رتبه {_n(i + 1)} › {who}")
         blocks.append(f"{head}\n{_lb_value_line(kind, r['v'])}")
     txt = f"🏆 لیدربرد جهانی شاهنشاهی 👑\n\n{LB_KINDS[kind]['desc']}\n\n"
     txt += "\n\n".join(blocks) if blocks else "🔻 هنوز کاربری در این لیدربرد ثبت نشده است."
-    me = _row(_LB_SQL[kind][1], (viewer,))
-    if me and B.user_exists(viewer):
-        cnt = _row(_LB_SQL[kind][2], (me["v"] or 0,))
-        txt += f"\n\n🎖️ رتبه شما › {_n((cnt['n'] if cnt else 0) + 1)}ام لیدربرد"
+    if B.user_exists(viewer):
+        rk = _lb_rank(kind, viewer)
+        txt += ("\n\n🎖️ رتبه شما › " + (f"{_n(rk)}ام لیدربرد" if rk else "هنوز رتبه‌ای ندارید"))
     nav = []
     if page > 0:
         nav.append(_btn("قبلی ◁", f"g:lb:{viewer}:{kind}:{page - 1}"))
@@ -1254,6 +1290,8 @@ def _lb_view(kind, page, viewer):
 
 
 def _on_lb(m, u):
+    if not feat_on("l"):
+        return                      # خاموش از پنل ادمین: بی‌صدا
     now = time.time()
     if now - _LB_LAST.get(u["id"], 0) < 3:
         return                      # ضد اسپم: بی‌صدا
@@ -1264,6 +1302,8 @@ def _on_lb(m, u):
 
 def _cb_lb(cq, owner, parts, ans):
     uid = cq["from"]["id"]
+    if not feat_on("l"):
+        return ans()
     if uid != owner:
         r = _row("SELECT first_name FROM users WHERE id=?", (owner,))
         return ans(f"🃏 این پنل مخصوص {_name({'first_name': r['first_name'] if r else None})} است. خودتان بنویسید «{LB_WORD}».", True)
@@ -1308,6 +1348,8 @@ def on_callback(cq):
 
     if act == "lb":
         return _cb_lb(cq, tid, parts, ans)
+    if act != "tx" and gbanned(uid):
+        return ans()                # محروم از بازی‌ها: بی‌صدا
     if act == "jn":
         return _cb_join(cq, tid, ans)
     if act == "pk":
@@ -1392,9 +1434,9 @@ def _make_table_in(c, t, uid):
     c.execute("INSERT INTO g_players (table_id, user_id, name, emo, stake) VALUES (?,?,?,?,?)",
               (t["id"], uid, _name({"first_name": t["owner_name"]}), t["oemo"] or _free_emo(c, t["id"]), t["stake"]))
     if t["maxp"] == 1:
-        c.execute("UPDATE g_tables SET state='send', send_dl=?, touched=? WHERE id=?", (now + SEND_SEC, now, t["id"]))
+        c.execute("UPDATE g_tables SET state='send', send_dl=?, touched=? WHERE id=?", (now + cv('send'), now, t["id"]))
     else:
-        c.execute("UPDATE g_tables SET state='join', join_dl=?, touched=? WHERE id=?", (now + JOIN_SEC, now, t["id"]))
+        c.execute("UPDATE g_tables SET state='join', join_dl=?, touched=? WHERE id=?", (now + cv('join'), now, t["id"]))
     return None
 
 
@@ -1428,7 +1470,7 @@ def _cb_join(cq, tid, ans):
                 _start_xo_in(c, t, uid, now)
             else:
                 c.execute("UPDATE g_tables SET state='send', send_dl=?, touched=? WHERE id=? AND state='join'",
-                          (now + SEND_SEC, now, tid))
+                          (now + cv('send'), now, tid))
     ans("✅ به میز پیوستید!")
     _after_make(tid)
 
@@ -1459,7 +1501,7 @@ def _start_xo_in(c, t, joiner, now):
     c.execute("UPDATE g_players SET pick=? WHERE table_id=? AND user_id=?", (roles[0], t["id"], t["owner"]))
     c.execute("UPDATE g_players SET pick=? WHERE table_id=? AND user_id=?", (roles[1], t["id"], joiner))
     c.execute("UPDATE g_tables SET state='play', board='---------', turn=?, send_dl=?, touched=? "
-              "WHERE id=? AND state='join'", (t["owner"], now + XO_SEC, now, t["id"]))
+              "WHERE id=? AND state='join'", (t["owner"], now + cv('xo'), now, t["id"]))
 
 
 def _xo_finish_in(c, t, ps, board, winner_uid):
@@ -1650,6 +1692,289 @@ def _cancel_join(tid, n=1):
     _purge(tid)
 
 
+
+# =====================================================================
+#  🛠 پنل مدیریت بازی‌ها (فقط ادمین؛ از «تنظیمات عمومی ← 🃏 بازی‌های گروهی»)
+# =====================================================================
+def feat_on(k):
+    """کلیدهای ویژگی‌ها: l لیدربرد ، p پروفایل"""
+    return B.get_setting(f"g_{k}_on", "1") != "0"
+
+
+def _gbanned_list():
+    try:
+        return {int(x) for x in json.loads(B.get_setting("g_banned", "[]") or "[]")}
+    except Exception:
+        return set()
+
+
+def gbanned(uid):
+    """محروم‌شده از بازی‌ها (فقط بازی‌ها؛ پروفایل/لیدربرد/انتقال را شامل نمی‌شود)"""
+    return uid in _gbanned_list()
+
+
+# نام، برچسب، واحد، نوع، حداقل، حداکثر، ایموجی
+_ACFG = [
+    ("max", "حداکثر مبلغ ورودی", "شاهی", "int", 0, 10_000_000, "🔝"),
+    ("min", "حداقل ورودی گردونه/تاس", "شاهی", "int", 1, 100_000, "🔻"),
+    ("xmin", "حداقل ورودی دوز", "شاهی", "int", 1, 100_000, "❌"),
+    ("join", "مهلت پیوستن به میز", "ثانیه", "int", 10, 600, "⏰️"),
+    ("send", "مهلت ارسال گردونه/تاس", "ثانیه", "int", 15, 600, "🎰"),
+    ("xo", "کل زمان بازی دوز", "ثانیه", "int", 30, 1800, "🕹"),
+    ("cool", "کول‌داون سازنده‌ی میز", "ثانیه", "int", 0, 3600, "⏳"),
+    ("xfer", "مهلت تأیید انتقال", "ثانیه", "int", 15, 600, "💸"),
+    ("stale", "انقضای پنل بی‌فعالیت", "ثانیه", "int", 60, 3600, "⌛"),
+    ("dp", "ضریب تاس: زوج/فرد", "X", "float", 0, 20, "🎲"),
+    ("dn", "ضریب تاس: عدد ۱ تا ۵", "X", "float", 0, 50, "🔢"),
+    ("d6", "ضریب تاس: عدد ۶", "X", "float", 0, 50, "6️⃣"),
+]
+_ACFG_BY = {r[0]: r for r in _ACFG}
+
+
+def _fv(v, kind):
+    return _n(v) if kind == "int" else B.fa_digits(f"{v:g}")
+
+
+def _fts(ts):
+    dt = __import__("datetime").datetime.fromtimestamp(ts, B.now_local().tzinfo)
+    jy, jm, jd = B.gregorian_to_jalali(dt.year, dt.month, dt.day)
+    return B.fa_digits(f"{jy:04d}/{jm:02d}/{jd:02d} {dt.strftime('%H:%M')}")
+
+
+def _back_gm():
+    return [_btn("🔙 بازی‌های گروهی", "adm_p:x:gm", B.DANGER)]
+
+
+def _cfg_page():
+    lines = ["⚙️ <b>تنظیمات بازی‌ها</b>", B.LINE]
+    for name, label, unit, kind, lo, hi, ico in _ACFG:
+        cur = cv(name)
+        dflt = float(globals()[_CFGK[name][1]])
+        mark = "" if cur == dflt else " ✏️"
+        extra = " (0 = بدون سقف)" if name == "max" else ""
+        lines.append(f"{ico} {label}: <b>{_fv(cur, kind)}</b> {unit}{mark}{extra}")
+    lines.append("\n✏️ = تغییر داده‌شده نسبت به پیش‌فرض.\n👇 <i>برای تغییر هر مورد روی آن بزنید.</i>")
+    rows, cur_row = [], []
+    for name, label, *_r in _ACFG:
+        cur_row.append(_btn(f"{_ACFG_BY[name][6]} {label}", f"adm_p:x:gx_set:{name}", B.SUCCESS))
+        if len(cur_row) == 2:
+            rows.append(cur_row)
+            cur_row = []
+    if cur_row:
+        rows.append(cur_row)
+    rows.append([_btn("♻️ بازگشت همه به پیش‌فرض", "adm_p:x:gx_rst", B.SUCCESS)])
+    rows.append(_back_gm())
+    return "\n".join(lines), _kb(*rows)
+
+
+def _rep_page(days):
+    dt = B.now_local()
+    midnight = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = midnight.timestamp() if days == 1 else (midnight - __import__("datetime").timedelta(days=days - 1)).timestamp()
+    rows = _rows("SELECT game, kind, stake_total, payout_total, detail FROM g_log WHERE ts>=?", (start,))
+    agg, players, closed = {}, set(), 0
+    for r in rows:
+        if r["kind"] in ("cancel", "admin"):
+            closed += 1
+            continue
+        a = agg.setdefault(r["game"], [0, 0.0, 0.0])
+        a[0] += 1
+        a[1] += r["stake_total"] or 0
+        a[2] += r["payout_total"] or 0
+        try:
+            for e in json.loads(r["detail"] or "[]"):
+                players.add(e[0])
+        except Exception:
+            pass
+    names = {"s": "🎰 گردونه", "d": "🎲 تاس", "x": "❌⭕ دوز"}
+    title = {1: "امروز", 7: "۷ روز اخیر", 30: "۳۰ روز اخیر"}[days]
+    lines = [f"📊 <b>گزارش بازی‌های گروهی — {title}</b>", B.LINE]
+    ts = tp = tn = 0
+    for k in ("s", "d", "x"):
+        if k in agg:
+            n, st, pa = agg[k]
+            ts, tp, tn = ts + st, tp + pa, tn + n
+            pr = round(st - pa, 2)
+            lines.append(f"{names[k]}: <b>{_n(n)}</b> بازی • ورودی {_t(st)} • پرداختی {_t(pa)} • "
+                         f"{'سود' if pr >= 0 else 'ضرر'} ربات {_t(abs(pr))}")
+        else:
+            lines.append(f"{names[k]}: بدون بازی")
+    pr = round(ts - tp, 2)
+    lines.append(B.LINE)
+    lines.append(f"🧮 جمع: <b>{_n(tn)}</b> بازی • ورودی {_t(ts)} • پرداختی {_t(tp)} شاهی")
+    lines.append(f"{'📈 سود' if pr >= 0 else '📉 ضرر'} ربات: <b>{_t(abs(pr))}</b> شاهی")
+    lines.append(f"👥 بازیکنان یکتا: {_n(len(players))}")
+    lines.append(f"🛑 میزهای لغو/بسته‌شده: {_n(closed)}")
+    act = _row("SELECT COUNT(*) AS n FROM g_tables WHERE state IN ('join','send','play')")
+    lines.append(f"🎲 میزهای فعال همین الان: {_n(act['n'] if act else 0)}")
+    lines.append("\nℹ️ <i>گزارش‌ها از دفتر مالیِ ۳۰ روز اخیر ساخته می‌شود؛ سود/ضرر = ورودی‌ها − پرداخت‌ها.</i>")
+    pb = lambda d, tx: _btn(("• " if d == days else "") + tx, f"adm_p:x:gx_rep:{d}")
+    return "\n".join(lines), _kb([pb(1, "امروز"), pb(7, "۷ روز"), pb(30, "۳۰ روز")], _back_gm())
+
+
+_STATE_FA = {"join": "جذب بازیکن", "send": "مرحله ارسال", "play": "در حال بازی"}
+
+
+def _act_page():
+    ts = _rows("SELECT * FROM g_tables WHERE state IN ('join','send','play') ORDER BY id DESC LIMIT 10")
+    pre = _row("SELECT COUNT(*) AS n FROM g_tables WHERE state IN ('menu','setup','stake_wait','pick','mode')")
+    lines = ["🎲 <b>میزهای فعال</b>", B.LINE]
+    rows = []
+    if not ts:
+        lines.append("هیچ میز فعالی وجود ندارد.")
+    for t in ts:
+        ps = _players(t["id"])
+        em = GAMES[t["game"]]["emoji"] or "❌⭕"
+        who = _html.escape(t.get("owner_name") or "—", quote=False)
+        lines.append(f"#{t['id']} {em} {_STATE_FA.get(t['state'], t['state'])} • سازنده: {who} (<code>{t['owner']}</code>)\n"
+                     f"   ورودی {_t(t['stake'])} شاهی • بازیکن {_n(len(ps))}/{_n(t['maxp'])} • گروه <code>{t['chat_id']}</code>")
+    for i in range(0, len(ts), 2):
+        rows.append([_btn(f"🛑 بستن #{t['id']}", f"adm_p:x:gx_close:{t['id']}", B.DANGER) for t in ts[i:i + 2]])
+    lines.append(f"\n🕓 پنل‌های در حال تنظیم (بدون پول): {_n(pre['n'] if pre else 0)}")
+    lines.append("ℹ️ <i>بستن میز، ورودی همه‌ی بازیکنان را کامل برمی‌گرداند و پیام میز را به‌روز می‌کند.</i>")
+    if ts:
+        rows.append([_btn("🛑 بستن همه‌ی میزها (با بازگشت پول)", "adm_p:x:gx_closeall", B.DANGER)])
+    rows.append([_btn("🔄 تازه‌سازی", "adm_p:x:gx_act")])
+    rows.append(_back_gm())
+    return "\n".join(lines), _kb(*rows)
+
+
+def admin_close_table(tid, who="مدیریت"):
+    """بستن اجباری یک میز فعال با برگشت کامل ورودی همه‌ی بازیکنان؛ True اگر بسته شد"""
+    with _Tx() as c:
+        cur = c.execute("UPDATE g_tables SET state='cancelled' WHERE id=? AND state IN ('join','send','play')", (tid,))
+        if cur.rowcount != 1:
+            return False
+        t = c.execute("SELECT * FROM g_tables WHERE id=?", (tid,)).fetchone()
+        ps = c.execute("SELECT * FROM g_players WHERE table_id=?", (tid,)).fetchall()
+        for p in ps:
+            _pay_in(c, p["user_id"], p["stake"])
+            p["payout"] = p["stake"]
+        _log_in(c, t, ps, "admin")
+    _edit(t, f"{GAMES[t['game']]['short']}\n\n🛑 این میز توسط مدیریت بسته شد؛ ورودی همه‌ی بازیکنان برگشت داده شد.")
+    _purge(tid)
+    return True
+
+
+def _user_page(uid):
+    u = _row("SELECT first_name, username, tokens FROM users WHERE id=?", (uid,))
+    if not u:
+        return "❌ کاربر پیدا نشد.", _kb(_back_gm())
+    st = {r["game"]: r for r in _rows("SELECT game, wins, losses FROM g_stats WHERE user_id=?", (uid,))}
+    ln = lambda k: f"برد {_n(st[k]['wins'] if k in st else 0)} • باخت {_n(st[k]['losses'] if k in st else 0)}"
+    cool = _cool_left(uid)
+    banned = gbanned(uid)
+    lines = [f"🔎 <b>بازیکن</b>: {_mention(uid, _name({'first_name': u['first_name']}))}",
+             f"🆔 آیدی عددی: <code>{uid}</code>" + (f" • @{_html.escape(u['username'])}" if u["username"] else ""),
+             f"🏦 موجودی: {_t(u['tokens'])} شاهی",
+             f"⏳ کول‌داون: {_fmt_wait(cool) if cool > 0 else 'ندارد'}",
+             f"⛔ وضعیت بازی‌ها: {'محروم' if banned else 'آزاد'}", B.LINE,
+             f"🎲 تاس: {ln('d')}", f"🎰 گردونه: {ln('s')}", f"🕹 دوز: {ln('x')}", B.LINE, "🧾 <b>آخرین بازی‌ها</b>"]
+    shown = 0
+    for r in _rows("SELECT ts, game, kind, detail FROM g_log WHERE detail LIKE ? ORDER BY ts DESC LIMIT 60", (f"%[{int(uid)}, %",)):
+        try:
+            e = next(x for x in json.loads(r["detail"]) if x[0] == uid)
+        except Exception:
+            continue
+        net = round((e[3] or 0) - (e[2] or 0), 2)
+        em = {"s": "🎰", "d": "🎲", "x": "🕹"}.get(r["game"], "🃏")
+        res = "✅" if net > 0 else ("❌" if net < 0 else "➖")
+        lines.append(f"{res} {em} {_fts(r['ts'])} • ورودی {_t(e[2] or 0)} ← دریافتی {_t(e[3] or 0)}")
+        shown += 1
+        if shown >= 10:
+            break
+    if not shown:
+        lines.append("هنوز بازی‌ای ثبت نشده است.")
+    kb = _kb([_btn("⏱ ریست کول‌داون", f"adm_p:x:gx_cdr:{uid}", B.SUCCESS),
+              _btn("✅ رفع محرومیت از بازی‌ها" if banned else "⛔ محروم از بازی‌ها", f"adm_p:x:gx_ban:{uid}",
+                   B.SUCCESS if banned else B.DANGER)],
+             [_btn("🔎 بازیکن دیگر", "adm_p:x:gx_find", B.SUCCESS)], _back_gm())
+    return "\n".join(lines), kb
+
+
+def admin_cb(act, args, admin_id, chat_id):
+    """(متن، کیبورد، پیام کوتاه) یا None وقتی خودش پیام ورودی فرستاده است"""
+    if act == "gx_set" and args and args[0] in _ACFG_BY:
+        name, label, unit, kind, lo, hi, ico = _ACFG_BY[args[0]]
+        B.set_state(admin_id, "adm_in", {"name": "gx_set", "key": name, "back": "x"})
+        B._hsend(chat_id, f"{ico} <b>{label}</b>\n\nمقدار فعلی: <b>{_fv(cv(name), kind)}</b> {unit}\n"
+                          f"بازه‌ی مجاز: {_fv(lo, kind)} تا {_fv(hi, kind)}\n"
+                          f"مقدار جدید را به صورت {'عدد صحیح' if kind == 'int' else 'عدد (اعشار مجاز است)'} بفرستید:",
+                 _kb([_btn("❌ انصراف", "adm_p:x:gx_cfg", B.DANGER)]))
+        return None
+    if act == "gx_find":
+        B.set_state(admin_id, "adm_in", {"name": "gx_find", "back": "x"})
+        B._hsend(chat_id, "🔎 <b>جستجوی بازیکن</b>\n\nآیدی عددی یا @یوزرنیم بازیکن را بفرستید:",
+                 _kb([_btn("❌ انصراف", "adm_p:x:gm", B.DANGER)]))
+        return None
+    B.set_state(admin_id, "admin_panel")
+    toast = None
+    if act == "gx_cfg":
+        return (*_cfg_page(), None)
+    if act == "gx_rst":
+        for name in _CFGK:
+            B.set_setting(_CFGK[name][0], "")
+        return (*_cfg_page(), "♻️ همه به پیش‌فرض برگشت.")
+    if act == "gx_rep":
+        d = int(args[0]) if args and args[0] in ("1", "7", "30") else 1
+        return (*_rep_page(d), None)
+    if act == "gx_act":
+        return (*_act_page(), None)
+    if act == "gx_close" and args:
+        ok_ = admin_close_table(int(args[0]))
+        return (*_act_page(), "🛑 میز بسته شد و پول‌ها برگشت." if ok_ else "این میز دیگر فعال نیست.")
+    if act == "gx_closeall":
+        n = sum(1 for t in _rows("SELECT id FROM g_tables WHERE state IN ('join','send','play')") if admin_close_table(t["id"]))
+        return (*_act_page(), f"🛑 {n} میز بسته شد.")
+    if act in ("gx_cdr", "gx_ban") and args and args[0].isdigit():
+        uid = int(args[0])
+        if act == "gx_cdr":
+            _x("DELETE FROM g_cool WHERE user_id=?", (uid,))
+            toast = "⏱ کول‌داون ریست شد."
+        else:
+            cur = _gbanned_list()
+            cur.symmetric_difference_update({uid})
+            B.set_setting("g_banned", json.dumps(sorted(cur)))
+            toast = "⛔ محروم شد." if uid in cur else "✅ رفع محرومیت شد."
+        return (*_user_page(uid), toast)
+    return (*_cfg_page(), None)
+
+
+def admin_input(chat_id, user, text, data):
+    admin_id = user["id"]
+    name = data.get("name")
+    text = (text or "").strip()
+    if name == "gx_find":
+        uid = B._find_user(text)
+        if not uid:
+            B._hsend(chat_id, "❗️ کاربری با این مشخصات پیدا نشد.")
+            return
+        B.set_state(admin_id, "admin_panel")
+        t, k = _user_page(uid)
+        B._hsend(chat_id, t, k)
+        return
+    if name == "gx_set":
+        key = data.get("key")
+        if key not in _ACFG_BY:
+            return
+        _n_, label, unit, kind, lo, hi, ico = _ACFG_BY[key]
+        v = B.parse_number(text)
+        if v is None or v < lo or v > hi or (kind == "int" and v != int(v)):
+            B._hsend(chat_id, f"❗️ یک {'عدد صحیح' if kind == 'int' else 'عدد'} بین {_fv(lo, kind)} و {_fv(hi, kind)} بفرستید.")
+            return
+        mx = v if key == "max" else cv("max")
+        mn = v if key == "min" else cv("min")
+        xm = v if key == "xmin" else cv("xmin")
+        if mx > 0 and (mn > mx or xm > mx):
+            B._hsend(chat_id, "❗️ حداقل ورودی نمی‌تواند از حداکثر ورودی بیشتر باشد.")
+            return
+        B.set_setting(_CFGK[key][0], str(int(v) if kind == "int" else v))
+        B.set_state(admin_id, "admin_panel")
+        B._hsend(chat_id, f"✅ {label} روی {_fv(v, kind)} {unit} تنظیم شد.")
+        t, k = _cfg_page()
+        B._hsend(chat_id, t, k)
+
+
 # ---------------- پردازشگر پس‌زمینه ----------------
 def _guard(fn, *a):
     """خطای یک میز نباید پردازش بقیه‌ی میزها را متوقف کند"""
@@ -1673,7 +1998,7 @@ def _tick_join(t, now):
         full = n >= t["maxp"]       # بازی فقط با «همان تعداد انتخاب‌شده» شروع می‌شود، نه کمتر
         if full:
             cur = c.execute("UPDATE g_tables SET state='send', send_dl=?, touched=? WHERE id=? AND state='join'",
-                            (now + SEND_SEC, now, t["id"]))
+                            (now + cv('send'), now, t["id"]))
             moved = cur.rowcount == 1
     if full:
         if moved:
@@ -1732,7 +2057,7 @@ def _tick(wait=True):
     now = time.time()
     ph = ",".join("?" * len(PRE))
     futs = []
-    for t in _rows(f"SELECT * FROM g_tables WHERE state IN ({ph}) AND touched<?", (*PRE, now - STALE_SEC)):
+    for t in _rows(f"SELECT * FROM g_tables WHERE state IN ({ph}) AND touched<?", (*PRE, now - cv('stale'))):
         futs.append(_submit(("t", t["id"]), _tick_pre, t, ph, now))
     for t in _rows("SELECT * FROM g_tables WHERE state='play' AND send_dl<=?", (now,)):
         futs.append(_submit(("t", t["id"]), _xo_timeout, t["id"]))
@@ -1743,7 +2068,7 @@ def _tick(wait=True):
     # نظافت: بازی‌های تمام‌شده‌ی جامانده (مثلاً بعد از کرش) و کول‌داون‌های گذشته
     for t in _rows("SELECT id FROM g_tables WHERE state IN ('done','cancelled','expired')"):
         futs.append(_submit(("t", t["id"]), _purge, t["id"]))
-    _x("DELETE FROM g_cool WHERE ts<?", (now - COOLDOWN_SEC - 5,))
+    _x("DELETE FROM g_cool WHERE ts<?", (now - cv('cool') - 5,))
     futs.append(_submit(("x",), _tick_xfer, now))
     if now - _LAST_LOGCLEAN[0] > 3600:
         _LAST_LOGCLEAN[0] = now

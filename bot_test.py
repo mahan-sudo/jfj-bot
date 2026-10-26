@@ -2915,6 +2915,8 @@ def _err(chat_id, msg):
 
 
 def admin_handle_input(chat_id, user, text, data):
+    if str(data.get("name", "")).startswith("gx_") and GAMES:
+        return GAMES.admin_input(chat_id, user, text, data)
     if v2_handle_input(chat_id, user, text, data):
         return
     admin_id = user["id"]
@@ -5591,6 +5593,8 @@ def render_games():
             f"🕹 همه‌ی بازی‌ها: {'🟢 روشن' if master else '🔴 خاموش'}\n"
             + "\n".join(f"{n}: {'🟢 روشن' if game_setting_on(k) else '🔴 خاموش'}" for k, n in GAME_KEYS) +
             f"\n💸 انتقال شاهی در گروه: {'🟢 روشن' if game_setting_on('t') else '🔴 خاموش'}"
+            f"\n🏆 لیدربرد: {'🟢 روشن' if game_setting_on('l') else '🔴 خاموش'}"
+            f"\n👑 پروفایل: {'🟢 روشن' if game_setting_on('p') else '🔴 خاموش'}"
             "\n\nℹ️ بازی خاموش اصلاً در گروه پاسخ نمی‌دهد و هیچ پیامی نمی‌فرستد "
             "(خاموش‌شدن تاس فقط دکمه‌اش را از منوی کازینو برمی‌دارد). "
             "میزهایی که هم‌اکنون در جریان‌اند تا پایان بازی می‌شوند تا شاهیِ کسی نسوزد."
@@ -5602,7 +5606,12 @@ def render_games():
         rows.append([_ab(("🟢 " if on else "🔴 ") + n, f"adm_p:x:gmt:{k}", SUCCESS if on else DANGER)])
     _t_on = game_setting_on("t")
     rows.append([_ab(("🟢 " if _t_on else "🔴 ") + "💸 انتقال شاهی در گروه", "adm_p:x:gmt:t", SUCCESS if _t_on else DANGER)])
-    rows.append([_ab("🔙 تنظیمات عمومی", "adm_p:g:home")])
+    for k_, n_ in (("l", "🏆 لیدربرد"), ("p", "👑 پروفایل")):
+        on_ = game_setting_on(k_)
+        rows.append([_ab(("🟢 " if on_ else "🔴 ") + n_, f"adm_p:x:gmt:{k_}", SUCCESS if on_ else DANGER)])
+    rows.append([_ab("⚙️ تنظیمات بازی‌ها", "adm_p:x:gx_cfg", SUCCESS), _ab("📊 گزارش بازی‌ها", "adm_p:x:gx_rep:1", PRIMARY)])
+    rows.append([_ab("🎲 میزهای فعال", "adm_p:x:gx_act", PRIMARY), _ab("🔎 جستجوی بازیکن", "adm_p:x:gx_find", PRIMARY)])
+    rows.append([_ab("🔙 تنظیمات عمومی", "adm_p:g:home", DANGER)])
     return text, _kb(*rows)
 
 
@@ -5881,9 +5890,18 @@ def v2_admin_callback(cq):
                 ack()
                 set_state(admin_id, "admin_panel")
                 return page(act) or True
+            if act.startswith("gx_") and GAMES:
+                r = GAMES.admin_cb(act, args, admin_id, chat_id)
+                if r is None:
+                    ack()
+                    return True
+                t_, k_, toast = r
+                ack(toast)
+                show(t_, k_)
+                return True
             if act == "gmt":
                 key = "casino_on" if args[0] == "all" else f"g_{args[0]}_on"
-                if args[0] == "all" or args[0] in ("s", "d", "x", "t"):
+                if args[0] == "all" or args[0] in ("s", "d", "x", "t", "l", "p"):
                     set_setting(key, "1" if get_setting(key, "1") == "0" else "0")
                 ack("انجام شد.")
                 return page("gm") or True
