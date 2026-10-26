@@ -30,7 +30,8 @@ from zoneinfo import ZoneInfo
 # ===================== تنظیمات =====================
 BOT_TOKEN = os.environ.get("BOT_TOKEN") or "PUT_YOUR_NEW_TOKEN_HERE"  # روی Railway در Variables با نام BOT_TOKEN بگذارید
 ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "8322577437").replace(" ", "").split(",") if x]  # آیدی عددی ادمین (می‌توانید چند آیدی بگذارید: [111, 222])
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.db")
+# مسیر دیتابیس: اگر متغیر محیطی DB_PATH (مثلاً /data/bot.db روی Railway با Volume) تنظیم شود همان استفاده می‌شود
+DB_PATH = os.environ.get("DB_PATH") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.db")
 TIMEZONE = "Asia/Tehran"
 
 TOKENS_PER_MEMBER = 1       # هزینه‌ی هر ممبر در درخواست JFJ
@@ -2585,6 +2586,7 @@ def render_general():
         [_ab("👁 پیش‌نمایش قوانین", "adm_p:g:rv")],
         [_ab("📣 گزارشات ربات", "adm_p:x:rep", SUCCESS if rep_ready() else DANGER)],
         [_ab("🃏 بازی‌های گروهی", "adm_p:x:gm", SUCCESS if get_setting("casino_on", "1") != "0" else DANGER)],
+        [_ab("♻️ بازیابی بکاپ", "adm_p:x:rs", SUCCESS)],
     )
     return text, kb
 
@@ -2917,6 +2919,9 @@ def _err(chat_id, msg):
 def admin_handle_input(chat_id, user, text, data):
     if str(data.get("name", "")).startswith("gx_") and GAMES:
         return GAMES.admin_input(chat_id, user, text, data)
+    if data.get("name") in ("rs_wait", "rs_confirm"):
+        _hsend(chat_id, "❗️ فایل بکاپ را به‌صورت «فایل (Document)» بفرستید، یا برای ادامه/لغو از دکمه‌های پیام قبلی استفاده کنید.")
+        return
     if v2_handle_input(chat_id, user, text, data):
         return
     admin_id = user["id"]
@@ -3943,6 +3948,11 @@ def handle_message(message):
     _blk = section_blocked(user["id"], text)
     if _blk:
         send(chat_id, f"🛑 بخش ({_blk}) فعلا غیرفعال میباشد!", markdown=False)
+        return
+
+    if is_admin(user["id"]) and state == "adm_in" and data.get("name") == "rs_wait" and message.get("document") \
+            and message["chat"].get("type") == "private":
+        rs_receive(message)
         return
 
     if is_admin(user["id"]) and state == "adm_in" and data.get("name") == "rich" and data.get("kind") \
@@ -5890,6 +5900,8 @@ def v2_admin_callback(cq):
                 ack()
                 set_state(admin_id, "admin_panel")
                 return page(act) or True
+            if act.startswith("rs_"):
+                return rs_callback(act, args, admin_id, chat_id, mid, ack, show)
             if act.startswith("gx_") and GAMES:
                 r = GAMES.admin_cb(act, args, admin_id, chat_id)
                 if r is None:
@@ -7500,6 +7512,407 @@ def rep_ev_transfer(sender_id, recipient_id, amount):
 
 
 XPAGES["rep"] = render_report
+
+
+# =====================================================================
+#  ♻️ بازیابی بکاپ از پنل مدیریت (فایل را همان‌جا بفرستید؛ ربات خودش دیتابیس را جایگزین می‌کند)
+#  سازگار با: .sql ، .sql.gz ، .db/.sqlite ، .zip ، و فایل روی سرور (restore.*) برای فایل‌های بزرگ‌تر از ۲۰ مگابایت
+#  روی PythonAnywhere / Railway / cPanel / aaPanel / هر هاست دیگر یکسان کار می‌کند (بدون جایگزینی فایل؛ با backup-API خود SQLite)
+# =====================================================================
+RS_MAX_DL = 20 * 1024 * 1024            # سقف دانلود فایل از طریق Bot API
+RS_MAX_RAW = 600 * 1024 * 1024          # سقف حجم بعد از باز کردن gzip/zip
+RS_NAMES = ("restore",)                 # فایل‌های روی سرور باید با این نام شروع شوند
+_RS_EXT = (".sql", ".sql.gz", ".gz", ".db", ".sqlite", ".sqlite3", ".zip")
+_RS_PRAGMAS = {"foreign_keys", "user_version", "journal_mode", "synchronous", "page_size", "encoding",
+               "application_id", "defer_foreign_keys", "legacy_alter_table", "cache_size", "busy_timeout"}
+
+
+def _rs_auth(action, a1, a2, dbname, trigger):
+    """امنیت: اسکریپت SQL بکاپ اجازه‌ی ATTACH/DETACH ندارد و PRAGMAهای غیرمجاز نادیده گرفته می‌شوند"""
+    if action in (sqlite3.SQLITE_ATTACH, sqlite3.SQLITE_DETACH):
+        return sqlite3.SQLITE_DENY
+    if action == sqlite3.SQLITE_PRAGMA and (a1 or "").lower() not in _RS_PRAGMAS:
+        return sqlite3.SQLITE_IGNORE
+    return sqlite3.SQLITE_OK
+
+
+def _rs_unwrap(raw, fname, depth=0):
+    """gzip/zip را تا رسیدن به SQL یا فایل SQLite باز می‌کند → (bytes, نام)"""
+    import gzip, zipfile, io
+    if depth > 3:
+        raise ValueError("فایل چندلایه است؛ فقط یک‌بار فشرده‌سازی پشتیبانی می‌شود.")
+    if raw[:2] == b"\x1f\x8b":
+        out = bytearray()
+        with gzip.GzipFile(fileobj=io.BytesIO(raw)) as gz:
+            while True:
+                chunk = gz.read(1 << 20)
+                if not chunk:
+                    break
+                out += chunk
+                if len(out) > RS_MAX_RAW:
+                    raise ValueError("حجم فایل بعد از باز شدن بیش از حد بزرگ است.")
+        return _rs_unwrap(bytes(out), re.sub(r"\.gz$", "", fname, flags=re.I), depth + 1)
+    if raw[:4] == b"PK\x03\x04":
+        with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            names = [n for n in z.namelist() if not n.endswith("/")]
+            if not names:
+                raise ValueError("فایل zip خالی است.")
+            pick = next((n for n in names if n.lower().endswith((".sql", ".db", ".sqlite", ".sqlite3", ".gz"))), names[0])
+            info = z.getinfo(pick)
+            if info.file_size > RS_MAX_RAW:
+                raise ValueError("حجم فایل داخل zip بیش از حد بزرگ است.")
+            return _rs_unwrap(z.read(pick), pick, depth + 1)
+    return raw, fname
+
+
+def rs_prepare(raw, fname):
+    """فایل بکاپ (هر قالبی) → یک دیتابیس موقت سالم و بررسی‌شده کنار دیتابیس اصلی. (مسیر، اطلاعات) برمی‌گرداند؛ خطا = ValueError"""
+    raw, fname = _rs_unwrap(raw, fname)
+    d = os.path.dirname(os.path.abspath(DB_PATH)) or "."
+    stamp = str(int(time.time() * 1000))
+    tmp = os.path.join(d, f"restore_tmp_{stamp}.db")
+    script = None
+    if raw[:16] == b"SQLite format 3\x00":
+        srcp = os.path.join(d, f"restore_src_{stamp}.db")
+        with open(srcp, "wb") as f:
+            f.write(raw)
+        try:
+            sc = sqlite3.connect(f"file:{srcp}?mode=ro", uri=True)
+            try:
+                ok_ = sc.execute("PRAGMA quick_check").fetchone()
+                if not ok_ or ok_[0] != "ok":
+                    raise ValueError("فایل دیتابیس آسیب دیده است (quick_check ناموفق).")
+                script = "\n".join(sc.iterdump())
+            finally:
+                sc.close()
+        except sqlite3.DatabaseError as e:
+            raise ValueError(f"فایل دیتابیس قابل خواندن نیست: {e}")
+        finally:
+            try:
+                os.remove(srcp)
+            except OSError:
+                pass
+    else:
+        try:
+            script = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            script = raw.decode("utf-8", "replace")
+        if not re.search(r"create\s+table", script, re.I):
+            raise ValueError("این فایل بکاپ ربات (SQL یا دیتابیس SQLite) به نظر نمی‌رسد.")
+    try:
+        conn = sqlite3.connect(tmp)
+        try:
+            conn.set_authorizer(_rs_auth)
+            conn.executescript(script)
+            conn.set_authorizer(None)
+            conn.commit()
+            chk = conn.execute("PRAGMA integrity_check").fetchone()
+            if not chk or chk[0] != "ok":
+                raise ValueError("بررسی سلامت دیتابیس بازیابی‌شده ناموفق بود.")
+            tabs = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if not {"users", "settings"} <= tabs:
+                raise ValueError("جدول‌های اصلی ربات (users/settings) در این بکاپ نیست؛ بکاپ ربات دیگری است.")
+            n_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+            tokens = conn.execute("SELECT COALESCE(SUM(tokens),0) FROM users").fetchone()[0]
+            try:
+                last = conn.execute("SELECT MAX(created_at) FROM users").fetchone()[0]
+            except sqlite3.DatabaseError:
+                last = None
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError as e:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise ValueError(f"خطا در اجرای SQL بکاپ: {e}")
+    except Exception:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+    return tmp, {"fname": fname, "tables": len(tabs), "users": n_users, "tokens": tokens, "last": last,
+                 "size": os.path.getsize(tmp)}
+
+
+def rs_server_files():
+    """فایل‌های restore.* که کنار دیتابیس/ربات/پوشه‌ی جاری گذاشته شده‌اند (برای فایل‌های بزرگ‌تر از ۲۰ مگابایت)"""
+    seen, out = set(), []
+    dirs = [os.path.dirname(os.path.abspath(DB_PATH)), os.path.dirname(os.path.abspath(__file__)), os.getcwd()]
+    for d in dirs:
+        if d in seen or not os.path.isdir(d):
+            continue
+        seen.add(d)
+        try:
+            for n in sorted(os.listdir(d)):
+                low = n.lower()
+                if low.startswith(RS_NAMES) and low.endswith(_RS_EXT) and os.path.isfile(os.path.join(d, n)):
+                    out.append(os.path.join(d, n))
+        except OSError:
+            pass
+    return out[:4]
+
+
+def rs_host_note():
+    path = os.path.abspath(DB_PATH)
+    if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID") or os.environ.get("RAILWAY_SERVICE_ID"):
+        vol = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH")
+        if vol and path.startswith(vol.rstrip("/") + "/"):
+            return "🚆 Railway — ✅ دیتابیس روی Volume است و بعد از هر دیپلوی می‌ماند."
+        return ("🚆 Railway — ⚠️ دیتابیس روی Volume نیست؛ با هر دیپلوی جدید پاک می‌شود! یک Volume (مثلاً در /data) بسازید و "
+                "متغیر <code>DB_PATH=/data/bot.db</code> را تنظیم کنید.")
+    if os.environ.get("PYTHONANYWHERE_DOMAIN") or "pythonanywhere" in path.lower() or path.startswith("/home/"):
+        return "🐍 PythonAnywhere/هاست اشتراکی — ✅ فایل‌ها دائمی‌اند."
+    if "/www/wwwroot" in path:
+        return "🧩 aaPanel — ✅ فایل‌ها دائمی‌اند."
+    if "public_html" in path or os.path.isdir(os.path.expanduser("~/.cpanel")):
+        return "🗂 cPanel — ✅ فایل‌ها دائمی‌اند."
+    return "🖥 سرور/هاست — ✅ فایل‌ها دائمی‌اند (اگر داکر دارید، دیتابیس را روی Volume بگذارید)."
+
+
+def render_restore():
+    for f in os.listdir(os.path.dirname(os.path.abspath(DB_PATH)) or "."):      # نظافت فایل‌های موقتِ جامانده
+        if f.startswith(("restore_tmp_", "restore_src_")):
+            fp = os.path.join(os.path.dirname(os.path.abspath(DB_PATH)) or ".", f)
+            try:
+                if time.time() - os.path.getmtime(fp) > 3600:
+                    os.remove(fp)
+            except OSError:
+                pass
+    try:
+        size = os.path.getsize(DB_PATH)
+    except OSError:
+        size = 0
+    files = rs_server_files()
+    text = ("♻️ <b>بازیابی بکاپ</b>\n" + LINE + "\n"
+            f"{rs_host_note()}\n"
+            f"📍 مسیر دیتابیس: <code>{_h(os.path.abspath(DB_PATH))}</code>\n"
+            f"💽 حجم فعلی: {_rp_n(round(size / 1024, 1))} کیلوبایت • 👥 کاربران: {_rp_n(_q1('SELECT COUNT(*) FROM users'))}\n\n"
+            "📤 <b>روش اول:</b> دکمه‌ی «ارسال فایل بکاپ» را بزنید و فایل بکاپ را (همان فایلی که ربات در تاپیک بکاپ می‌فرستد؛ "
+            "<code>.sql</code> یا <code>.sql.gz</code> یا <code>.db</code> یا <code>.zip</code>) همین‌جا بفرستید.\n"
+            "📂 <b>روش دوم (فایل بزرگ‌تر از ۲۰ مگابایت):</b> فایل را با نام <code>restore.sql</code> (یا restore.sql.gz / restore.db) "
+            "کنار فایل‌های ربات یا کنار دیتابیس آپلود کنید؛ بعد دکمه‌اش اینجا ظاهر می‌شود.\n\n"
+            "🛡 قبل از هر بازیابی، از وضعیت فعلی یک بکاپ گرفته و برای شما ارسال می‌شود تا هر لحظه برگردید. "
+            "بعد از بازیابی نیازی به ری‌استارت نیست؛ ساختار جدول‌ها هم خودکار با نسخه‌ی فعلی ربات هماهنگ می‌شود.")
+    rows = [[_ab("📤 ارسال فایل بکاپ", "adm_p:x:rs_arm", SUCCESS)]]
+    for i, fp in enumerate(files):
+        rows.append([_ab(f"📂 {os.path.basename(fp)} ({_rp_n(round(os.path.getsize(fp) / 1024))} KB)", f"adm_p:x:rs_f:{i}", SUCCESS)])
+    rows.append([_ab("💾 بکاپ همین الان", "adm_p:x:rs_bk", PRIMARY)])
+    rows.append([_ab("🔙 تنظیمات عمومی", "adm_p:g:home", DANGER)])
+    return text, _kb(*rows)
+
+
+def _rs_summary(info, now_users, now_tokens):
+    last = info["last"]
+    return ("♻️ <b>تأیید بازیابی بکاپ</b>\n" + LINE + "\n"
+            f"📄 فایل: <code>{_h(info['fname'])}</code> • {_rp_n(round(info['size'] / 1024, 1))} کیلوبایت\n"
+            f"🗂 جدول‌ها: {_rp_n(info['tables'])}\n"
+            f"👥 کاربران: <b>{_rp_n(info['users'])}</b> در بکاپ • {_rp_n(now_users)} فعلی\n"
+            f"🪙 مجموع شاهی: <b>{_t(info['tokens'])}</b> در بکاپ • {_t(now_tokens)} فعلی\n"
+            + (f"🕒 آخرین ثبت‌نام در بکاپ: {_h(str(last))}\n" if last else "") +
+            "\n⚠️ <b>با تأیید، تمام داده‌های فعلی ربات با این بکاپ جایگزین می‌شود.</b>\n"
+            "قبل از آن یک بکاپ از وضعیت فعلی گرفته و برایتان ارسال می‌شود.")
+
+
+def _rs_download(message):
+    doc = message["document"]
+    if (doc.get("file_size") or 0) > RS_MAX_DL:
+        raise ValueError("حجم فایل بیش از ۲۰ مگابایت است (محدودیت تلگرام). فایل را با نام restore.sql (یا restore.sql.gz) روی سرور "
+                         "کنار ربات آپلود کنید و از «روش دوم» استفاده کنید.")
+    r = tg("getFile", file_id=doc["file_id"])
+    path = (r.get("result") or {}).get("file_path")
+    if not r.get("ok") or not path:
+        raise ValueError(f"دریافت فایل از تلگرام ناموفق بود: {r.get('description', r.get('error_description', ''))}")
+    url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{path}"
+    try:
+        with urllib.request.urlopen(url, timeout=120) as resp:
+            data = resp.read(RS_MAX_DL + 1)
+    except Exception as e:
+        raise ValueError(f"دانلود فایل ناموفق بود: {e}")
+    return data, doc.get("file_name") or os.path.basename(path)
+
+
+def _rs_offer(chat_id, admin_id, raw, fname, source):
+    try:
+        tmp, info = rs_prepare(raw, fname)
+    except ValueError as e:
+        _hsend(chat_id, f"❌ {_h(str(e))}")
+        return
+    except Exception as e:
+        logging.exception("rs_prepare")
+        _hsend(chat_id, f"❌ خطای غیرمنتظره در خواندن بکاپ: {_h(type(e).__name__)}: {_h(str(e))}")
+        return
+    set_state(admin_id, "adm_in", {"name": "rs_confirm", "tmp": tmp, "src": source, "back": "x"})
+    _hsend(chat_id, _rs_summary(info, _q1("SELECT COUNT(*) FROM users"), _q1("SELECT COALESCE(SUM(tokens),0) FROM users")),
+           _kb([_ab("✅ تأیید و بازیابی", "adm_p:x:rs_ok", SUCCESS)], [_ab("❌ انصراف", "adm_p:x:rs_no", DANGER)]))
+
+
+def rs_receive(message):
+    """ادمین فایل بکاپ را فرستاده (در حالت rs_wait)"""
+    chat_id = message["chat"]["id"]
+    admin_id = message["from"]["id"]
+    _hsend(chat_id, "⏳ در حال دریافت و بررسی فایل بکاپ…")
+    try:
+        raw, fname = _rs_download(message)
+    except ValueError as e:
+        _hsend(chat_id, f"❌ {_h(str(e))}")
+        return
+    _rs_offer(chat_id, admin_id, raw, fname, "tg")
+
+
+def _rs_safety_backup(admin_id):
+    """بکاپ از وضعیت فعلی: روی دیسک (کنار دیتابیس) + ارسال برای ادمین. (نام فایل یا None) """
+    try:
+        name, data, _lines = rep_make_backup()
+    except Exception:
+        logging.exception("rs safety backup")
+        return None
+    pre = "pre_restore_" + name.replace("jfj_backup_", "")
+    d = os.path.dirname(os.path.abspath(DB_PATH)) or "."
+    saved = None
+    try:
+        with open(os.path.join(d, pre), "wb") as f:
+            f.write(data)
+        saved = pre
+        olds = sorted(x for x in os.listdir(d) if x.startswith("pre_restore_"))
+        for x in olds[:-3]:
+            try:
+                os.remove(os.path.join(d, x))
+            except OSError:
+                pass
+    except OSError:
+        logging.warning("pre-restore backup could not be written to disk")
+    try:
+        _send_doc(admin_id, None, pre, data, "🛡 بکاپ وضعیت قبل از بازیابی (برای برگشت)")
+    except Exception:
+        logging.exception("rs safety send")
+    return saved or pre
+
+
+def rs_apply(tmp, admin_id, chat_id, src="tg"):
+    """جایگزینی کل دیتابیس با بکاپ بررسی‌شده، با backup-API خود SQLite (امن در حضور اتصال‌های باز و WAL)"""
+    if not os.path.isfile(tmp):
+        _hsend(chat_id, "❌ فایل موقت بکاپ پیدا نشد؛ دوباره فایل را بفرستید.")
+        return False
+    _hsend(chat_id, "⏳ در حال گرفتن بکاپ ایمنی و بازیابی… (چند ثانیه)")
+    safe = _rs_safety_backup(admin_id)
+    lock = getattr(GAMES, "_LK", None) if GAMES else None
+    if lock:
+        lock.acquire()
+    try:
+        s_ = sqlite3.connect(tmp)
+        d_ = sqlite3.connect(DB_PATH, timeout=60)
+        try:
+            d_.execute("PRAGMA busy_timeout=60000")
+            s_.backup(d_)
+            d_.commit()
+        finally:
+            s_.close()
+            d_.close()
+    except Exception as e:
+        logging.exception("rs_apply")
+        _hsend(chat_id, f"❌ بازیابی ناموفق بود: {_h(type(e).__name__)}: {_h(str(e))}\n"
+                        "دیتابیس قبلی دست‌نخورده است یا با بکاپ ایمنی قابل برگشت است.")
+        return False
+    finally:
+        if lock:
+            lock.release()
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+    problems = []
+    for fn in (install_schema, migrate_schema, seed_products):
+        try:
+            fn()
+        except Exception as e:
+            logging.exception("rs post %s", fn.__name__)
+            problems.append(fn.__name__)
+    try:
+        if GAMES:
+            GAMES.init(GAMES.B)
+        with get_db() as c:        # پنل‌های نیمه‌تمامِ بکاپ (بدون پول) بی‌معنی‌اند
+            c.execute("DELETE FROM g_tables WHERE state IN ('menu','setup','stake_wait','pick','mode')")
+    except Exception:
+        logging.exception("rs games post")
+    try:
+        apply_settings()
+    except Exception:
+        logging.exception("rs apply_settings")
+    set_state(admin_id, "admin_panel")
+    users = _q1("SELECT COUNT(*) FROM users")
+    toks = _q1("SELECT COALESCE(SUM(tokens),0) FROM users")
+    if src not in ("tg", "") and os.path.isfile(src):
+        try:
+            os.replace(src, src + f".done_{int(time.time())}")       # فایل روی سرور دوباره به‌اشتباه استفاده نشود
+        except OSError:
+            pass
+    _hsend(chat_id, "✅ <b>بازیابی کامل شد.</b>\n" + LINE + "\n"
+                    f"👥 کاربران: <b>{_rp_n(users)}</b> • 🪙 مجموع شاهی: <b>{_t(toks)}</b>\n"
+                    + (f"🛡 بکاپ قبل از بازیابی: <code>{_h(safe)}</code>\n" if safe else "⚠️ بکاپ ایمنی ساخته نشد.\n")
+                    + ("⚠️ مرحله‌های: " + _h(", ".join(problems)) + " خطا داشت؛ لاگ را ببینید.\n" if problems else "")
+                    + "نیازی به ری‌استارت ربات نیست.")
+    return True
+
+
+def rs_callback(act, args, admin_id, chat_id, mid, ack, show):
+    if act == "rs_arm":
+        set_state(admin_id, "adm_in", {"name": "rs_wait", "back": "x"})
+        ack()
+        _hsend(chat_id, "📤 <b>فایل بکاپ را بفرستید</b>\n\nفایل را به‌صورت <b>فایل (Document)</b> ارسال کنید "
+                        "(.sql / .sql.gz / .db / .zip).",
+               _kb([_ab("❌ انصراف", "adm_p:x:rs_no", DANGER)]))
+        return True
+    if act == "rs_no":
+        _, d = get_state(admin_id)
+        tmp = (d or {}).get("tmp")
+        if tmp and os.path.isfile(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+        set_state(admin_id, "admin_panel")
+        ack("لغو شد.")
+        t, k = render_restore()
+        show(t, k)
+        return True
+    if act == "rs_ok":
+        state, d = get_state(admin_id)
+        if state != "adm_in" or (d or {}).get("name") != "rs_confirm":
+            ack("این مرحله منقضی شده؛ دوباره فایل را بفرستید.", True)
+            return True
+        ack("در حال بازیابی…")
+        set_state(admin_id, "admin_panel")
+        show("♻️ در حال بازیابی…", None)
+        rs_apply(d["tmp"], admin_id, chat_id, d.get("src", "tg"))
+        return True
+    if act == "rs_f":
+        files = rs_server_files()
+        try:
+            fp = files[int(args[0])]
+        except (IndexError, ValueError):
+            ack("فایل پیدا نشد.", True)
+            return True
+        ack("در حال خواندن فایل…")
+        try:
+            with open(fp, "rb") as f:
+                raw = f.read(RS_MAX_RAW + 1)
+            if len(raw) > RS_MAX_RAW:
+                raise ValueError("حجم فایل بیش از حد بزرگ است.")
+        except (OSError, ValueError) as e:
+            _hsend(chat_id, f"❌ {_h(str(e))}")
+            return True
+        _rs_offer(chat_id, admin_id, raw, os.path.basename(fp), fp)
+        return True
+    if act == "rs_bk":
+        ack("بکاپ در حال ارسال…")
+        threading.Thread(target=rep_send_backup, args=(chat_id,), daemon=True).start()
+        return True
+    return False
+
+
+XPAGES["rs"] = render_restore
 
 
 # ===================== اجرا =====================
