@@ -2124,7 +2124,12 @@ def worker():
 # ---------------- 🎃 هیولا (باس‌فایت گروهی هالووین) ----------------
 try:
     import monster_art as _art
-except Exception:       # بدون Pillow/فایل تصویر: ربات فقط متن می‌فرستد
+    if not getattr(_art, "OK", False):
+        logging.error("monster_art loaded but Pillow is unavailable; add 'Pillow' to requirements.txt")
+        _art = None
+except Exception:
+    # قبلاً خطای import بی‌صدا نادیده گرفته می‌شد و علتِ ارسال متن بدون تصویر مشخص نبود.
+    logging.exception("Could not import monster_art; check Pillow and that monster_art.py is deployed")
     _art = None
 
 MON_TTL = 900                 # عمر هر هیولا (ثانیه) — همزمان با فاصله‌ی ارسال خودکار
