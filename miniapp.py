@@ -672,6 +672,8 @@ def api_join_list(uid, body):
         k = bot.chan_key(r[3], r[1])
         if k in done_keys or k in seen:
             continue
+        if bot.is_chan_blocked(bot.extract_chat_identifier(r[1] or ""), r[3]):
+            continue  # کانال/گروه توسط مدیریت مسدود شده
         seen.add(k)
         uniq.append(r)
     with ThreadPoolExecutor(4) as ex:
@@ -702,6 +704,10 @@ def api_join_confirm(uid, body):
     if not view or not row or row[4] != "in_progress":
         return {"ok": False, "gone": True, "error": "این درخواست دیگر معتبر نیست."}
     link, member_count, owner_id, chat_id_num, _status = row
+    if bot.is_chan_blocked(bot.extract_chat_identifier(link or ""), chat_id_num):
+        with bot.get_db() as c:
+            c.execute("DELETE FROM mini_seen WHERE user_id=? AND code=?", (uid, code))
+        return {"ok": False, "gone": True, "error": "این درخواست دیگر معتبر نیست."}
 
     if bot.chan_key(chat_id_num, link) in bot.user_channel_keys(uid, exclude_code=code):
         with bot.get_db() as c:

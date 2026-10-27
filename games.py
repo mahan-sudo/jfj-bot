@@ -302,6 +302,18 @@ def init(bot):
             sender INTEGER NOT NULL, sname TEXT, semo TEXT, recipient INTEGER NOT NULL, rname TEXT, remo TEXT,
             amount REAL NOT NULL, state TEXT NOT NULL, deadline REAL NOT NULL)""")
         c.execute("CREATE TABLE IF NOT EXISTS g_cool (user_id INTEGER PRIMARY KEY, ts REAL NOT NULL)")
+        c.execute("""CREATE TABLE IF NOT EXISTS g_mon (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, thread_id INTEGER, msg_id INTEGER,
+            state TEXT NOT NULL, hp INTEGER NOT NULL, maxhp INTEGER NOT NULL, seed INTEGER NOT NULL DEFAULT 0,
+            chances INTEGER NOT NULL, created REAL NOT NULL, expires REAL NOT NULL, winner INTEGER, reward REAL,
+            has_photo INTEGER NOT NULL DEFAULT 0)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS g_mon_hits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, mon_id INTEGER NOT NULL, user_id INTEGER NOT NULL, name TEXT,
+            emo TEXT, hit INTEGER NOT NULL, dmg INTEGER NOT NULL, line TEXT, ts REAL NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS g_mon_hits_m ON g_mon_hits(mon_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS g_mon_state ON g_mon(state, chat_id)")
+        c.execute("""CREATE TABLE IF NOT EXISTS g_chats (
+            chat_id INTEGER PRIMARY KEY, title TEXT, type TEXT, seen REAL)""")
         c.execute("CREATE INDEX IF NOT EXISTS g_tables_state ON g_tables(state)")
         c.execute("CREATE INDEX IF NOT EXISTS g_xfer_st ON g_xfer(state, deadline)")
         c.execute("CREATE INDEX IF NOT EXISTS g_xfer_snd ON g_xfer(sender, state)")
@@ -1350,6 +1362,8 @@ def on_callback(cq):
         return _cb_lb(cq, tid, parts, ans)
     if act != "tx" and gbanned(uid):
         return ans()                # محروم از بازی‌ها: بی‌صدا
+    if act == "mat":
+        return _cb_mon(cq, tid, ans)
     if act == "jn":
         return _cb_join(cq, tid, ans)
     if act == "pk":
@@ -1786,11 +1800,11 @@ def _rep_page(days):
                 players.add(e[0])
         except Exception:
             pass
-    names = {"s": "🎰 گردونه", "d": "🎲 تاس", "x": "❌⭕ دوز"}
+    names = {"s": "🎰 گردونه", "d": "🎲 تاس", "x": "❌⭕ دوز", "m": "🎃 هیولا"}
     title = {1: "امروز", 7: "۷ روز اخیر", 30: "۳۰ روز اخیر"}[days]
     lines = [f"📊 <b>گزارش بازی‌های گروهی — {title}</b>", B.LINE]
     ts = tp = tn = 0
-    for k in ("s", "d", "x"):
+    for k in ("s", "d", "x", "m"):
         if k in agg:
             n, st, pa = agg[k]
             ts, tp, tn = ts + st, tp + pa, tn + n
@@ -1902,6 +1916,24 @@ def admin_cb(act, args, admin_id, chat_id):
                           f"مقدار جدید را به صورت {'عدد صحیح' if kind == 'int' else 'عدد (اعشار مجاز است)'} بفرستید:",
                  _kb([_btn("❌ انصراف", "adm_p:x:gx_cfg", B.DANGER)]))
         return None
+    if act in ("gx_mon", "gx_mon_r", "gx_mon_s", "gx_mon_a"):
+        B.set_state(admin_id, "admin_panel")
+        toast = None
+        if act == "gx_mon_r":
+            mon_chats(True)
+            toast = "🔄 لیست به‌روز شد."
+        elif act in ("gx_mon_s", "gx_mon_a") and args and re.fullmatch(r"-?\d+", args[0]):
+            cid = int(args[0])
+            if cid not in {c_[0] for c_ in mon_chats()}:
+                toast = "ربات در این گروه ادمین نیست."
+            elif act == "gx_mon_s":
+                toast = mon_send(cid)[1]
+            else:
+                cur = _mon_auto()
+                cur.symmetric_difference_update({cid})
+                B.set_setting("g_mon_auto", json.dumps(sorted(cur)))
+                toast = "🔁 ارسال خودکار روشن شد." if cid in cur else "⛔ ارسال خودکار خاموش شد."
+        return (*_mon_page(), toast)
     if act == "gx_find":
         B.set_state(admin_id, "adm_in", {"name": "gx_find", "back": "x"})
         B._hsend(chat_id, "🔎 <b>جستجوی بازیکن</b>\n\nآیدی عددی یا @یوزرنیم بازیکن را بفرستید:",
@@ -2070,6 +2102,7 @@ def _tick(wait=True):
         futs.append(_submit(("t", t["id"]), _purge, t["id"]))
     _x("DELETE FROM g_cool WHERE ts<?", (now - cv('cool') - 5,))
     futs.append(_submit(("x",), _tick_xfer, now))
+    futs.append(_submit(("m",), _tick_mon, now))
     if now - _LAST_LOGCLEAN[0] > 3600:
         _LAST_LOGCLEAN[0] = now
         _x("DELETE FROM g_log WHERE ts<?", (now - LOG_KEEP_SEC,))
@@ -2088,6 +2121,372 @@ def worker():
         time.sleep(1)
 
 
+# ---------------- 🎃 هیولا (باس‌فایت گروهی هالووین) ----------------
+try:
+    import monster_art as _art
+except Exception:       # بدون Pillow/فایل تصویر: ربات فقط متن می‌فرستد
+    _art = None
+
+MON_TTL = 900                 # عمر هر هیولا (ثانیه) — همزمان با فاصله‌ی ارسال خودکار
+MON_GAP = 900                 # فاصله‌ی ارسال خودکار (۱۵ دقیقه)
+MON_CHANCES = 3               # کل شانس اتک‌های یک هیولا (مشترک بین همه‌ی بازیکن‌ها، نه برای هر نفر)
+MON_COST = 1                  # هزینه‌ی هر اتک
+MON_HP = (300, 450)
+MON_DMG = (110, 150)
+MON_HIT = 0.8
+MON_REWARD = (4, 7)
+MON_LK = 2_000_000_000        # جدا کردن کلید قفل ویرایش از میزها
+_CHAT_SEEN = {}
+_CL = [None]                  # کش لیست گروه‌های ادمین
+_LAST_MONCLEAN = [0.0]
+
+MON_HEAD = "🎃 هیولا درحال حمله به شاهنشاهی است…\n🏆 با کمک مردم شاهنشاهی هیولا رو شکست بدید!\n\n"
+MON_COST_LINE = "🏦 هزینه هر اتک به هیولا ››› ۱ شاهی 💎"
+MON_HIT_LINES = [
+    "با یک گلوله‌ی آتشین درست به پیشانی هیولا زد و {d} از جانش کم کرد! 💥",
+    "از لای دود و آتش نشانه گرفت و {d} جان از هیولا گرفت! 🔥",
+    "ضربه‌ای سهمگین به شکم هیولا فرود آورد و {d} از نیرویش کاست! ⚡",
+    "هیولا را غافلگیر کرد و با تیری نقره‌ای {d} جانش را گرفت! 🌙",
+    "جلو دوید، به دندان‌های هیولا شلیک کرد و {d} آسیب زد! 🦷",
+    "با نعره‌ای بلند شلیک کرد؛ پوست کدویی هیولا ترک خورد و {d} جان کم شد! 🎯",
+    "از پشت دیوار قلعه نشانه رفت و {d} از جان هیولا را سوزاند! 🏰",
+]
+MON_MISS_LINES = [
+    "شلیک کرد اما تیرش در مه شب گم شد و هیولا فقط خندید! 🌫",
+    "دستش لرزید و گلوله از کنار گوش هیولا رد شد! 💨",
+    "هیولا در آخرین لحظه جاخالی داد و ضربه به تاریکی خورد! 👻",
+    "تیرش به دیوار قبرستان خورد و خفاش‌ها پراکنده شدند! 🦇",
+    "گلوله‌اش به دمبرگ سبز هیولا خورد اما خراشی هم برنداشت! 🌿",
+]
+
+
+def _tg_files(method, fields, fname, data, timeout=60):
+    """ارسال multipart (تصویر) به Bot API؛ همیشه dict برمی‌گرداند و exception پرتاب نمی‌کند"""
+    import urllib.request
+    import urllib.error
+    import hashlib
+    import os
+    boundary = "----jfjmon" + hashlib.md5(os.urandom(8)).hexdigest()
+    body = b""
+    for k, v in fields.items():
+        body += (f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n').encode("utf-8")
+    body += (f'--{boundary}\r\nContent-Disposition: form-data; name="p"; filename="{fname}"\r\n'
+             f'Content-Type: image/jpeg\r\n\r\n').encode() + data + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(f"https://api.telegram.org/bot{B.BOT_TOKEN}/{method}", data=body,
+                                 headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        try:
+            return json.loads(e.read().decode("utf-8", "replace"))
+        except Exception:
+            return {"ok": False, "description": f"HTTP {e.code}"}
+    except Exception as e:
+        return {"ok": False, "description": str(e)}
+
+
+def _bold_cap(cap):
+    q = B._boldify("sendPhoto", {"caption": cap, "parse_mode": "HTML"})
+    return (q or {"caption": cap})["caption"]
+
+
+def note_chat(chat):
+    """هر گروهی که ربات در آن پیام می‌بیند را (کم‌هزینه) ثبت می‌کند تا ادمین بتواند هیولا بفرستد"""
+    try:
+        if chat.get("type") not in ("group", "supergroup"):
+            return
+        cid, now = chat["id"], time.time()
+        if now - _CHAT_SEEN.get(cid, 0) < 600:
+            return
+        _CHAT_SEEN[cid] = now
+        _x("INSERT INTO g_chats (chat_id, title, type, seen) VALUES (?,?,?,?) ON CONFLICT(chat_id) DO UPDATE SET "
+           "title=excluded.title, type=excluded.type, seen=excluded.seen",
+           (cid, (chat.get("title") or "")[:60], chat["type"], now))
+    except Exception:
+        logging.exception("note_chat")
+
+
+def on_my_chat_member(u):
+    try:
+        chat = u.get("chat") or {}
+        st = (u.get("new_chat_member") or {}).get("status")
+        if chat.get("type") not in ("group", "supergroup"):
+            return
+        if st in ("administrator", "creator", "member"):
+            _CHAT_SEEN.pop(chat["id"], None)
+            note_chat(chat)
+        elif st in ("left", "kicked"):
+            _x("DELETE FROM g_chats WHERE chat_id=?", (chat["id"],))
+        _CL[0] = None
+    except Exception:
+        logging.exception("on_my_chat_member")
+
+
+def mon_chats(force=False):
+    """[(chat_id, عنوان)] گروه‌هایی که ربات در آن‌ها ادمین است (با بررسی زنده؛ ۲ دقیقه کش)"""
+    if not force and _CL[0] and time.time() - _CL[0][0] < 120:
+        return _CL[0][1]
+    known = {r["chat_id"]: r["title"] for r in _rows("SELECT chat_id, title FROM g_chats")}
+    ids = dict(known)
+    for r in _rows("SELECT DISTINCT chat_id FROM g_tables"):
+        ids.setdefault(r["chat_id"], None)
+    out = []
+    for cid, title in list(ids.items())[:60]:
+        r = B.tg("getChatMember", _timeout=8, chat_id=cid, user_id=B.BOT_ID)
+        st = (r.get("result") or {}).get("status") if r.get("ok") else None
+        if st not in ("administrator", "creator"):
+            if not r.get("ok") and re.search(r"not found|kicked|forbidden|deactivated", str(r.get("description", "")), re.I):
+                _x("DELETE FROM g_chats WHERE chat_id=?", (cid,))
+            continue
+        if cid not in known:
+            g = B.tg("getChat", _timeout=8, chat_id=cid)
+            ch = g.get("result") or {}
+            if not g.get("ok") or ch.get("type") not in ("group", "supergroup"):
+                continue
+            title = ch.get("title")
+            _CHAT_SEEN.pop(cid, None)
+            note_chat(ch)
+        out.append((cid, (title or str(cid))))
+    out.sort(key=lambda z: z[1])
+    _CL[0] = (time.time(), out)
+    return out
+
+
+def _mon_auto():
+    try:
+        return {int(x) for x in json.loads(B.get_setting("g_mon_auto", "[]") or "[]")}
+    except Exception:
+        return set()
+
+
+def _mon(mid):
+    return _row("SELECT * FROM g_mon WHERE id=?", (mid,))
+
+
+def _mon_hits(mid):
+    return _rows("SELECT * FROM g_mon_hits WHERE mon_id=? ORDER BY id", (mid,))
+
+
+def _mon_view(m):
+    """(متن، کیبورد، تصویر) از وضعیت فعلی هیولا"""
+    hits = _mon_hits(m["id"])
+    chn = _n(max(m["chances"], 0))
+    lines = [f"بازیکن {_mention(h['user_id'], h['name'])} {h['emo']} {h['line']}" for h in hits]
+    kb = None
+    state = "live"
+    if m["state"] == "live":
+        text = MON_HEAD + f"🔫 شانس های باقی مانده ›› {chn} شانس\n" + ("\n".join(lines) + "\n" if lines else "") + "\n" + MON_COST_LINE
+        kb = _kb([_btn("اتک به هیولا  🔫🎃", f"g:mat:{m['id']}", B.DANGER)])
+    elif m["state"] == "done":
+        w = next((h for h in reversed(hits) if h["user_id"] == m["winner"]), None)
+        text = (f"🎃 هیولا پس از {_n(len(hits))} تلاش با موفقیت شکست خورد و به ملکوت بازگشت! 🔥\n\n"
+                f"🏆 بازیکن {_mention(m['winner'], (w or {}).get('name'))} {(w or {}).get('emo', '🍟')} شجاعانه در مقابل هیولا ایستاد و اورا شکست داد.\n\n"
+                f"🎁 پاداش ››› {_t(m['reward'])} شاهی 💎")
+        state = "dead"
+    elif hits:
+        text = MON_HEAD + f"🔫 شانس های باقی مانده ›› {chn} شانس\n" + "\n".join(lines)
+    else:
+        text = MON_HEAD + f"🔫 شانس های باقی مانده ›› {chn} شانس\nکسی در مقابل هیولا از شاهنشاهی دفاع نکرد! 🏰\n\n" + MON_COST_LINE
+    png = None
+    if _art is not None:
+        try:
+            png = _art.render(max(m["hp"], 0), m["maxhp"], m["seed"], [h["dmg"] if h["hit"] else None for h in hits], state)
+        except Exception:
+            logging.exception("monster render")
+    return text, kb, png
+
+
+def _mon_post(m, text, kb, png):
+    """ارسال اولیه؛ عکس‌دار اگر ممکن بود، وگرنه متن. (ok, message_id, has_photo, توضیح خطا)"""
+    p = {"chat_id": m["chat_id"], "reply_markup": json.dumps(kb or {"inline_keyboard": []})}
+    if m.get("thread_id"):
+        p["message_thread_id"] = m["thread_id"]
+    if png:
+        f = dict(p, caption=_bold_cap(text), parse_mode="HTML")
+        r = _tg_files("sendPhoto", f, "monster.jpg", png)
+        if not r.get("ok") and re.search(r"parse|entities", str(r.get("description", "")), re.I):
+            r = _tg_files("sendPhoto", dict(p, caption=_plain(text)), "monster.jpg", png)
+        if r.get("ok"):
+            return True, r["result"]["message_id"], 1, ""
+        logging.warning("monster sendPhoto failed: %s", r)
+    q = {"chat_id": m["chat_id"], "text": text}
+    if m.get("thread_id"):
+        q["message_thread_id"] = m["thread_id"]
+    if kb:
+        q["reply_markup"] = kb
+    r = _tgh("sendMessage", **q)
+    if r.get("ok"):
+        return True, r["result"]["message_id"], 0, ""
+    return False, None, 0, str(r.get("description", "نامشخص"))
+
+
+def mon_send(chat_id, thread_id=None):
+    """هیولای تازه در گروه. (ok, پیام)"""
+    now = time.time()
+    with _Tx() as c:
+        if c.execute("SELECT 1 FROM g_mon WHERE chat_id=? AND state='live'", (chat_id,)).fetchone():
+            return False, "در این گروه همین الان یک هیولای فعال هست."
+        hp = random.randint(*MON_HP)
+        cur = c.execute("INSERT INTO g_mon (chat_id, thread_id, state, hp, maxhp, seed, chances, created, expires) "
+                        "VALUES (?,?,?,?,?,?,?,?,?)",
+                        (chat_id, thread_id, "live", hp, hp, random.randrange(1000), MON_CHANCES, now, now + MON_TTL))
+        mid = cur.lastrowid
+    m = _mon(mid)
+    text, kb, png = _mon_view(m)
+    ok_, msg_id, has_photo, err = _mon_post(m, text, kb, png)
+    if not ok_:
+        _x("DELETE FROM g_mon WHERE id=?", (mid,))
+        return False, f"ارسال نشد: {err}"
+    _x("UPDATE g_mon SET msg_id=?, has_photo=? WHERE id=?", (msg_id, has_photo, mid))
+    return True, "🎃 هیولا فرستاده شد." + ("" if has_photo else " (بدون تصویر؛ Pillow نصب نیست)")
+
+
+def _mon_render(mid):
+    """وضعیت فعلی هیولا را (زیر قفل) روی همان پیام می‌نشاند: ویرایش تصویر + متن"""
+    with _elock(MON_LK + mid):
+        m = _mon(mid)
+        if not m or not m.get("msg_id"):
+            return
+        text, kb, png = _mon_view(m)
+        rm = json.dumps(kb or {"inline_keyboard": []})
+        r = {}
+        for attempt in range(4):
+            if m["has_photo"] and png:
+                media = json.dumps({"type": "photo", "media": "attach://p", "caption": _bold_cap(text), "parse_mode": "HTML"})
+                r = _tg_files("editMessageMedia", {"chat_id": m["chat_id"], "message_id": m["msg_id"], "media": media,
+                                                   "reply_markup": rm}, "monster.jpg", png)
+            elif m["has_photo"]:
+                r = _tgh("editMessageCaption", chat_id=m["chat_id"], message_id=m["msg_id"], caption=text,
+                         reply_markup=kb or {"inline_keyboard": []})
+            else:
+                r = _tgh("editMessageText", chat_id=m["chat_id"], message_id=m["msg_id"], text=text,
+                         reply_markup=kb or {"inline_keyboard": []})
+            d = str(r.get("description", ""))
+            if r.get("ok") or "not modified" in d:
+                return
+            flood = "Too Many Requests" in d or _retry_after(r) is not None
+            if d.startswith("Bad Request") and not flood:
+                logging.warning("monster edit failed: %s", r)
+                return
+            if attempt < 3:
+                time.sleep(min(_retry_after(r) or 1.5 * (attempt + 1), 10) + 0.3)
+        logging.warning("monster edit failed after retries: %s", r)
+
+
+def _cb_mon(cq, mid, ans):
+    uid = cq["from"]["id"]
+    name = _name(cq["from"])
+    now = time.time()
+    with _Tx() as c:
+        m = c.execute("SELECT * FROM g_mon WHERE id=?", (mid,)).fetchone()
+        if not m or m["state"] != "live" or now >= m["expires"] or m["chances"] <= 0:
+            return ans("🎃 این هیولا دیگر فعال نیست.", True)
+        if not _charge_in(c, uid, MON_COST):
+            r = c.execute("SELECT tokens FROM users WHERE id=?", (uid,)).fetchone()
+            return ans(f"🛑 موجودی شما کافی نیست!\nموجودی فعلی ››› {_t(r['tokens'] if r else 0)} شاهی", True)
+        prev = c.execute("SELECT emo FROM g_mon_hits WHERE mon_id=? AND user_id=? LIMIT 1", (mid, uid)).fetchone()
+        used = {r["emo"] for r in c.execute("SELECT emo FROM g_mon_hits WHERE mon_id=?", (mid,)).fetchall()}
+        emo = prev["emo"] if prev else random.choice([e for e in PLAYER_EMOJIS if e not in used] or list(PLAYER_EMOJIS))
+        hit = random.random() < MON_HIT
+        dmg = random.randint(*MON_DMG) if hit else 0
+        hp = m["hp"] - dmg
+        line = random.choice(MON_HIT_LINES).format(d=_n(dmg)) if hit else random.choice(MON_MISS_LINES)
+        chances = m["chances"] - 1
+        c.execute("INSERT INTO g_mon_hits (mon_id, user_id, name, emo, hit, dmg, line, ts) VALUES (?,?,?,?,?,?,?,?)",
+                  (mid, uid, name, emo, int(hit), dmg, line, now))
+        state, reward = "live", 0
+        if hp <= 0:
+            state, reward = "done", float(random.randint(*MON_REWARD))
+            _pay_in(c, uid, reward)
+        elif chances <= 0:
+            state = "fail"
+        c.execute("UPDATE g_mon SET hp=?, chances=?, state=?, winner=?, reward=? WHERE id=?",
+                  (hp, chances, state, uid if state == "done" else None, reward, mid))
+        if state != "live":
+            _mon_log_in(c, m, state, reward)
+        ans("💥 ضربه خورد!" if hit else "💨 خطا رفت!")
+        _later(_mon_render, mid)
+
+
+def _mon_log_in(c, m, state, reward):
+    """دفتر مالی: ورودی = تعداد اتک‌ها، پرداختی = جایزه‌ی برنده"""
+    hs = c.execute("SELECT user_id, name, COUNT(*) n FROM g_mon_hits WHERE mon_id=? GROUP BY user_id", (m["id"],)).fetchall()
+    win = c.execute("SELECT winner FROM g_mon WHERE id=?", (m["id"],)).fetchone()
+    wid = win["winner"] if win else None
+    det = [[h["user_id"], h["name"], float(h["n"] * MON_COST), float(reward) if h["user_id"] == wid else 0.0, 1] for h in hs]
+    c.execute("INSERT INTO g_log (ts, game, chat_id, tid, kind, stake_total, payout_total, detail) VALUES (?,?,?,?,?,?,?,?)",
+              (time.time(), "m", m["chat_id"], m["id"], state, round(sum(e[2] for e in det), 2), round(float(reward), 2),
+               json.dumps(det, ensure_ascii=False)))
+
+
+def _mon_expire(mid):
+    with _Tx() as c:
+        m = c.execute("SELECT * FROM g_mon WHERE id=? AND state='live'", (mid,)).fetchone()
+        if not m:
+            return
+        n = c.execute("SELECT COUNT(*) n FROM g_mon_hits WHERE mon_id=?", (mid,)).fetchone()["n"]
+        st = "fail" if n else "idle"
+        c.execute("UPDATE g_mon SET state=? WHERE id=?", (st, mid))
+        if n:
+            _mon_log_in(c, m, st, 0.0)
+        _later(_mon_render, mid)
+
+
+def _mon_auto_send(cid):
+    ok_, msg = mon_send(cid)
+    if not ok_:
+        logging.warning("auto monster %s: %s", cid, msg)
+
+
+def _tick_mon(now):
+    for m in _rows("SELECT id FROM g_mon WHERE state='live' AND expires<=?", (now,)):
+        _mon_expire(m["id"])
+    auto = _mon_auto()
+    if auto:
+        try:
+            last = json.loads(B.get_setting("g_mon_last", "{}") or "{}")
+        except Exception:
+            last = {}
+        changed = False
+        for cid in auto:
+            if now - float(last.get(str(cid), 0)) >= MON_GAP:
+                last[str(cid)] = now
+                changed = True
+                if not _row("SELECT 1 x FROM g_mon WHERE chat_id=? AND state='live'", (cid,)):
+                    _mon_auto_send(cid)
+        if changed:
+            B.set_setting("g_mon_last", json.dumps(last))
+    if now - _LAST_MONCLEAN[0] > 3600:
+        _LAST_MONCLEAN[0] = now
+        cut = now - 7 * 86400
+        _x("DELETE FROM g_mon_hits WHERE mon_id IN (SELECT id FROM g_mon WHERE state!='live' AND created<?)", (cut,))
+        _x("DELETE FROM g_mon WHERE state!='live' AND created<?", (cut,))
+
+
+def _mon_page():
+    auto = _mon_auto()
+    chats = mon_chats()[:20]
+    live = _rows("SELECT id, chat_id, hp, maxhp, chances FROM g_mon WHERE state='live'")
+    lines = ["🎃 <b>هیولا (باس‌فایت هالووین)</b>", B.LINE,
+             f"هر هیولا {B._rp_n(MON_CHANCES)} شانس مشترک دارد • هزینه‌ی هر اتک {B._rp_n(MON_COST)} شاهی • "
+             f"احتمال برخورد {B._rp_n(int(MON_HIT * 100))}٪ • جایزه‌ی کشنده {B._rp_n(MON_REWARD[0])} تا {B._rp_n(MON_REWARD[1])} شاهی • "
+             f"عمر هیولا {B._rp_n(MON_TTL // 60)} دقیقه.",
+             f"🟢 هیولای فعال الان: <b>{B._rp_n(len(live))}</b>",
+             "🔁 «خودکار» یعنی هر ۱۵ دقیقه یک هیولا برای آن گروه فرستاده شود.",
+             "ℹ️ فقط گروه‌هایی که ربات در آن‌ها ادمین است نمایش داده می‌شوند."]
+    if not chats:
+        lines.append("\n❗️ گروهی پیدا نشد. ربات را در گروه ادمین کنید و یک پیام در گروه بفرستید، بعد «به‌روزرسانی» را بزنید.")
+    rows = []
+    for cid, title in chats:
+        on = cid in auto
+        rows.append([_btn("🎃 " + _html.unescape(title)[:22], f"adm_p:x:gx_mon_s:{cid}", B.SUCCESS),
+                     _btn("🔁 خودکار " + ("✅" if on else "⛔"), f"adm_p:x:gx_mon_a:{cid}", B.SUCCESS if on else B.DANGER)])
+    rows.append([_btn("🔄 به‌روزرسانی لیست", "adm_p:x:gx_mon_r", B.SUCCESS)])
+    rows.append(_back_gm())
+    return "\n".join(lines), _kb(*rows)
+
+
 # ---------------- گزارش شبانه‌ی کازینو ----------------
 def casino_day_block(day):
     """بخش کازینو برای گزارش شبانه (HTML)؛ رشته‌ی خالی اگر آن روز بازی‌ای نبوده"""
@@ -2097,7 +2496,7 @@ def casino_day_block(day):
     rows = [r for r in rows if r["kind"] != "cancel"]
     if not rows:
         return ""
-    names = {"s": "🎰 گردونه", "d": "🎲 تاس", "x": "❌⭕ دوز"}
+    names = {"s": "🎰 گردونه", "d": "🎲 تاس", "x": "❌⭕ دوز", "m": "🎃 هیولا"}
     agg, big = {}, None
     for r in rows:
         a = agg.setdefault(r["game"], [0, 0.0, 0.0])
@@ -2113,7 +2512,7 @@ def casino_day_block(day):
             pass
     lines = []
     tot_s = tot_p = 0.0
-    for k in ("s", "d", "x"):
+    for k in ("s", "d", "x", "m"):
         if k in agg:
             n, st, pa = agg[k]
             tot_s += st

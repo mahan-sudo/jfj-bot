@@ -1,1 +1,2 @@
 waitress==3.0.0
+Pillow>=10.0

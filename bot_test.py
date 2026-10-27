@@ -5621,6 +5621,7 @@ def render_games():
         rows.append([_ab(("🟢 " if on_ else "🔴 ") + n_, f"adm_p:x:gmt:{k_}", SUCCESS if on_ else DANGER)])
     rows.append([_ab("⚙️ تنظیمات بازی‌ها", "adm_p:x:gx_cfg", SUCCESS), _ab("📊 گزارش بازی‌ها", "adm_p:x:gx_rep:1", PRIMARY)])
     rows.append([_ab("🎲 میزهای فعال", "adm_p:x:gx_act", PRIMARY), _ab("🔎 جستجوی بازیکن", "adm_p:x:gx_find", PRIMARY)])
+    rows.append([_ab("🎃 هیولا (موقت)", "adm_p:x:gx_mon", SUCCESS)])
     rows.append([_ab("🔙 تنظیمات عمومی", "adm_p:g:home", DANGER)])
     return text, _kb(*rows)
 
@@ -6393,6 +6394,9 @@ def _games_dispatch(update_id, message=None, callback=None):
     if GAMES is None:
         return
     try:
+        _ch = ((callback or {}).get("message") or {}).get("chat") if callback is not None else (message or {}).get("chat")
+        if _ch:
+            GAMES.note_chat(_ch)        # ثبت گروه (برای لیست گروه‌های دکمه‌ی هیولا)
         if callback is not None:
             if not str(callback.get("data", "")).startswith("g:"):
                 return
@@ -6422,6 +6426,14 @@ def handle_update(update):
     message = update.get("message")
     callback = update.get("callback_query")
     chat_member = update.get("chat_member")
+
+    if update.get("my_chat_member"):
+        if GAMES:
+            try:
+                GAMES.on_my_chat_member(update["my_chat_member"])
+            except Exception:
+                logging.exception("my_chat_member")
+        return
 
     if message and "from" in message:
         user_id = message["from"]["id"]
@@ -7956,7 +7968,7 @@ def main():
         try:
             res = tg(
                 "getUpdates", offset=offset, timeout=30,
-                allowed_updates=["message", "callback_query", "chat_member"],
+                allowed_updates=["message", "callback_query", "chat_member", "my_chat_member"],
             )
             if not res.get("ok"):
                 # tg() استثنا پرتاب نمی‌کند؛ بدون این تأخیر، حلقه در خطای پروکسی
