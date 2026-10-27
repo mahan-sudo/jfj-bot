@@ -2170,7 +2170,7 @@ def _tg_files(method, fields, fname, data, timeout=60):
     body = b""
     for k, v in fields.items():
         body += (f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n').encode("utf-8")
-    body += (f'--{boundary}\r\nContent-Disposition: form-data; name="p"; filename="{fname}"\r\n'
+    body += (f'--{boundary}\r\nContent-Disposition: form-data; name="photo"; filename="{fname}"\r\n'
              f'Content-Type: image/jpeg\r\n\r\n').encode() + data + f"\r\n--{boundary}--\r\n".encode()
     req = urllib.request.Request(f"https://api.telegram.org/bot{B.BOT_TOKEN}/{method}", data=body,
                                  headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
