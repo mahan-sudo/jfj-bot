@@ -2500,6 +2500,7 @@ ADMIN_SECTION_BTNS = {
     "🛍 تنظیمات خرید شاهی": "j",
     "🧰 تنظیمات درخواست JFJ": "q",
     "🧾 سفارشات تکمیل نشده": "o",
+    "🃏 بازی‌های گروهی": "gm",
 }
 _SEC_BY_KEY = {v: k for k, v in ADMIN_SECTION_BTNS.items()}
 
@@ -2514,7 +2515,7 @@ def admin_panel_menu():
             [btn(b[2]), btn(b[3])],
             [btn(b[4]), btn(b[5])],
             [btn(b[6]), btn(b[7])],
-            [btn(b[8])],
+            [btn(b[8]), btn(b[9])],
             [btn(BACK_BTN)],
         ],
         "resize_keyboard": True,
@@ -2571,8 +2572,7 @@ def render_general():
         f"⏱ کرون ارسال اطلاعیه: <b>{_fmt_dur(cron_sec())}</b> بین هر دو نفر\n"
         f"📛 متن قوانین: {'✏️ سفارشی' if get_setting('rules_text') else '📄 پیش‌فرض'}\n"
         f"📣 گزارشات ربات: {'🟢 فعال' if rep_ready() else '🔴 تنظیم نشده'}\n"
-        f"🃏 بازی‌های گروهی: {'🟢 فعال' if get_setting('casino_on', '1') != '0' else '🔴 خاموش'}\n\n"
-        "👇 <i>برای تغییر هر مورد، دکمه‌اش را بزنید.</i>"
+        "\n👇 <i>برای تغییر هر مورد، دکمه‌اش را بزنید.</i>"
     )
     kb = _kb(
         [_ab("🔴 خاموش کردن ربات" if on else "🟢 روشن کردن ربات", "adm_p:g:tg", DANGER if on else SUCCESS)],
@@ -2585,7 +2585,6 @@ def render_general():
         [_ab("📛 ویرایش قوانین", "adm_p:g:in:rules", SUCCESS), _ab("♻️ قوانین پیش‌فرض", "adm_p:g:rr", DANGER)],
         [_ab("👁 پیش‌نمایش قوانین", "adm_p:g:rv")],
         [_ab("📣 گزارشات ربات", "adm_p:x:rep", SUCCESS if rep_ready() else DANGER)],
-        [_ab("🃏 بازی‌های گروهی", "adm_p:x:gm", SUCCESS if get_setting("casino_on", "1") != "0" else DANGER)],
         [_ab("♻️ بازیابی بکاپ", "adm_p:x:rs", SUCCESS)],
     )
     return text, kb
@@ -2800,6 +2799,7 @@ SECTION_RENDER = {
     "g": render_general, "s": render_support, "f": render_finance, "u": render_users,
     "p": lambda: render_packs("p"), "j": lambda: render_packs("j"),
     "r": render_referral, "q": render_requests, "o": render_orders,
+    "gm": lambda: render_games(),
 }
 
 
@@ -5622,7 +5622,6 @@ def render_games():
     rows.append([_ab("⚙️ تنظیمات بازی‌ها", "adm_p:x:gx_cfg", SUCCESS), _ab("📊 گزارش بازی‌ها", "adm_p:x:gx_rep:1", PRIMARY)])
     rows.append([_ab("🎲 میزهای فعال", "adm_p:x:gx_act", PRIMARY), _ab("🔎 جستجوی بازیکن", "adm_p:x:gx_find", PRIMARY)])
     rows.append([_ab("🎃 هیولا (موقت)", "adm_p:x:gx_mon", SUCCESS)])
-    rows.append([_ab("🔙 تنظیمات عمومی", "adm_p:g:home", DANGER)])
     return text, _kb(*rows)
 
 

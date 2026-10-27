@@ -396,8 +396,8 @@ ${action('goOrders', false, P.addUser, 'درخواست JFJ', 'هر عضو، ' + 
 ${linkRow(d.refLink)}</div>
 ${sec('عملیات سریع')}
 <div ${glass(36, '14px 4px 12px', 'margin:8px 16px 0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));row-gap:14px;align-items:start;flex-shrink:0')}>
-${qa('goBuyToken', '', ['gifttint', 'gifticon'], P.coins, 'خرید شاهی')}${qa('goAccount', '', ['minttint', 'mint'], P.user, 'حساب من')}${qa('goSvc', 'views', ['violettint', 'violet'], P.eye, 'خرید سین')}${qa('goSvc', 'members', ['tint', 'accent'], P.group, 'خرید ممبر')}
-${qa('goSvc', 'reaction', ['aredt', 'ared'], P.heart, 'خرید ری‌اکشن')}${qa('goSvc', 'premium', ['gifttint', 'gifticon'], P.diamond, 'خرید ری‌اکشن پرمیومی')}${qa('goSponsor', '', ['agreent', 'agreen'], P.star, 'خرید اسپانسری')}${qa('goTransfer', '', ['muted', 'muted'], P.coins, 'انتقال موجودی')}
+${qa('goBuyToken', '', ['gifttint', 'gifticon'], P.coins, 'خرید شاهی')}${qa('goAccount', '', ['minttint', 'mint'], P.user, 'حساب من')}${qa('goSvc', 'views', ['violettint', 'violet'], P.eye, 'خرید سین', svcOff('views'))}${qa('goSvc', 'members', ['tint', 'accent'], P.group, 'خرید ممبر', svcOff('members'))}
+${qa('goSvc', 'reaction', ['aredt', 'ared'], P.heart, 'خرید ری‌اکشن', svcOff('reaction'))}${qa('goSvc', 'premium', ['gifttint', 'gifticon'], P.diamond, 'خرید ری‌اکشن پرمیومی', svcOff('premium'))}${qa('goSponsor', '', ['agreent', 'agreen'], P.star, 'خرید اسپانسری')}${qa('goTransfer', '', ['muted', 'muted'], P.coins, 'انتقال موجودی')}
 </div>
 ${topSection()}
 <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 20px 0;flex-shrink:0"><span style="font-size:15px;font-weight:700">سفارش‌های من</span><button data-act="goOrders" style="border:0;background:transparent;color:var(--accent);font-size:13px;font-weight:500;padding:4px 0;cursor:pointer">همه سفارش‌ها</button></div>
@@ -508,8 +508,10 @@ function richHow(k) {
 }
 const tagWrap = (inner, tag) => `<div style="position:relative;display:grid">${inner}${tag ? `<span style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);padding:2px 12px;border-radius:12px;font-size:11px;font-weight:800;white-space:nowrap;color:#3B2500;background:linear-gradient(90deg,#F5C26B,#F5A524);box-shadow:0 4px 12px rgba(245,165,36,0.45)">${tag}</span>` : ''}</div>`;
 const TAGS = ['', 'پرفروش', '', 'به‌صرفه'];
+function svcOff(k) { const x = S.data && S.data.services && S.data.services[k]; return !!(x && !x.enabled); }
 function pageService() {
   const d = D(), v = svcInfo(), m = v.meta, short = v.cost > d.balance, done = S.svcDone, react = v.key === 'reaction', prem = v.key === 'premium';
+  if (!v.s.enabled) return `${titleBlock(m.title, m.sub, true)}${dashed('rose', 'این محصول در حال حاضر ناموجود است.')}`;
   const unit = Math.round(v.s.rate / v.s.per * 100) / 100;
   const rem = Math.round((d.balance - v.cost) * 100) / 100;
   const pk = v.qtys.map((q, i) => tagWrap(tile(fa(q), m.unit, num(v.price(q)) + ' شاهی', i === v.idx, 'pickSvc', i), TAGS[i])).join('');
@@ -790,6 +792,18 @@ async function loadLb(reset) {
   } catch (e) { fail(e); }
   if (S.lb === L) { L.loading = false; render(); }
 }
+async function pollLive() {
+  if (document.hidden || !S.data || S.busy) return;
+  try {
+    if (S.tab === 'join') { await loadList(true); return; }
+    const nd = await api('/api/state');
+    const chg = JSON.stringify(nd.services) !== JSON.stringify(S.data.services);
+    S.data = nd;
+    if (chg) render();
+  } catch (e) { /* بی‌صدا */ }
+}
+setInterval(pollLive, 45000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) pollLive(); });
 async function withBusy(fn) {
   if (S.busy) return;
   S.busy = true; render();
@@ -813,7 +827,7 @@ function openChat(url) {
 const A = {
   tab: (d) => go(d.v),
   goJoin: () => go('join'), goOrders: () => go('orders'), goInvite: () => go('invite'),
-  goBuyToken: () => go('buyToken', 'home'), goSvc: (d) => { S.svc = d.v; S.svcIdx = 1; S.svcLink = ''; S.svcDone = null; go('service', 'home'); }, goSponsor: () => go('sponsor', 'home'), soon: () => toast('این بخش بزودی اضافه می‌شود ✨'),
+  goBuyToken: () => go('buyToken', 'home'), goSvc: (d) => { if (svcOff(d.v)) { toast('این محصول در حال حاضر ناموجود است.', 'err'); loadState(true); return; } S.svc = d.v; S.svcIdx = 1; S.svcLink = ''; S.svcDone = null; go('service', 'home'); }, goSponsor: () => go('sponsor', 'home'), soon: () => toast('این بخش بزودی اضافه می‌شود ✨'),
   goTransfer: () => { S.trAmount = ''; S.trTo = ''; S.trDone = null; go('transfer', 'home'); },
   doTransfer: () => withBusy(async () => {
     const r = await api('/api/transfer', { amount: S.trAmount, to: S.trTo });

@@ -635,6 +635,18 @@ def photo_sig(code):
     return hmac.new(key, str(code).encode(), hashlib.sha256).hexdigest()[:16]
 
 
+def _chan_blocked(link, chat_id_num):
+    """کانال/گروه توسط مدیریت مسدود شده؟ (با یوزرنیم لینک، آیدی عددی و شناسه‌ی نهایی‌شده)"""
+    try:
+        if bot.is_chan_blocked(bot.extract_chat_identifier(link or ""), chat_id_num):
+            return True
+        ident = bot.resolve_chat_ident(chat_id_num, link)
+        return bool(ident) and bot.is_chan_blocked(ident, chat_id_num)
+    except Exception:
+        traceback.print_exc()
+        return False
+
+
 def api_join_list(uid, body):
     """همه‌ی درخواست‌های درحال‌انجام که کاربر هنوز عضوشان نیست (چک زنده‌ی عضویت، مثل خود ربات)"""
     try:
@@ -672,7 +684,7 @@ def api_join_list(uid, body):
         k = bot.chan_key(r[3], r[1])
         if k in done_keys or k in seen:
             continue
-        if bot.is_chan_blocked(bot.extract_chat_identifier(r[1] or ""), r[3]):
+        if _chan_blocked(r[1], r[3]):
             continue  # کانال/گروه توسط مدیریت مسدود شده
         seen.add(k)
         uniq.append(r)
@@ -704,7 +716,7 @@ def api_join_confirm(uid, body):
     if not view or not row or row[4] != "in_progress":
         return {"ok": False, "gone": True, "error": "این درخواست دیگر معتبر نیست."}
     link, member_count, owner_id, chat_id_num, _status = row
-    if bot.is_chan_blocked(bot.extract_chat_identifier(link or ""), chat_id_num):
+    if _chan_blocked(link, chat_id_num):
         with bot.get_db() as c:
             c.execute("DELETE FROM mini_seen WHERE user_id=? AND code=?", (uid, code))
         return {"ok": False, "gone": True, "error": "این درخواست دیگر معتبر نیست."}
@@ -953,9 +965,16 @@ def respond(start_response, status, body, ctype="application/json; charset=utf-8
     return [body]
 
 
+def _index_path():
+    """جدیدترین index.html بین static/ و کنار miniapp.py (تا نسخه‌ی قدیمی داخل static جلوی نسخه‌ی تازه را نگیرد)"""
+    cands = [os.path.join(STATIC_DIR, "index.html"), os.path.join(HERE, "index.html")]
+    cands = [c for c in cands if os.path.isfile(c)]
+    return max(cands, key=os.path.getmtime) if cands else os.path.join(STATIC_DIR, "index.html")
+
+
 def serve_file(start_response, path, cache="no-store"):
     if path == "index.html":
-        with open(os.path.join(STATIC_DIR, "index.html"), "rb") as f:
+        with open(_index_path(), "rb") as f:
             return respond(start_response, "200 OK", f.read().decode("utf-8"), "text/html; charset=utf-8", cache)
     full = os.path.realpath(os.path.join(STATIC_DIR, path))
     if not full.startswith(os.path.realpath(STATIC_DIR) + os.sep) or not os.path.isfile(full):
