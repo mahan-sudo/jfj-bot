@@ -31,6 +31,7 @@ except OSError:
     bot.DB_PATH = os.path.join(HERE, "bot.db")
 DEV_UID = os.environ.get("JFJ_DEV_UID")
 DEV_PHOTO = os.environ.get("JFJ_DEV_PHOTO", "")
+MINI_BUILD = "sec3-1028"   # شناسه‌ی نسخه؛ برای اطمینان از آپلود درست فایل‌ها
 STATIC_DIR = os.path.join(HERE, "static")
 if not os.path.exists(os.path.join(STATIC_DIR, "index.html")):
     STATIC_DIR = HERE  # اگر index.html کنار miniapp.py گذاشته شد (آپلود از موبایل)
@@ -603,17 +604,20 @@ def build_state(user):
         },
         "tokenPacks": bot.jt_packs_view(),
         "services": products_info(uid),
-        "secOff": sec_off_list(uid),
+        "secOff": sec_off_list(uid, True),
+        "isAdmin": bool(bot.is_admin(uid)),
+        "build": MINI_BUILD,
         "sponsorPacks": bot.SPONSOR_PRODUCTS,
         "reactions": {"emojis": bot.REACTION_EMOJIS, "combos": ["ری‌اکشن ترکیبی مثبت🥳", "ری‌اکشن ترکیبی منفی🤮"]},
     }
 
 
 # ---------------------------------------------------------------- بخش‌های غیرفعال ربات
-def sec_off_list(uid):
-    """کلید بخش‌هایی که ادمین در «فعال/غیرفعال کردن بخش‌ها» خاموش کرده؛ ادمین‌ها همیشه دسترسی دارند."""
+def sec_off_list(uid, show_admin=False):
+    """کلید بخش‌های خاموش. ادمین‌ها در API همیشه دسترسی دارند؛ ولی برای نمایش (show_admin) لیست واقعی را می‌بینند
+    تا بتوانند ظاهر بخش خاموش را ببینند و با دکمه‌ی «ورود با دسترسی ادمین» رد شوند."""
     try:
-        if bot.is_admin(uid):
+        if bot.is_admin(uid) and not show_admin:
             return []
         return sorted(bot.sections_off())
     except Exception:

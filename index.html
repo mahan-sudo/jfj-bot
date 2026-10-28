@@ -331,7 +331,7 @@ const COIN = (s) => { const id = 'cg' + (++coinN); return `<svg width="${s}" hei
 P.lock = 'S:<rect x="5" y="11" width="14" height="10" rx="3"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path><path d="M12 15.5v2"></path>';
 const offScreen = (key) => {
   const name = SEC_NAME[key] || 'این بخش', whole = key === 'mi';
-  const back = whole ? '' : primaryBtn('goHome', 'بازگشت به خانه', ic(P.home));
+  const back = (whole ? '' : primaryBtn('goHome', 'بازگشت به خانه', ic(P.home))) + (D() && D().isAdmin ? `<button class="round press" data-act="adminPass" data-v="${key}" style="height:52px;border:0;border-radius:26px;background:var(--tint);color:var(--accent);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">🛡 ورود با دسترسی ادمین</button><span style="font-size:11.5px;color:var(--muted);text-align:center;line-height:1.8">شما ادمین هستید؛ کاربران عادی فقط همین صفحه‌ی قفل را می‌بینند.</span>` : '');
   return `${whole ? '' : titleBlock(name, 'در حال حاضر در دسترس نیست.', true)}${hero(`<div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:12px;padding:30px 18px 26px;text-align:center"><span class="round" style="position:relative;width:92px;height:92px;border-radius:46px;background:rgba(255,255,255,0.14);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.28),0 12px 32px rgba(0,0,0,0.28);display:flex;align-items:center;justify-content:center;color:#FFFFFF"><span style="position:absolute;inset:-9px;border-radius:50%;border:2px dashed rgba(255,255,255,0.35)"></span>${ic(P.lock, 42)}</span><span style="font-size:20px;font-weight:800;line-height:1.6">«${name}» موقتاً غیرفعال است</span><span style="font-size:13px;color:var(--hsub);line-height:1.9">مدیریت این بخش را فعلاً بسته است.<br>به‌محض فعال‌شدن، همین‌جا دوباره در دسترس خواهد بود.</span><span style="font-size:12px;font-weight:700;border-radius:20px;padding:5px 14px;background:rgba(255,255,255,0.14)">🔒 غیرفعال توسط مدیریت</span></div>`, '16px 16px 0', 36)}<div style="display:flex;flex-direction:column;gap:10px;margin:16px 16px 0;flex-shrink:0">${back}<button class="glass round press" data-act="recheck" style="height:52px;border:1px solid var(--edge);border-radius:26px;background:var(--surface);color:var(--ink);font-size:14px;font-weight:700;cursor:pointer;box-shadow:var(--shadow);font-family:inherit">🔄 بررسی دوباره</button></div>`;
 };
 const TICK = '<svg width="17" height="17" viewBox="0 0 24 24" role="img" aria-label="تأیید شده" style="display:block;flex-shrink:0"><path d="M12 1.5l2.4 1.8 3-.3 1.2 2.8 2.8 1.2-.3 3L22.9 12l-1.8 2.4.3 3-2.8 1.2-1.2 2.8-3-.3L12 22.5l-2.4-1.8-3 .3-1.2-2.8-2.8-1.2.3-3L1.1 12l1.8-2.4-.3-3 2.8-1.2 1.2-2.8 3 .3L12 1.5z" fill="none" style="stroke:var(--tick)" stroke-width="1.6" stroke-linejoin="round"></path><path d="M7.8 12.3l3 3 5.5-6.1" fill="none" style="stroke:var(--tick)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
@@ -517,11 +517,12 @@ const TAGS = ['', 'پرفروش', '', 'به‌صرفه'];
 const SVC_SEC = { views: 'sn', members: 'mb', reaction: 'rc', premium: 'pm' };
 const SEC_NAME = { sj: 'شروع JFJ', rj: 'درخواست JFJ', od: 'سفارش‌های من', bt: 'خرید شاهی', sp: 'خرید اسپانسری', bk: 'انتقال موجودی', sv: 'خرید ممبر و سین', rf: 'دعوت دوستان', su: 'پشتیبانی', ac: 'حساب من', sn: 'خرید سین', mb: 'خرید ممبر', rc: 'خرید ری‌اکشن', pm: 'ری‌اکشن پرمیومی', mi: 'مینی‌اپ' };
 const TAB_SEC = { join: 'sj', newRequest: 'rj', orders: 'od', buyToken: 'bt', sponsor: 'sp', transfer: 'bk', service: 'sv', invite: 'rf', support: 'su', account: 'ac' };
-function offKey(tab) {
+function offKey0(tab) {
   if (secOff('mi')) return 'mi';
   if (tab === 'service') return secOff('sv') ? 'sv' : (secOff(SVC_SEC[S.svc]) ? SVC_SEC[S.svc] : null);
   const k = TAB_SEC[tab]; return k && secOff(k) ? k : null;
 }
+function offKey(tab) { const k = offKey0(tab); return k && S.bypass && S.bypass[k] && S.data && S.data.isAdmin ? null : k; }
 function secOff(k) { const o = S.data && S.data.secOff; return !!(o && o.indexOf(k) >= 0); }
 function svcOff(k) { const x = S.data && S.data.services && S.data.services[k]; return !!(x && !x.enabled) || secOff('sv') || secOff(SVC_SEC[k]); }
 function pageService() {
@@ -688,7 +689,8 @@ function pageRules() {
   return `${titleBlock('راهنما و قوانین', 'قبل از شروع، این چند نکته را بخوان.', true)}
 ${help.map(([t, b]) => card(t, esc(b))).join('')}
 <div style="margin:20px 20px 0;font-size:16px;font-weight:800">قوانین</div>
-${rules.map(r => `<div ${glass(32, '14px 18px', 'margin:10px 16px 0;flex-shrink:0;font-size:13px;line-height:2')}>${esc(r).replace(/\n/g, '<br>')}</div>`).join('')}`;
+${rules.map(r => `<div ${glass(32, '14px 18px', 'margin:10px 16px 0;flex-shrink:0;font-size:13px;line-height:2')}>${esc(r).replace(/\n/g, '<br>')}</div>`).join('')}
+<div style="margin:18px 0 0;text-align:center;font-size:10.5px;color:var(--muted);direction:ltr">server: ${esc((D() && D().build) || 'OLD — miniapp.py آپدیت نشده')} · ui: sec3-1028</div>`;
 }
 
 function headHtml() {
@@ -773,7 +775,7 @@ function toast(msg, kind) {
 const fail = (e) => { toast(e.message || 'خطا رخ داد.', 'err'); };
 
 function go(tab, back) {
-  if (tab !== 'home' && offKey(tab)) { toast('این بخش در حال حاضر غیرفعال است.', 'err'); loadState(true); return; }
+  if (tab !== 'home' && offKey(tab) && !(S.data && S.data.isAdmin)) { toast('این بخش در حال حاضر غیرفعال است.', 'err'); loadState(true); return; }
   S.tab = tab; S.back = back || null; S.menu = null; S.menuLast = null;
   $('scroller').scrollTop = 0;
   animNext = true;
@@ -866,6 +868,7 @@ const A = {
   goBuyTokenFromReq: () => go('buyToken', 'newRequest'), goBuyTokenFromSvc: () => go('buyToken', 'service'),
   back: () => go(S.back || 'home'),
   goHome: () => go('home'),
+  adminPass: (d) => { S.bypass = S.bypass || {}; S.bypass[d.v] = 1; render(); },
   recheck: () => { toast('در حال بررسی…'); loadState(true); },
   goSponsorFromSubs: () => go('sponsor', 'subs'),
   menu: () => { if (S.menu) A.menuClose(); else { clearTimeout(A._mt); S.menuLast = null; S.menu = 'main'; render(); } },
