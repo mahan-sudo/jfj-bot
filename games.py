@@ -1914,28 +1914,47 @@ def admin_cb(act, args, admin_id, chat_id):
         B._hsend(chat_id, f"{ico} <b>{label}</b>\n\nمقدار فعلی: <b>{_fv(cv(name), kind)}</b> {unit}\n"
                           f"بازه‌ی مجاز: {_fv(lo, kind)} تا {_fv(hi, kind)}\n"
                           f"مقدار جدید را به صورت {'عدد صحیح' if kind == 'int' else 'عدد (اعشار مجاز است)'} بفرستید:",
-                 _kb([_btn("❌ انصراف", "adm_p:x:gx_cfg", B.DANGER)]))
+                 _kb([_btn("❌ انصراف", "adm_p:x:gx_mon_cfg" if name in _MCFG_BY else "adm_p:x:gx_cfg", B.DANGER)]))
         return None
-    if act in ("gx_mon", "gx_mon_r", "gx_mon_s", "gx_mon_a", "gx_mon_i"):
+    if act in ("gx_mon", "gx_mon_r", "gx_mon_s", "gx_mon_i", "gx_mon_tg", "gx_mon_e", "gx_mon_cfg", "gx_mon_rst", "gx_mon_rep"):
         B.set_state(admin_id, "admin_panel")
         toast = None
-        if act == "gx_mon_i":
+        if act == "gx_mon_cfg":
+            return (*_mcfg_page(), None)
+        if act == "gx_mon_rst":
+            for name in _MCFG_BY:
+                B.set_setting(_CFGK[name][0], "")
+            return (*_mcfg_page(), "♻️ تنظیمات هیولا به پیش‌فرض برگشت.")
+        if act == "gx_mon_rep":
+            d_ = int(args[0]) if args and args[0] in ("1", "7", "30") else 1
+            return (*_mrep_page(d_), None)
+        if act == "gx_mon_tg":
+            now_on = not mon_auto_on()
+            B.set_setting("g_m_on", "1" if now_on else "0")
+            toast = "🟢 ارسال خودکار روشن شد." if now_on else "🔴 ارسال خودکار خاموش شد (ارسال دستی همچنان ممکن است)."
+        elif act == "gx_mon_i":
             threading.Thread(target=_art_bootstrap, daemon=True, name="art-install").start()
             toast = "⏳ نصب Pillow شروع شد؛ چند دقیقه بعد لیست را به‌روز کنید."
         elif act == "gx_mon_r":
             mon_chats(True)
-            toast = "🔄 لیست به‌روز شد."
-        elif act in ("gx_mon_s", "gx_mon_a") and args and re.fullmatch(r"-?\d+", args[0]):
+            toast = "🔄 به‌روز شد."
+        elif act == "gx_mon_e" and args and args[0].isdigit():
+            if _row("SELECT 1 x FROM g_mon WHERE id=? AND state='live'", (int(args[0]),)):
+                _mon_expire(int(args[0]))
+                toast = "⏩ هیولا تمام شد."
+            else:
+                toast = "این هیولا دیگر فعال نیست."
+        elif act == "gx_mon_s" and args and re.fullmatch(r"-?\d+", args[0]):
             cid = int(args[0])
             if cid not in {c_[0] for c_ in mon_chats()}:
                 toast = "ربات در این گروه ادمین نیست."
-            elif act == "gx_mon_s":
-                toast = mon_send(cid)[1]
             else:
-                cur = _mon_auto()
-                cur.symmetric_difference_update({cid})
-                B.set_setting("g_mon_auto", json.dumps(sorted(cur)))
-                toast = "🔁 ارسال خودکار روشن شد." if cid in cur else "⛔ ارسال خودکار خاموش شد."
+                ok_, toast = mon_send(cid)
+                if ok_:
+                    with _MC_LK:                      # شمارش پیام‌ها از نو (با استراحت)
+                        st = _MC.get(cid)
+                        if st:
+                            st.update(n=0, goal=_new_goal(), cool=time.time() + cv("mcool") * 60)
         return (*_mon_page(), toast)
     if act == "gx_find":
         B.set_state(admin_id, "adm_in", {"name": "gx_find", "back": "x"})
@@ -1948,7 +1967,8 @@ def admin_cb(act, args, admin_id, chat_id):
         return (*_cfg_page(), None)
     if act == "gx_rst":
         for name in _CFGK:
-            B.set_setting(_CFGK[name][0], "")
+            if name not in _MCFG_BY:
+                B.set_setting(_CFGK[name][0], "")
         return (*_cfg_page(), "♻️ همه به پیش‌فرض برگشت.")
     if act == "gx_rep":
         d = int(args[0]) if args and args[0] in ("1", "7", "30") else 1
@@ -1997,16 +2017,31 @@ def admin_input(chat_id, user, text, data):
         if v is None or v < lo or v > hi or (kind == "int" and v != int(v)):
             B._hsend(chat_id, f"❗️ یک {'عدد صحیح' if kind == 'int' else 'عدد'} بین {_fv(lo, kind)} و {_fv(hi, kind)} بفرستید.")
             return
-        mx = v if key == "max" else cv("max")
-        mn = v if key == "min" else cv("min")
-        xm = v if key == "xmin" else cv("xmin")
-        if mx > 0 and (mn > mx or xm > mx):
-            B._hsend(chat_id, "❗️ حداقل ورودی نمی‌تواند از حداکثر ورودی بیشتر باشد.")
-            return
+        is_m = key in _MCFG_BY
+        if is_m:
+            lo_k = key if key in _MPAIRS else next((a_ for a_, b_ in _MPAIRS.items() if b_ == key), None)
+            if lo_k:
+                hi_k = _MPAIRS[lo_k]
+                lo_v = v if key == lo_k else cv(lo_k)
+                hi_v = v if key == hi_k else cv(hi_k)
+                if lo_v > hi_v:
+                    B._hsend(chat_id, "❗️ «حداقل» نمی‌تواند از «حداکثر» بیشتر باشد.")
+                    return
+        else:
+            mx = v if key == "max" else cv("max")
+            mn = v if key == "min" else cv("min")
+            xm = v if key == "xmin" else cv("xmin")
+            if mx > 0 and (mn > mx or xm > mx):
+                B._hsend(chat_id, "❗️ حداقل ورودی نمی‌تواند از حداکثر ورودی بیشتر باشد.")
+                return
         B.set_setting(_CFGK[key][0], str(int(v) if kind == "int" else v))
         B.set_state(admin_id, "admin_panel")
+        if key in ("mmin", "mmax"):
+            with _MC_LK:
+                for st in _MC.values():
+                    st["goal"] = _new_goal()
         B._hsend(chat_id, f"✅ {label} روی {_fv(v, kind)} {unit} تنظیم شد.")
-        t, k = _cfg_page()
+        t, k = _mcfg_page() if is_m else _cfg_page()
         B._hsend(chat_id, t, k)
 
 
@@ -2503,21 +2538,59 @@ def _art_bootstrap():
     finally:
         _ART_ST["busy"] = False
 
-MON_TTL = 900                 # عمر هر هیولا (ثانیه) — همزمان با فاصله‌ی ارسال خودکار
-MON_GAP = 900                 # فاصله‌ی ارسال خودکار (۱۵ دقیقه)
+# پیش‌فرض‌ها (همه از «پنل ← بازی‌های گروهی ← هیولا ← تنظیمات» قابل تغییرند)
+MON_MSG_MIN = 25              # هیولا بعد از حداقل این تعداد پیامِ کاربران در گروه
+MON_MSG_MAX = 60              # و حداکثر این تعداد (عدد دقیق هر بار تصادفی بین این دو)
+MON_COOL_MIN = 20             # بعد از هر هیولا، این‌قدر (دقیقه) شمارش پیام‌ها شروع نمی‌شود
+MON_TTL_MIN = 15              # عمر هر هیولا (دقیقه)
 MON_CHANCES = 3               # کل شانس اتک‌های یک هیولا (مشترک بین همه‌ی بازیکن‌ها، نه برای هر نفر)
-MON_COST = 1                  # هزینه‌ی هر اتک
-MON_HP = (300, 450)
-MON_DMG = (110, 150)
-MON_HIT = 0.8
-MON_REWARD = (4, 7)
+MON_COST = 1                  # هزینه‌ی هر اتک (شاهی)
+MON_HIT_PCT = 80              # احتمال برخورد (درصد)
+MON_RW_MIN = 4                # جایزه‌ی کشنده (حداقل)
+MON_RW_MAX = 7                # جایزه‌ی کشنده (حداکثر)
+MON_DMG_MIN = 110             # دمیج هر اتک
+MON_DMG_MAX = 150
+MON_HP_MIN = 300              # جان هیولا
+MON_HP_MAX = 450
 MON_LK = 2_000_000_000        # جدا کردن کلید قفل ویرایش از میزها
 _CHAT_SEEN = {}
 _CL = [None]                  # کش لیست گروه‌های ادمین
 _LAST_MONCLEAN = [0.0]
 
+_CFGK.update({
+    "mmin": ("g_mmin", "MON_MSG_MIN"), "mmax": ("g_mmax", "MON_MSG_MAX"), "mcool": ("g_mcool", "MON_COOL_MIN"),
+    "mttl": ("g_mttl", "MON_TTL_MIN"), "mch": ("g_mch", "MON_CHANCES"), "mcost": ("g_mcost", "MON_COST"),
+    "mhit": ("g_mhit", "MON_HIT_PCT"), "mrmin": ("g_mrmin", "MON_RW_MIN"), "mrmax": ("g_mrmax", "MON_RW_MAX"),
+    "mdmin": ("g_mdmin", "MON_DMG_MIN"), "mdmax": ("g_mdmax", "MON_DMG_MAX"),
+    "mhpmin": ("g_mhpmin", "MON_HP_MIN"), "mhpmax": ("g_mhpmax", "MON_HP_MAX"),
+})
+_MCFG = [
+    ("mmin", "حداقل پیام تا ارسال هیولا", "پیام", "int", 1, 5000, "💬"),
+    ("mmax", "حداکثر پیام تا ارسال هیولا", "پیام", "int", 1, 5000, "💬"),
+    ("mcool", "استراحت بعد از هر هیولا", "دقیقه", "int", 0, 1440, "😴"),
+    ("mttl", "عمر هر هیولا", "دقیقه", "int", 1, 240, "⏳"),
+    ("mch", "کل شانس اتک‌ها (مشترک)", "شانس", "int", 1, 30, "🔫"),
+    ("mcost", "هزینه‌ی هر اتک", "شاهی", "int", 0, 1000, "🏦"),
+    ("mhit", "احتمال برخورد اتک", "درصد", "int", 1, 100, "🎯"),
+    ("mrmin", "جایزه‌ی کشنده (حداقل)", "شاهی", "int", 0, 100000, "🎁"),
+    ("mrmax", "جایزه‌ی کشنده (حداکثر)", "شاهی", "int", 0, 100000, "🎁"),
+    ("mdmin", "دمیج هر اتک (حداقل)", "جان", "int", 1, 100000, "💥"),
+    ("mdmax", "دمیج هر اتک (حداکثر)", "جان", "int", 1, 100000, "💥"),
+    ("mhpmin", "جان هیولا (حداقل)", "جان", "int", 1, 1000000, "❤️"),
+    ("mhpmax", "جان هیولا (حداکثر)", "جان", "int", 1, 1000000, "❤️"),
+]
+_MCFG_BY = {r[0]: r for r in _MCFG}
+_ACFG_BY.update(_MCFG_BY)
+_MPAIRS = {"mmin": "mmax", "mrmin": "mrmax", "mdmin": "mdmax", "mhpmin": "mhpmax"}
+_MC = {}                      # chat_id -> {"n": شمارنده، "goal": هدف تصادفی، "thread": تاپیک، "cool": زمان پایان استراحت}
+_MC_LK = threading.Lock()
+
+
+def _cost_line():
+    return f"🏦 هزینه هر اتک به هیولا ››› {_t(cv('mcost'))} شاهی 💎"
+
+
 MON_HEAD = "🎃 هیولا درحال حمله به شاهنشاهی است…\n🏆 با کمک مردم شاهنشاهی هیولا رو شکست بدید!\n\n"
-MON_COST_LINE = "🏦 هزینه هر اتک به هیولا ››› ۱ شاهی 💎"
 MON_HIT_LINES = [
     "با یک گلوله‌ی آتشین درست به پیشانی هیولا زد و {d} از جانش کم کرد! 💥",
     "از لای دود و آتش نشانه گرفت و {d} جان از هیولا گرفت! 🔥",
@@ -2629,11 +2702,79 @@ def mon_chats(force=False):
     return out
 
 
-def _mon_auto():
+def mon_auto_on():
+    return B.get_setting("g_m_on", "1") != "0"
+
+
+def _mon_cool_until(cid):
+    """زمانی که شمارش پیام‌ها دوباره شروع می‌شود: ۲۰ دقیقه (قابل‌تنظیم) بعد از آخرین هیولای همان گروه"""
+    r = _row("SELECT created, expires, state FROM g_mon WHERE chat_id=? ORDER BY id DESC LIMIT 1", (cid,))
+    if not r:
+        return 0.0
+    end = r["created"] + cv("mcool") * 60
+    if r["state"] == "live":
+        end = max(end, r["expires"])
+    return end
+
+
+def _new_goal():
+    lo, hi = int(cv("mmin")), int(cv("mmax"))
+    return random.randint(min(lo, hi), max(lo, hi))
+
+
+_SERVICE_KEYS = ("new_chat_members", "left_chat_member", "pinned_message", "new_chat_title", "new_chat_photo",
+                 "delete_chat_photo", "group_chat_created", "supergroup_chat_created", "migrate_to_chat_id",
+                 "migrate_from_chat_id", "message_auto_delete_timer_changed", "forum_topic_created",
+                 "forum_topic_edited", "forum_topic_closed", "forum_topic_reopened", "general_forum_topic_hidden",
+                 "general_forum_topic_unhidden", "video_chat_started", "video_chat_ended",
+                 "video_chat_scheduled", "video_chat_participants_invited")
+
+
+def on_chat_message(m):
+    """هر پیام کاربران گروه (غیرربات، غیرسرویسی) را می‌شمارد؛ بعد از ۲۵ تا ۶۰ پیام هیولا می‌فرستد.
+    کاملاً در حافظه و ارزان است؛ ارسال در پس‌زمینه انجام می‌شود."""
     try:
-        return {int(x) for x in json.loads(B.get_setting("g_mon_auto", "[]") or "[]")}
+        chat = m.get("chat") or {}
+        if chat.get("type") not in ("group", "supergroup"):
+            return
+        u = m.get("from") or {}
+        if not u.get("id") or u.get("is_bot") or any(k in m for k in _SERVICE_KEYS):
+            return
+        if not mon_auto_on() or B.get_setting("bot_enabled", "1") == "0":
+            return
+        cid, now = chat["id"], time.time()
+        fire_thread, fire = None, False
+        with _MC_LK:
+            st = _MC.get(cid)
+            if st is None:
+                st = _MC[cid] = {"n": 0, "goal": _new_goal(), "thread": None, "cool": None}
+            th = _thread(m)
+            if th:
+                st["thread"] = th
+            if st["cool"] is None:
+                st["cool"] = _mon_cool_until(cid)
+            if now < st["cool"]:
+                return
+            st["n"] += 1
+            if st["n"] >= st["goal"]:
+                st["n"], st["goal"] = 0, _new_goal()
+                st["cool"] = now + max(cv("mcool"), 1) * 60       # تا ارسال واقعی، دوباره شلیک نشود
+                fire, fire_thread = True, st["thread"]
+        if fire:
+            _submit(("mon", cid), _mon_auto_fire, cid, fire_thread)
     except Exception:
-        return set()
+        logging.exception("on_chat_message")
+
+
+def _mon_auto_fire(cid, thread):
+    ok_, msg = mon_send(cid, thread)
+    if not ok_:
+        logging.warning("auto monster %s: %s", cid, msg)
+    else:
+        with _MC_LK:
+            st = _MC.get(cid)
+            if st:
+                st["cool"] = time.time() + cv("mcool") * 60
 
 
 def _mon(mid):
@@ -2652,7 +2793,7 @@ def _mon_view(m):
     kb = None
     state = "live"
     if m["state"] == "live":
-        text = MON_HEAD + f"🔫 شانس های باقی مانده ›› {chn} شانس\n" + ("\n".join(lines) + "\n" if lines else "") + "\n" + MON_COST_LINE
+        text = MON_HEAD + f"🔫 شانس های باقی مانده ›› {chn} شانس\n" + ("\n".join(lines) + "\n" if lines else "") + "\n" + _cost_line()
         kb = _kb([_btn("اتک به هیولا  🔫🎃", f"g:mat:{m['id']}", B.DANGER)])
     elif m["state"] == "done":
         w = next((h for h in reversed(hits) if h["user_id"] == m["winner"]), None)
@@ -2663,7 +2804,7 @@ def _mon_view(m):
     elif hits:
         text = MON_HEAD + f"🔫 شانس های باقی مانده ›› {chn} شانس\n" + "\n".join(lines)
     else:
-        text = MON_HEAD + f"🔫 شانس های باقی مانده ›› {chn} شانس\nکسی در مقابل هیولا از شاهنشاهی دفاع نکرد! 🏰\n\n" + MON_COST_LINE
+        text = MON_HEAD + f"🔫 شانس های باقی مانده ›› {chn} شانس\nکسی در مقابل هیولا از شاهنشاهی دفاع نکرد! 🏰\n\n" + _cost_line()
     png = None
     if _art is not None:
         try:
@@ -2698,19 +2839,25 @@ def _mon_post(m, text, kb, png):
 
 
 def mon_send(chat_id, thread_id=None):
-    """هیولای تازه در گروه. (ok, پیام)"""
+    """هیولای تازه در گروه (دستی یا خودکار). اگر تاپیک مشخص نباشد، آخرین تاپیک فعال گروه استفاده می‌شود. (ok, پیام)"""
     now = time.time()
+    if thread_id is None:
+        thread_id = (_MC.get(chat_id) or {}).get("thread")
     with _Tx() as c:
         if c.execute("SELECT 1 FROM g_mon WHERE chat_id=? AND state='live'", (chat_id,)).fetchone():
             return False, "در این گروه همین الان یک هیولای فعال هست."
-        hp = random.randint(*MON_HP)
+        hp = random.randint(int(cv("mhpmin")), max(int(cv("mhpmin")), int(cv("mhpmax"))))
         cur = c.execute("INSERT INTO g_mon (chat_id, thread_id, state, hp, maxhp, seed, chances, created, expires) "
                         "VALUES (?,?,?,?,?,?,?,?,?)",
-                        (chat_id, thread_id, "live", hp, hp, random.randrange(1000), MON_CHANCES, now, now + MON_TTL))
+                        (chat_id, thread_id, "live", hp, hp, random.randrange(1000), int(cv("mch")), now, now + cv("mttl") * 60))
         mid = cur.lastrowid
     m = _mon(mid)
     text, kb, png = _mon_view(m)
     ok_, msg_id, has_photo, err = _mon_post(m, text, kb, png)
+    if not ok_ and thread_id and re.search(r"thread", err, re.I):      # تاپیک بسته/حذف شده: در تاپیک اصلی بفرست
+        m = dict(m, thread_id=None)
+        _x("UPDATE g_mon SET thread_id=NULL WHERE id=?", (mid,))
+        ok_, msg_id, has_photo, err = _mon_post(m, text, kb, png)
     if not ok_:
         _x("DELETE FROM g_mon WHERE id=?", (mid,))
         return False, f"ارسال نشد: {err}"
@@ -2763,14 +2910,15 @@ def _cb_mon(cq, mid, ans):
         m = c.execute("SELECT * FROM g_mon WHERE id=?", (mid,)).fetchone()
         if not m or m["state"] != "live" or now >= m["expires"] or m["chances"] <= 0:
             return ans("🎃 این هیولا دیگر فعال نیست.", True)
-        if not _charge_in(c, uid, MON_COST):
+        cost = int(cv("mcost"))
+        if not _charge_in(c, uid, cost):
             r = c.execute("SELECT tokens FROM users WHERE id=?", (uid,)).fetchone()
             return ans(f"🛑 موجودی شما کافی نیست!\nموجودی فعلی ››› {_t(r['tokens'] if r else 0)} شاهی", True)
         prev = c.execute("SELECT emo FROM g_mon_hits WHERE mon_id=? AND user_id=? LIMIT 1", (mid, uid)).fetchone()
         used = {r["emo"] for r in c.execute("SELECT emo FROM g_mon_hits WHERE mon_id=?", (mid,)).fetchall()}
         emo = prev["emo"] if prev else random.choice([e for e in PLAYER_EMOJIS if e not in used] or list(PLAYER_EMOJIS))
-        hit = random.random() < MON_HIT
-        dmg = random.randint(*MON_DMG) if hit else 0
+        hit = random.random() * 100 < cv("mhit")
+        dmg = random.randint(int(cv("mdmin")), max(int(cv("mdmin")), int(cv("mdmax")))) if hit else 0
         hp = m["hp"] - dmg
         line = random.choice(MON_HIT_LINES).format(d=_n(dmg)) if hit else random.choice(MON_MISS_LINES)
         chances = m["chances"] - 1
@@ -2778,7 +2926,7 @@ def _cb_mon(cq, mid, ans):
                   (mid, uid, name, emo, int(hit), dmg, line, now))
         state, reward = "live", 0
         if hp <= 0:
-            state, reward = "done", float(random.randint(*MON_REWARD))
+            state, reward = "done", float(random.randint(int(cv("mrmin")), max(int(cv("mrmin")), int(cv("mrmax")))))
             _pay_in(c, uid, reward)
         elif chances <= 0:
             state = "fail"
@@ -2795,7 +2943,7 @@ def _mon_log_in(c, m, state, reward):
     hs = c.execute("SELECT user_id, name, COUNT(*) n FROM g_mon_hits WHERE mon_id=? GROUP BY user_id", (m["id"],)).fetchall()
     win = c.execute("SELECT winner FROM g_mon WHERE id=?", (m["id"],)).fetchone()
     wid = win["winner"] if win else None
-    det = [[h["user_id"], h["name"], float(h["n"] * MON_COST), float(reward) if h["user_id"] == wid else 0.0, 1] for h in hs]
+    det = [[h["user_id"], h["name"], float(h["n"] * cv("mcost")), float(reward) if h["user_id"] == wid else 0.0, 1] for h in hs]
     c.execute("INSERT INTO g_log (ts, game, chat_id, tid, kind, stake_total, payout_total, detail) VALUES (?,?,?,?,?,?,?,?)",
               (time.time(), "m", m["chat_id"], m["id"], state, round(sum(e[2] for e in det), 2), round(float(reward), 2),
                json.dumps(det, ensure_ascii=False)))
@@ -2814,30 +2962,9 @@ def _mon_expire(mid):
         _later(_mon_render, mid)
 
 
-def _mon_auto_send(cid):
-    ok_, msg = mon_send(cid)
-    if not ok_:
-        logging.warning("auto monster %s: %s", cid, msg)
-
-
 def _tick_mon(now):
     for m in _rows("SELECT id FROM g_mon WHERE state='live' AND expires<=?", (now,)):
         _mon_expire(m["id"])
-    auto = _mon_auto()
-    if auto:
-        try:
-            last = json.loads(B.get_setting("g_mon_last", "{}") or "{}")
-        except Exception:
-            last = {}
-        changed = False
-        for cid in auto:
-            if now - float(last.get(str(cid), 0)) >= MON_GAP:
-                last[str(cid)] = now
-                changed = True
-                if not _row("SELECT 1 x FROM g_mon WHERE chat_id=? AND state='live'", (cid,)):
-                    _mon_auto_send(cid)
-        if changed:
-            B.set_setting("g_mon_last", json.dumps(last))
     if now - _LAST_MONCLEAN[0] > 3600:
         _LAST_MONCLEAN[0] = now
         cut = now - 7 * 86400
@@ -2845,31 +2972,119 @@ def _tick_mon(now):
         _x("DELETE FROM g_mon WHERE state!='live' AND created<?", (cut,))
 
 
+def _art_line():
+    if _art is not None:
+        return "🖼 تصویر هیولا: ✅ فعال"
+    if _ART_ST["busy"]:
+        return "🖼 تصویر هیولا: ⏳ در حال نصب خودکار Pillow… چند دقیقه بعد «به‌روزرسانی» را بزنید."
+    return "🖼 تصویر هیولا: ⚠️ غیرفعال (Pillow نصب نیست)" + (
+        f"\nخطا: <code>{_html.escape(_ART_ST['err'], quote=False)}</code>" if _ART_ST["err"] else "")
+
+
+def _progress_line(cid):
+    st = _MC.get(cid)
+    now = time.time()
+    if not st:
+        return "⏳ هنوز پیامی ندیده‌ام"
+    cool = st.get("cool")
+    if cool and now < cool:
+        return f"😴 استراحت؛ {B.fa_digits(str(int((cool - now) // 60) + 1))} دقیقه‌ی دیگر شمارش شروع می‌شود"
+    return f"💬 {_n(st['n'])} از {_n(st['goal'])} پیام"
+
+
 def _mon_page():
-    auto = _mon_auto()
+    on = mon_auto_on()
     chats = mon_chats()[:20]
-    live = _rows("SELECT id, chat_id, hp, maxhp, chances FROM g_mon WHERE state='live'")
+    live = _rows("SELECT m.id, m.chat_id, m.hp, m.maxhp, m.chances, m.expires FROM g_mon m WHERE m.state='live'")
+    titles = {c_[0]: c_[1] for c_ in chats}
     lines = ["🎃 <b>هیولا (باس‌فایت هالووین)</b>", B.LINE,
-             f"هر هیولا {B._rp_n(MON_CHANCES)} شانس مشترک دارد • هزینه‌ی هر اتک {B._rp_n(MON_COST)} شاهی • "
-             f"احتمال برخورد {B._rp_n(int(MON_HIT * 100))}٪ • جایزه‌ی کشنده {B._rp_n(MON_REWARD[0])} تا {B._rp_n(MON_REWARD[1])} شاهی • "
-             f"عمر هیولا {B._rp_n(MON_TTL // 60)} دقیقه.",
-             f"🟢 هیولای فعال الان: <b>{B._rp_n(len(live))}</b>",
-             "🔁 «خودکار» یعنی هر ۱۵ دقیقه یک هیولا برای آن گروه فرستاده شود.",
-             "ℹ️ فقط گروه‌هایی که ربات در آن‌ها ادمین است نمایش داده می‌شوند.",
-             ("🖼 تصویر هیولا: ✅ فعال" if _art is not None else
-              ("🖼 تصویر هیولا: ⏳ در حال نصب خودکار Pillow… چند دقیقه بعد «به‌روزرسانی» را بزنید." if _ART_ST["busy"] else
-               "🖼 تصویر هیولا: ⚠️ غیرفعال (Pillow نصب نیست)" + (f"\nخطا: <code>{_html.escape(_ART_ST['err'], quote=False)}</code>" if _ART_ST["err"] else "")))]
-    if not chats:
-        lines.append("\n❗️ گروهی پیدا نشد. ربات را در گروه ادمین کنید و یک پیام در گروه بفرستید، بعد «به‌روزرسانی» را بزنید.")
+             f"🤖 ارسال خودکار: <b>{'🟢 روشن' if on else '🔴 خاموش'}</b>",
+             f"📏 قانون: بعد از <b>{_n(cv('mmin'))} تا {_n(cv('mmax'))}</b> پیام کاربران در هر گروه، یک هیولا می‌آید؛ "
+             f"بعد از هر هیولا <b>{_n(cv('mcool'))}</b> دقیقه استراحت و دوباره شمارش از صفر.",
+             f"🔫 {_n(cv('mch'))} شانس مشترک • هزینه‌ی هر اتک {_t(cv('mcost'))} شاهی • برخورد {_n(cv('mhit'))}٪ • "
+             f"جایزه‌ی کشنده {_n(cv('mrmin'))} تا {_n(cv('mrmax'))} شاهی • عمر هیولا {_n(cv('mttl'))} دقیقه",
+             _art_line(), f"🟢 هیولای فعال الان: <b>{_n(len(live))}</b>", ""]
+    if chats:
+        lines.append("👥 <b>گروه‌ها</b> (ربات ادمین است):")
+        for cid, title in chats:
+            lines.append(f"• {_html.escape(_html.unescape(title)[:26], quote=False)} — {_progress_line(cid)}")
+    else:
+        lines.append("❗️ گروهی پیدا نشد. ربات را در گروه ادمین کنید و یک پیام در گروه بفرستید، بعد «به‌روزرسانی» را بزنید.")
+    for m_ in live:
+        t_ = titles.get(m_["chat_id"], str(m_["chat_id"]))
+        lines.append(f"🎃 فعال در «{_html.escape(_html.unescape(t_)[:20], quote=False)}»: جان {_n(max(m_['hp'], 0))}/{_n(m_['maxhp'])} • "
+                     f"{_n(m_['chances'])} شانس")
+    lines.append("\n👇 <i>برای ارسال دستی، روی نام گروه بزنید.</i>")
     rows = []
     for cid, title in chats:
-        on = cid in auto
-        rows.append([_btn("🎃 " + _html.unescape(title)[:22], f"adm_p:x:gx_mon_s:{cid}", B.SUCCESS),
-                     _btn("🔁 خودکار " + ("✅" if on else "⛔"), f"adm_p:x:gx_mon_a:{cid}", B.SUCCESS if on else B.DANGER)])
+        rows.append([_btn("🎃 ارسال به " + _html.unescape(title)[:22], f"adm_p:x:gx_mon_s:{cid}", B.SUCCESS)])
+    for m_ in live:
+        rows.append([_btn("⏩ پایان فوری هیولای " + _html.unescape(titles.get(m_["chat_id"], str(m_["chat_id"])))[:16],
+                          f"adm_p:x:gx_mon_e:{m_['id']}", B.DANGER)])
+    rows.append([_btn("🔴 خاموش کردن ارسال خودکار" if on else "🟢 روشن کردن ارسال خودکار", "adm_p:x:gx_mon_tg",
+                      B.DANGER if on else B.SUCCESS)])
+    rows.append([_btn("⚙️ تنظیمات هیولا", "adm_p:x:gx_mon_cfg", B.SUCCESS), _btn("📊 گزارش هیولا", "adm_p:x:gx_mon_rep:1", B.PRIMARY)])
     if _art is None and not _ART_ST["busy"]:
         rows.append([_btn("🖼 نصب خودکار Pillow", "adm_p:x:gx_mon_i", B.SUCCESS)])
-    rows.append([_btn("🔄 به‌روزرسانی لیست", "adm_p:x:gx_mon_r", B.SUCCESS)])
+    rows.append([_btn("🔄 به‌روزرسانی", "adm_p:x:gx_mon_r", B.SUCCESS)])
     rows.append(_back_gm())
+    return "\n".join(lines), _kb(*rows)
+
+
+def _back_mon():
+    return [_btn("🔙 هیولا", "adm_p:x:gx_mon", B.DANGER)]
+
+
+def _mcfg_page():
+    lines = ["⚙️ <b>تنظیمات هیولا</b>", B.LINE]
+    for name, label, unit, kind, lo, hi, ico in _MCFG:
+        cur = cv(name)
+        dflt = float(globals()[_CFGK[name][1]])
+        lines.append(f"{ico} {label}: <b>{_fv(cur, kind)}</b> {unit}{'' if cur == dflt else ' ✏️'}")
+    lines.append("\n✏️ = تغییر داده‌شده نسبت به پیش‌فرض.\n👇 <i>برای تغییر هر مورد روی آن بزنید.</i>")
+    rows, cur_row = [], []
+    for name, label, *_r in _MCFG:
+        cur_row.append(_btn(f"{_MCFG_BY[name][6]} {label}", f"adm_p:x:gx_set:{name}", B.SUCCESS))
+        if len(cur_row) == 2:
+            rows.append(cur_row)
+            cur_row = []
+    if cur_row:
+        rows.append(cur_row)
+    rows.append([_btn("♻️ بازگشت همه به پیش‌فرض", "adm_p:x:gx_mon_rst", B.SUCCESS)])
+    rows.append(_back_mon())
+    return "\n".join(lines), _kb(*rows)
+
+
+def _mrep_page(days):
+    dt = B.now_local()
+    midnight = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = midnight.timestamp() if days == 1 else (midnight - __import__("datetime").timedelta(days=days - 1)).timestamp()
+    ms = _rows("SELECT id, state FROM g_mon WHERE created>=?", (start,))
+    cnt = {}
+    for m_ in ms:
+        cnt[m_["state"]] = cnt.get(m_["state"], 0) + 1
+    hits = _row("SELECT COUNT(*) n, COALESCE(SUM(hit),0) h, COALESCE(SUM(dmg),0) d, COUNT(DISTINCT user_id) u "
+                "FROM g_mon_hits WHERE mon_id IN (SELECT id FROM g_mon WHERE created>=?)", (start,))
+    fin = _row("SELECT COALESCE(SUM(stake_total),0) s, COALESCE(SUM(payout_total),0) p FROM g_log WHERE game='m' AND ts>=?", (start,))
+    top = _rows("SELECT h.user_id, h.name, COUNT(*) n FROM g_mon m JOIN g_mon_hits h ON h.mon_id=m.id AND h.user_id=m.winner "
+                "WHERE m.state='done' AND m.created>=? GROUP BY h.user_id ORDER BY n DESC LIMIT 3", (start,))
+    title = {1: "امروز", 7: "۷ روز اخیر", 30: "۳۰ روز اخیر"}[days]
+    prof = round(fin["s"] - fin["p"], 2)
+    lines = [f"📊 <b>گزارش هیولا — {title}</b>", B.LINE,
+             f"🎃 هیولای فرستاده‌شده: <b>{_n(len(ms))}</b>",
+             f"   ✅ کشته‌شده: {_n(cnt.get('done', 0))} • ❌ جان‌به‌در‌برده: {_n(cnt.get('fail', 0))} • "
+             f"😴 بدون اتک: {_n(cnt.get('idle', 0))} • 🟢 فعال: {_n(cnt.get('live', 0))}",
+             f"🔫 اتک‌ها: <b>{_n(hits['n'])}</b> (برخورد {_n(hits['h'])} • خطا {_n(hits['n'] - hits['h'])}) • جمع دمیج {_n(hits['d'])}",
+             f"👥 بازیکنان یکتا: <b>{_n(hits['u'])}</b>",
+             f"🏦 ورودی (هزینه‌ی اتک‌ها): {_t(fin['s'])} شاهی • 🎁 جایزه‌ها: {_t(fin['p'])} شاهی",
+             f"{'📈 سود' if prof >= 0 else '📉 ضرر'} ربات: <b>{_t(abs(prof))}</b> شاهی",
+             "ℹ️ ورودی و جایزه فقط هیولاهای تمام‌شده را شامل می‌شود."]
+    if top:
+        lines.append("🏆 بیشترین هیولاکُشی:")
+        for i, t_ in enumerate(top, 1):
+            lines.append(f"   {_n(i)}. {_mention(t_['user_id'], t_['name'])} — {_n(t_['n'])} هیولا")
+    rows = [[_btn(("• " if d_ == days else "") + {1: "امروز", 7: "۷ روز", 30: "۳۰ روز"}[d_], f"adm_p:x:gx_mon_rep:{d_}", B.PRIMARY)
+             for d_ in (1, 7, 30)], _back_mon()]
     return "\n".join(lines), _kb(*rows)
 
 

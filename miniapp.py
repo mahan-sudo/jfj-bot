@@ -603,9 +603,27 @@ def build_state(user):
         },
         "tokenPacks": bot.jt_packs_view(),
         "services": products_info(uid),
+        "secOff": sec_off_list(uid),
         "sponsorPacks": bot.SPONSOR_PRODUCTS,
         "reactions": {"emojis": bot.REACTION_EMOJIS, "combos": ["ری‌اکشن ترکیبی مثبت🥳", "ری‌اکشن ترکیبی منفی🤮"]},
     }
+
+
+# ---------------------------------------------------------------- بخش‌های غیرفعال ربات
+def sec_off_list(uid):
+    """کلید بخش‌هایی که ادمین در «فعال/غیرفعال کردن بخش‌ها» خاموش کرده؛ ادمین‌ها همیشه دسترسی دارند."""
+    try:
+        if bot.is_admin(uid):
+            return []
+        return sorted(bot.sections_off())
+    except Exception:
+        traceback.print_exc()
+        return []
+
+
+def need_sec(uid, key):
+    if key in sec_off_list(uid):
+        raise ApiError("این بخش در حال حاضر غیرفعال است.")
 
 
 # ---------------------------------------------------------------- JFJ: جوین
@@ -648,6 +666,7 @@ def _chan_blocked(link, chat_id_num):
 
 
 def api_join_list(uid, body):
+    need_sec(uid, "sj")
     """همه‌ی درخواست‌های درحال‌انجام که کاربر هنوز عضوشان نیست (چک زنده‌ی عضویت، مثل خود ربات)"""
     try:
         left_now = reconcile_leaves(uid, min_gap=5)
@@ -707,6 +726,7 @@ def api_join_list(uid, body):
 
 
 def api_join_confirm(uid, body):
+    need_sec(uid, "sj")
     code = str(body.get("code") or "")
     with bot.get_db() as c:
         view = c.execute("SELECT verified FROM mini_seen WHERE user_id=? AND code=?", (uid, code)).fetchone()
@@ -789,6 +809,7 @@ def fetch_photo(code):
 
 # ---------------------------------------------------------------- JFJ: ثبت درخواست
 def api_request(uid, body):
+    need_sec(uid, "rj")
     link = str(body.get("link") or "").strip()
     try:
         count = int(body.get("count"))
@@ -856,6 +877,7 @@ def api_request(uid, body):
 # ---------------------------------------------------------------- خرید شاهی
 def api_invoice(uid, body):
     kind = "sponsor" if body.get("kind") == "sponsor" else "jtoken"
+    need_sec(uid, "sp" if kind == "sponsor" else "bt")
     packs = bot.SPONSOR_PRODUCTS if kind == "sponsor" else bot.JTOKEN_PRODUCTS
     if not any(p["id"] == body.get("pack") for p in packs):
         raise ApiError("بسته نامعتبر است.")
@@ -868,6 +890,7 @@ def api_invoice(uid, body):
 
 # ---------------------------------------------------------------- خرید خدمات با شاهی
 def api_service(uid, body):
+    need_sec(uid, "sv")
     key = {"seen": "views", "member": "members"}.get(body.get("service"), body.get("service"))
     if key not in ("views", "members", "reaction", "premium"):
         raise ApiError("سرویس نامعتبر است.")
@@ -924,6 +947,7 @@ def api_service(uid, body):
 # ---------------------------------------------------------------- WSGI
 def api_transfer(uid, body):
     """انتقال موجودی (همان بانک انتقال ربات)"""
+    need_sec(uid, "bk")
     try:
         amount = int(str(body.get("amount")).strip())
         to = int(str(body.get("to")).strip())

@@ -6396,6 +6396,8 @@ def _games_dispatch(update_id, message=None, callback=None):
         _ch = ((callback or {}).get("message") or {}).get("chat") if callback is not None else (message or {}).get("chat")
         if _ch:
             GAMES.note_chat(_ch)        # ثبت گروه (برای لیست گروه‌های دکمه‌ی هیولا)
+        if message is not None and callback is None:
+            GAMES.on_chat_message(message)   # شمارش پیام کاربران برای ارسال خودکار هیولا
         if callback is not None:
             if not str(callback.get("data", "")).startswith("g:"):
                 return

@@ -384,20 +384,20 @@ function pageHome() {
   let qi = 0; const QC = ['#22C55E', '#3B82F6', '#EAB308', '#F97316', '#EF4444', '#EC4899'];
   const qa = (act, v, tone, icon, label, soon) => { const col = soon ? '#94A3B8' : QC[qi++ % QC.length]; return `<button class="press" data-act="${act}" data-v="${v}" style="border:0;background:transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;padding:0 2px;color:var(--ink)"><span class="round" style="width:44px;height:44px;border-radius:22px;box-sizing:border-box;background:${soon ? 'transparent' : tintOf(col)};color:${col};${soon ? 'border:2px dashed var(--muted);opacity:.75;' : ''}display:flex;align-items:center;justify-content:center">${ic(icon, 20)}</span><span style="font-size:11px;font-weight:700;line-height:1.5;text-align:center;${soon ? 'color:var(--muted)' : ''}">${label}</span></button>`; };
   const stat = (l, v) => `<div style="background:rgba(255,255,255,0.1);border-radius:36px;padding:12px 18px;display:flex;flex-direction:column;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.1)"><span style="font-size:11px;color:var(--hsub)">${lab(l, 14)}</span><span style="font-size:13px;font-weight:700">${v}</span></div>`;
-  const action = (act, primary, icon, t, sub) => `<button class="${primary ? '' : 'glass '}press" data-act="${act}" style="border:${primary ? '0' : '1px solid var(--edge)'};text-align:start;cursor:pointer;display:flex;align-items:center;gap:14px;padding:12px 16px 12px 14px;border-radius:30px;background:var(${primary ? '--primary' : '--surface'});color:${primary ? '#FFFFFF' : 'var(--ink)'};box-shadow:${primary ? 'var(--pshadow)' : 'var(--shadow)'};font-family:inherit"><span style="width:46px;height:46px;flex-shrink:0;border-radius:15px;background:${primary ? 'rgba(255,255,255,0.2)' : 'var(--reqt)'};color:${primary ? '#FFFFFF' : 'var(--reqc)'};display:flex;align-items:center;justify-content:center">${ic(icon, 24)}</span><span style="flex:1;display:flex;flex-direction:column"><span style="font-size:15px;font-weight:800;line-height:1.6">${t}</span><span style="font-size:12px;color:${primary ? 'var(--onprimarysub)' : 'var(--muted)'};line-height:1.5">${sub}</span></span><span style="display:flex;opacity:.7">${ic(P.chevL, 18)}</span></button>`;
+  const action = (act, primary, icon, t, sub, off) => `<button class="${primary ? '' : 'glass '}press" data-act="${act}" style="${off ? 'opacity:.45;filter:grayscale(1);' : ''}border:${primary ? '0' : '1px solid var(--edge)'};text-align:start;cursor:pointer;display:flex;align-items:center;gap:14px;padding:12px 16px 12px 14px;border-radius:30px;background:var(${primary ? '--primary' : '--surface'});color:${primary ? '#FFFFFF' : 'var(--ink)'};box-shadow:${primary ? 'var(--pshadow)' : 'var(--shadow)'};font-family:inherit"><span style="width:46px;height:46px;flex-shrink:0;border-radius:15px;background:${primary ? 'rgba(255,255,255,0.2)' : 'var(--reqt)'};color:${primary ? '#FFFFFF' : 'var(--reqc)'};display:flex;align-items:center;justify-content:center">${ic(icon, 24)}</span><span style="flex:1;display:flex;flex-direction:column"><span style="font-size:15px;font-weight:800;line-height:1.6">${t}</span><span style="font-size:12px;color:${primary ? 'var(--onprimarysub)' : 'var(--muted)'};line-height:1.5">${sub}</span></span><span style="display:flex;opacity:.7">${ic(P.chevL, 18)}</span></button>`;
   return `
 ${hero(`<div style="position:relative;display:flex;align-items:center;justify-content:space-between;padding:14px 18px 20px"><div style="display:flex;flex-direction:column"><span style="font-size:14px;color:var(--hsub)">${lab('دارایی شما', 17)}</span><div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:56px;font-weight:800;line-height:1.1">${num(d.balance)}</span><span style="font-size:16px;font-weight:500;color:#F5A524">شاهی</span></div></div>${COIN(68)}</div><div style="position:relative;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">${stat('هزینه هر عضو', fa(c.tokensPerMember) + ' شاهی')}${stat('پاداش هر جوین', fa(c.joinReward) + ' شاهی')}</div>`, '8px 16px 0')}
 <div style="display:flex;flex-direction:column;gap:10px;margin:16px 16px 0;flex-shrink:0">
-${action('goJoin', true, P.plus, 'شروع JFJ', 'هر کانال، ' + fa(c.joinReward) + ' شاهی')}
-${action('goOrders', false, P.addUser, 'درخواست JFJ', 'هر عضو، ' + fa(c.tokensPerMember) + ' شاهی')}
+${action('goJoin', true, P.plus, 'شروع JFJ', 'هر کانال، ' + fa(c.joinReward) + ' شاهی', secOff('sj'))}
+${action('goOrders', false, P.addUser, 'درخواست JFJ', 'هر عضو، ' + fa(c.tokensPerMember) + ' شاهی', secOff('rj'))}
 </div>
 <div ${glass(36, '16px', 'margin:16px 16px 0;display:flex;flex-direction:column;gap:14px;flex-shrink:0')}>
 <div style="display:flex;align-items:flex-start;gap:12px"><span class="round" style="width:48px;height:48px;flex-shrink:0;border-radius:15px;background:var(--gifttint);color:var(--gifticon);display:flex;align-items:center;justify-content:center">${ic(P.gift)}</span><div style="display:flex;flex-direction:column"><span style="font-size:16px;font-weight:700;line-height:1.5">دعوت دوستان</span><span style="font-size:13px;color:var(--muted);line-height:1.6">وقتی دوستت از شروع جفج ${fa(c.refThreshold)} شاهی درآمد کسب کند، ${fa(c.refReward)} شاهی به تو می‌رسد.</span></div></div>
 ${linkRow(d.refLink)}</div>
 ${sec('عملیات سریع')}
 <div ${glass(36, '14px 4px 12px', 'margin:8px 16px 0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));row-gap:14px;align-items:start;flex-shrink:0')}>
-${qa('goBuyToken', '', ['gifttint', 'gifticon'], P.coins, 'خرید شاهی')}${qa('goAccount', '', ['minttint', 'mint'], P.user, 'حساب من')}${qa('goSvc', 'views', ['violettint', 'violet'], P.eye, 'خرید سین', svcOff('views'))}${qa('goSvc', 'members', ['tint', 'accent'], P.group, 'خرید ممبر', svcOff('members'))}
-${qa('goSvc', 'reaction', ['aredt', 'ared'], P.heart, 'خرید ری‌اکشن', svcOff('reaction'))}${qa('goSvc', 'premium', ['gifttint', 'gifticon'], P.diamond, 'خرید ری‌اکشن پرمیومی', svcOff('premium'))}${qa('goSponsor', '', ['agreent', 'agreen'], P.star, 'خرید اسپانسری')}${qa('goTransfer', '', ['muted', 'muted'], P.coins, 'انتقال موجودی')}
+${qa('goBuyToken', '', ['gifttint', 'gifticon'], P.coins, 'خرید شاهی', secOff('bt'))}${qa('goAccount', '', ['minttint', 'mint'], P.user, 'حساب من', secOff('ac'))}${qa('goSvc', 'views', ['violettint', 'violet'], P.eye, 'خرید سین', svcOff('views') || secOff('sv'))}${qa('goSvc', 'members', ['tint', 'accent'], P.group, 'خرید ممبر', svcOff('members') || secOff('sv'))}
+${qa('goSvc', 'reaction', ['aredt', 'ared'], P.heart, 'خرید ری‌اکشن', svcOff('reaction') || secOff('sv'))}${qa('goSvc', 'premium', ['gifttint', 'gifticon'], P.diamond, 'خرید ری‌اکشن پرمیومی', svcOff('premium') || secOff('sv'))}${qa('goSponsor', '', ['agreent', 'agreen'], P.star, 'خرید اسپانسری', secOff('sp'))}${qa('goTransfer', '', ['muted', 'muted'], P.coins, 'انتقال موجودی', secOff('bk'))}
 </div>
 ${topSection()}
 <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 20px 0;flex-shrink:0"><span style="font-size:15px;font-weight:700">سفارش‌های من</span><button data-act="goOrders" style="border:0;background:transparent;color:var(--accent);font-size:13px;font-weight:500;padding:4px 0;cursor:pointer">همه سفارش‌ها</button></div>
@@ -508,6 +508,8 @@ function richHow(k) {
 }
 const tagWrap = (inner, tag) => `<div style="position:relative;display:grid">${inner}${tag ? `<span style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);padding:2px 12px;border-radius:12px;font-size:11px;font-weight:800;white-space:nowrap;color:#3B2500;background:linear-gradient(90deg,#F5C26B,#F5A524);box-shadow:0 4px 12px rgba(245,165,36,0.45)">${tag}</span>` : ''}</div>`;
 const TAGS = ['', 'پرفروش', '', 'به‌صرفه'];
+const TAB_SEC = { join: 'sj', newRequest: 'rj', orders: 'od', buyToken: 'bt', sponsor: 'sp', transfer: 'bk', service: 'sv', invite: 'rf', support: 'su', account: 'ac' };
+function secOff(k) { const o = S.data && S.data.secOff; return !!(o && o.indexOf(k) >= 0); }
 function svcOff(k) { const x = S.data && S.data.services && S.data.services[k]; return !!(x && !x.enabled); }
 function pageService() {
   const d = D(), v = svcInfo(), m = v.meta, short = v.cost > d.balance, done = S.svcDone, react = v.key === 'reaction', prem = v.key === 'premium';
@@ -724,6 +726,7 @@ function render(full) {
   let html;
   if (S.loadError && !S.data) html = `<div style="margin:28px 28px 0;text-align:center;line-height:1.9;font-size:14px">${esc(S.loadError)}</div>`;
   else if (!S.data) html = `<div style="margin:28px 28px 0;text-align:center;color:var(--muted);font-size:14px">در حال بارگذاری…</div>`;
+  else if (TAB_SEC[S.tab] && secOff(TAB_SEC[S.tab])) html = `<div style="display:flex;flex-direction:column;flex-shrink:0">${titleBlock('بخش غیرفعال', 'این بخش در حال حاضر در دسترس نیست.', true)}${dashed('rose', 'این بخش در حال حاضر غیرفعال است.')}</div>`;
   else html = `<div style="display:flex;flex-direction:column;flex-shrink:0">${PAGES[S.tab]()}</div>`;
   if (full || animNext) {
     pg.innerHTML = animNext ? html.replace('<div style="display:flex', '<div class="page" style="display:flex') : html;
@@ -757,6 +760,7 @@ function toast(msg, kind) {
 const fail = (e) => { toast(e.message || 'خطا رخ داد.', 'err'); };
 
 function go(tab, back) {
+  if (tab !== 'home' && TAB_SEC[tab] && secOff(TAB_SEC[tab])) { toast('این بخش در حال حاضر غیرفعال است.', 'err'); loadState(true); return; }
   S.tab = tab; S.back = back || null; S.menu = null; S.menuLast = null;
   $('scroller').scrollTop = 0;
   animNext = true;
@@ -797,7 +801,7 @@ async function pollLive() {
   try {
     if (S.tab === 'join') { await loadList(true); return; }
     const nd = await api('/api/state');
-    const chg = JSON.stringify(nd.services) !== JSON.stringify(S.data.services);
+    const chg = JSON.stringify(nd.services) !== JSON.stringify(S.data.services) || JSON.stringify(nd.secOff) !== JSON.stringify(S.data.secOff);
     S.data = nd;
     if (chg) render();
   } catch (e) { /* بی‌صدا */ }
@@ -827,7 +831,7 @@ function openChat(url) {
 const A = {
   tab: (d) => go(d.v),
   goJoin: () => go('join'), goOrders: () => go('orders'), goInvite: () => go('invite'),
-  goBuyToken: () => go('buyToken', 'home'), goSvc: (d) => { if (svcOff(d.v)) { toast('این محصول در حال حاضر ناموجود است.', 'err'); loadState(true); return; } S.svc = d.v; S.svcIdx = 1; S.svcLink = ''; S.svcDone = null; go('service', 'home'); }, goSponsor: () => go('sponsor', 'home'), soon: () => toast('این بخش بزودی اضافه می‌شود ✨'),
+  goBuyToken: () => go('buyToken', 'home'), goSvc: (d) => { if (svcOff(d.v) || secOff('sv')) { toast('این محصول در حال حاضر ناموجود است.', 'err'); loadState(true); return; } S.svc = d.v; S.svcIdx = 1; S.svcLink = ''; S.svcDone = null; go('service', 'home'); }, goSponsor: () => go('sponsor', 'home'), soon: () => toast('این بخش بزودی اضافه می‌شود ✨'),
   goTransfer: () => { S.trAmount = ''; S.trTo = ''; S.trDone = null; go('transfer', 'home'); },
   doTransfer: () => withBusy(async () => {
     const r = await api('/api/transfer', { amount: S.trAmount, to: S.trTo });
