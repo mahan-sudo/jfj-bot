@@ -328,6 +328,12 @@ const RINGS = '<svg width="220" height="140" viewBox="0 0 220 140" aria-hidden="
 let coinN = 0;
 const COINSVG = (id) => `<defs><radialGradient id="${id}f" cx="36%" cy="30%" r="80%"><stop offset="0" stop-color="#FFE9A8"></stop><stop offset=".45" stop-color="#F7B731"></stop><stop offset="1" stop-color="#E08A00"></stop></radialGradient><linearGradient id="${id}r" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFE08A"></stop><stop offset="1" stop-color="#B86A00"></stop></linearGradient></defs><circle cx="32" cy="32" r="30" fill="url(#${id}r)"></circle><circle cx="32" cy="32" r="26.4" fill="url(#${id}f)"></circle><circle cx="32" cy="32" r="22" fill="none" stroke="#B86A00" stroke-opacity=".38" stroke-width="1.6"></circle><circle cx="32" cy="32" r="22" fill="none" stroke="#FFF3C4" stroke-opacity=".55" stroke-width="1" transform="translate(-.8 -.8)"></circle><path d="M14.5 24A19.5 19.5 0 0 1 30 12.8" fill="none" stroke="#FFFFFF" stroke-opacity=".75" stroke-width="3" stroke-linecap="round"></path><circle cx="40" cy="12" r="1.6" fill="#FFFFFF" opacity=".8"></circle>`;
 const COIN = (s) => { const id = 'cg' + (++coinN); return `<svg width="${s}" height="${s}" viewBox="0 0 64 64" aria-hidden="true" style="filter:drop-shadow(0 4px 12px rgba(245,165,36,0.55))">${COINSVG(id)}</svg>`; };
+P.lock = 'S:<rect x="5" y="11" width="14" height="10" rx="3"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path><path d="M12 15.5v2"></path>';
+const offScreen = (key) => {
+  const name = SEC_NAME[key] || 'این بخش', whole = key === 'mi';
+  const back = whole ? '' : primaryBtn('goHome', 'بازگشت به خانه', ic(P.home));
+  return `${whole ? '' : titleBlock(name, 'در حال حاضر در دسترس نیست.', true)}${hero(`<div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:12px;padding:30px 18px 26px;text-align:center"><span class="round" style="position:relative;width:92px;height:92px;border-radius:46px;background:rgba(255,255,255,0.14);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.28),0 12px 32px rgba(0,0,0,0.28);display:flex;align-items:center;justify-content:center;color:#FFFFFF"><span style="position:absolute;inset:-9px;border-radius:50%;border:2px dashed rgba(255,255,255,0.35)"></span>${ic(P.lock, 42)}</span><span style="font-size:20px;font-weight:800;line-height:1.6">«${name}» موقتاً غیرفعال است</span><span style="font-size:13px;color:var(--hsub);line-height:1.9">مدیریت این بخش را فعلاً بسته است.<br>به‌محض فعال‌شدن، همین‌جا دوباره در دسترس خواهد بود.</span><span style="font-size:12px;font-weight:700;border-radius:20px;padding:5px 14px;background:rgba(255,255,255,0.14)">🔒 غیرفعال توسط مدیریت</span></div>`, '16px 16px 0', 36)}<div style="display:flex;flex-direction:column;gap:10px;margin:16px 16px 0;flex-shrink:0">${back}<button class="glass round press" data-act="recheck" style="height:52px;border:1px solid var(--edge);border-radius:26px;background:var(--surface);color:var(--ink);font-size:14px;font-weight:700;cursor:pointer;box-shadow:var(--shadow);font-family:inherit">🔄 بررسی دوباره</button></div>`;
+};
 const TICK = '<svg width="17" height="17" viewBox="0 0 24 24" role="img" aria-label="تأیید شده" style="display:block;flex-shrink:0"><path d="M12 1.5l2.4 1.8 3-.3 1.2 2.8 2.8 1.2-.3 3L22.9 12l-1.8 2.4.3 3-2.8 1.2-1.2 2.8-3-.3L12 22.5l-2.4-1.8-3 .3-1.2-2.8-2.8-1.2.3-3L1.1 12l1.8-2.4-.3-3 2.8-1.2 1.2-2.8 3 .3L12 1.5z" fill="none" style="stroke:var(--tick)" stroke-width="1.6" stroke-linejoin="round"></path><path d="M7.8 12.3l3 3 5.5-6.1" fill="none" style="stroke:var(--tick)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
 
 /* ---------------------------------------------------------------- اجزای مشترک */
@@ -384,7 +390,7 @@ function pageHome() {
   let qi = 0; const QC = ['#22C55E', '#3B82F6', '#EAB308', '#F97316', '#EF4444', '#EC4899'];
   const qa = (act, v, tone, icon, label, soon) => { const col = soon ? '#94A3B8' : QC[qi++ % QC.length]; return `<button class="press" data-act="${act}" data-v="${v}" style="border:0;background:transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;padding:0 2px;color:var(--ink)"><span class="round" style="width:44px;height:44px;border-radius:22px;box-sizing:border-box;background:${soon ? 'transparent' : tintOf(col)};color:${col};${soon ? 'border:2px dashed var(--muted);opacity:.75;' : ''}display:flex;align-items:center;justify-content:center">${ic(icon, 20)}</span><span style="font-size:11px;font-weight:700;line-height:1.5;text-align:center;${soon ? 'color:var(--muted)' : ''}">${label}</span></button>`; };
   const stat = (l, v) => `<div style="background:rgba(255,255,255,0.1);border-radius:36px;padding:12px 18px;display:flex;flex-direction:column;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.1)"><span style="font-size:11px;color:var(--hsub)">${lab(l, 14)}</span><span style="font-size:13px;font-weight:700">${v}</span></div>`;
-  const action = (act, primary, icon, t, sub, off) => `<button class="${primary ? '' : 'glass '}press" data-act="${act}" style="${off ? 'opacity:.45;filter:grayscale(1);' : ''}border:${primary ? '0' : '1px solid var(--edge)'};text-align:start;cursor:pointer;display:flex;align-items:center;gap:14px;padding:12px 16px 12px 14px;border-radius:30px;background:var(${primary ? '--primary' : '--surface'});color:${primary ? '#FFFFFF' : 'var(--ink)'};box-shadow:${primary ? 'var(--pshadow)' : 'var(--shadow)'};font-family:inherit"><span style="width:46px;height:46px;flex-shrink:0;border-radius:15px;background:${primary ? 'rgba(255,255,255,0.2)' : 'var(--reqt)'};color:${primary ? '#FFFFFF' : 'var(--reqc)'};display:flex;align-items:center;justify-content:center">${ic(icon, 24)}</span><span style="flex:1;display:flex;flex-direction:column"><span style="font-size:15px;font-weight:800;line-height:1.6">${t}</span><span style="font-size:12px;color:${primary ? 'var(--onprimarysub)' : 'var(--muted)'};line-height:1.5">${sub}</span></span><span style="display:flex;opacity:.7">${ic(P.chevL, 18)}</span></button>`;
+  const action = (act, primary, icon, t, sub0, off) => { const sub = off ? '🔒 فعلاً غیرفعال است' : sub0; return `<button class="${primary ? '' : 'glass '}press" data-act="${act}" style="${off ? 'opacity:.45;filter:grayscale(1);' : ''}border:${primary ? '0' : '1px solid var(--edge)'};text-align:start;cursor:pointer;display:flex;align-items:center;gap:14px;padding:12px 16px 12px 14px;border-radius:30px;background:var(${primary ? '--primary' : '--surface'});color:${primary ? '#FFFFFF' : 'var(--ink)'};box-shadow:${primary ? 'var(--pshadow)' : 'var(--shadow)'};font-family:inherit"><span style="width:46px;height:46px;flex-shrink:0;border-radius:15px;background:${primary ? 'rgba(255,255,255,0.2)' : 'var(--reqt)'};color:${primary ? '#FFFFFF' : 'var(--reqc)'};display:flex;align-items:center;justify-content:center">${ic(icon, 24)}</span><span style="flex:1;display:flex;flex-direction:column"><span style="font-size:15px;font-weight:800;line-height:1.6">${t}</span><span style="font-size:12px;color:${primary ? 'var(--onprimarysub)' : 'var(--muted)'};line-height:1.5">${sub}</span></span><span style="display:flex;opacity:.7">${ic(P.chevL, 18)}</span></button>`; }
   return `
 ${hero(`<div style="position:relative;display:flex;align-items:center;justify-content:space-between;padding:14px 18px 20px"><div style="display:flex;flex-direction:column"><span style="font-size:14px;color:var(--hsub)">${lab('دارایی شما', 17)}</span><div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:56px;font-weight:800;line-height:1.1">${num(d.balance)}</span><span style="font-size:16px;font-weight:500;color:#F5A524">شاهی</span></div></div>${COIN(68)}</div><div style="position:relative;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">${stat('هزینه هر عضو', fa(c.tokensPerMember) + ' شاهی')}${stat('پاداش هر جوین', fa(c.joinReward) + ' شاهی')}</div>`, '8px 16px 0')}
 <div style="display:flex;flex-direction:column;gap:10px;margin:16px 16px 0;flex-shrink:0">
@@ -508,9 +514,16 @@ function richHow(k) {
 }
 const tagWrap = (inner, tag) => `<div style="position:relative;display:grid">${inner}${tag ? `<span style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);padding:2px 12px;border-radius:12px;font-size:11px;font-weight:800;white-space:nowrap;color:#3B2500;background:linear-gradient(90deg,#F5C26B,#F5A524);box-shadow:0 4px 12px rgba(245,165,36,0.45)">${tag}</span>` : ''}</div>`;
 const TAGS = ['', 'پرفروش', '', 'به‌صرفه'];
+const SVC_SEC = { views: 'sn', members: 'mb', reaction: 'rc', premium: 'pm' };
+const SEC_NAME = { sj: 'شروع JFJ', rj: 'درخواست JFJ', od: 'سفارش‌های من', bt: 'خرید شاهی', sp: 'خرید اسپانسری', bk: 'انتقال موجودی', sv: 'خرید ممبر و سین', rf: 'دعوت دوستان', su: 'پشتیبانی', ac: 'حساب من', sn: 'خرید سین', mb: 'خرید ممبر', rc: 'خرید ری‌اکشن', pm: 'ری‌اکشن پرمیومی', mi: 'مینی‌اپ' };
 const TAB_SEC = { join: 'sj', newRequest: 'rj', orders: 'od', buyToken: 'bt', sponsor: 'sp', transfer: 'bk', service: 'sv', invite: 'rf', support: 'su', account: 'ac' };
+function offKey(tab) {
+  if (secOff('mi')) return 'mi';
+  if (tab === 'service') return secOff('sv') ? 'sv' : (secOff(SVC_SEC[S.svc]) ? SVC_SEC[S.svc] : null);
+  const k = TAB_SEC[tab]; return k && secOff(k) ? k : null;
+}
 function secOff(k) { const o = S.data && S.data.secOff; return !!(o && o.indexOf(k) >= 0); }
-function svcOff(k) { const x = S.data && S.data.services && S.data.services[k]; return !!(x && !x.enabled); }
+function svcOff(k) { const x = S.data && S.data.services && S.data.services[k]; return !!(x && !x.enabled) || secOff('sv') || secOff(SVC_SEC[k]); }
 function pageService() {
   const d = D(), v = svcInfo(), m = v.meta, short = v.cost > d.balance, done = S.svcDone, react = v.key === 'reaction', prem = v.key === 'premium';
   if (!v.s.enabled) return `${titleBlock(m.title, m.sub, true)}${dashed('rose', 'این محصول در حال حاضر ناموجود است.')}`;
@@ -726,7 +739,7 @@ function render(full) {
   let html;
   if (S.loadError && !S.data) html = `<div style="margin:28px 28px 0;text-align:center;line-height:1.9;font-size:14px">${esc(S.loadError)}</div>`;
   else if (!S.data) html = `<div style="margin:28px 28px 0;text-align:center;color:var(--muted);font-size:14px">در حال بارگذاری…</div>`;
-  else if (TAB_SEC[S.tab] && secOff(TAB_SEC[S.tab])) html = `<div style="display:flex;flex-direction:column;flex-shrink:0">${titleBlock('بخش غیرفعال', 'این بخش در حال حاضر در دسترس نیست.', true)}${dashed('rose', 'این بخش در حال حاضر غیرفعال است.')}</div>`;
+  else if (offKey(S.tab)) html = `<div style="display:flex;flex-direction:column;flex-shrink:0">${offScreen(offKey(S.tab))}</div>`;
   else html = `<div style="display:flex;flex-direction:column;flex-shrink:0">${PAGES[S.tab]()}</div>`;
   if (full || animNext) {
     pg.innerHTML = animNext ? html.replace('<div style="display:flex', '<div class="page" style="display:flex') : html;
@@ -760,7 +773,7 @@ function toast(msg, kind) {
 const fail = (e) => { toast(e.message || 'خطا رخ داد.', 'err'); };
 
 function go(tab, back) {
-  if (tab !== 'home' && TAB_SEC[tab] && secOff(TAB_SEC[tab])) { toast('این بخش در حال حاضر غیرفعال است.', 'err'); loadState(true); return; }
+  if (tab !== 'home' && offKey(tab)) { toast('این بخش در حال حاضر غیرفعال است.', 'err'); loadState(true); return; }
   S.tab = tab; S.back = back || null; S.menu = null; S.menuLast = null;
   $('scroller').scrollTop = 0;
   animNext = true;
@@ -852,6 +865,8 @@ const A = {
   goNewRequest: () => go('newRequest', 'orders'),
   goBuyTokenFromReq: () => go('buyToken', 'newRequest'), goBuyTokenFromSvc: () => go('buyToken', 'service'),
   back: () => go(S.back || 'home'),
+  goHome: () => go('home'),
+  recheck: () => { toast('در حال بررسی…'); loadState(true); },
   goSponsorFromSubs: () => go('sponsor', 'subs'),
   menu: () => { if (S.menu) A.menuClose(); else { clearTimeout(A._mt); S.menuLast = null; S.menu = 'main'; render(); } },
   menuClose: () => { if (!S.menu) return; S.menuLast = S.menu; S.menu = null; render(); clearTimeout(A._mt); A._mt = setTimeout(() => { S.menuLast = null; render(); }, 260); },

@@ -621,8 +621,9 @@ def sec_off_list(uid):
         return []
 
 
-def need_sec(uid, key):
-    if key in sec_off_list(uid):
+def need_sec(uid, key, *more):
+    off = sec_off_list(uid)
+    if off and ("mi" in off or key in off or any(k in off for k in more)):
         raise ApiError("این بخش در حال حاضر غیرفعال است.")
 
 
@@ -890,7 +891,8 @@ def api_invoice(uid, body):
 
 # ---------------------------------------------------------------- خرید خدمات با شاهی
 def api_service(uid, body):
-    need_sec(uid, "sv")
+    need_sec(uid, "sv", {"seen": "sn", "views": "sn", "member": "mb", "members": "mb",
+                         "reaction": "rc", "premium": "pm"}.get(body.get("service"), "sv"))
     key = {"seen": "views", "member": "members"}.get(body.get("service"), body.get("service"))
     if key not in ("views", "members", "reaction", "premium"):
         raise ApiError("سرویس نامعتبر است.")

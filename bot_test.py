@@ -5439,7 +5439,9 @@ SECTIONS = [("rj", "درخواست JFJ", BTN_REQUEST_JFJ), ("sj", "شروع JFJ"
             ("ac", "حساب من", BTN_MY_ACCOUNT), ("bk", "بانک انتقال", BTN_TRANSFER_BANK),
             ("bt", "خرید شاهی", BTN_BUY_JTOKEN), ("su", "پشتیبانی", BTN_SUPPORT),
             ("od", "سفارش من", BTN_MY_ORDERS), ("ru", "قوانین", BTN_RULES), ("hp", "راهنما", "/help"),
-            ("sv", "خرید ممبر و سین", BTN_BUY_SERVICES), ("mi", "مینی‌اپ", BTN_MINIAPP),
+            ("sv", "کل خرید ممبر و سین", BTN_BUY_SERVICES), ("sn", "خرید سین (ویو)", "__sn__"), ("mb", "خرید ممبر", "__mb__"),
+            ("rc", "خرید ری‌اکشن", "__rc__"), ("pm", "ری‌اکشن پرمیومی", "__pm__"), ("st", "خرید استارز", "__st__"),
+            ("mi", "مینی‌اپ", BTN_MINIAPP),
             ("sp", "اسپانسری", "/sponser"), ("rf", "زیرمجموعه‌گیری", "__rf__")]
 _SEC_BY_BTN = {b: (k, n) for k, n, b in SECTIONS}
 
@@ -5449,7 +5451,8 @@ def sections_off():
 
 
 # دکمه‌های شیشه‌ای (callback) هر بخش؛ پیشوند → کلید بخش (پرداخت فاکتورهای موجود عمداً مسدود نمی‌شود)
-_CB_SEC = (("sp_pick:", "sp"), ("sps:", "sp"), ("acc_ref", "rf"), ("jt_pick:", "bt"),
+_CB_SEC = (("svc_views", "sn"), ("svc_members", "mb"), ("svc_reaction", "rc"), ("react_", "rc"),
+           ("svc_premium_reaction", "pm"), ("premium", "pm"), ("svc_stars", "st"), ("sp_pick:", "sp"), ("sps:", "sp"), ("acc_ref", "rf"), ("jt_pick:", "bt"),
            ("svc_", "sv"), ("react_", "sv"), ("premium", "sv"), ("jfj_join", "sj"), ("jfj_next", "sj"))
 _SEC_NAME = {k: n for k, n, _b in SECTIONS}
 
