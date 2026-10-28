@@ -349,6 +349,13 @@ def migrate_schema():
             except sqlite3.OperationalError:
                 pass  # ستون از قبل وجود دارد
         try:
+            c.execute("ALTER TABLE users ADD COLUMN ref_need INTEGER")
+            # زیرمجموعه‌های قدیمیِ پاداش‌نگرفته با شرط همان زمان (مقدار فعلی) ثبت می‌شوند
+            c.execute("UPDATE users SET ref_need=? WHERE referred_by IS NOT NULL AND COALESCE(referral_rewarded,0)=0",
+                      (REFERRAL_ACTIVITY_THRESHOLD,))
+        except sqlite3.OperationalError:
+            pass
+        try:
             c.execute("ALTER TABLE service_orders ADD COLUMN admin_notified INTEGER NOT NULL DEFAULT 0")
             c.execute("UPDATE service_orders SET admin_notified=1")  # سفارش‌های قدیمی دوباره ارسال نشوند
         except sqlite3.OperationalError:
@@ -365,12 +372,14 @@ def upsert_user(user, referred_by=None):
     """ثبت کاربر به‌صورت اتمیک؛ به کاربر تازه موجودی اولیه‌ی تستی داده می‌شود"""
     with get_db() as c:
         c.execute(
-            """INSERT INTO users (id, first_name, username, tokens, referred_by) VALUES (?, ?, ?, ?, ?)
+            """INSERT INTO users (id, first_name, username, tokens, referred_by, ref_need) VALUES (?, ?, ?, ?, ?, ?)
                ON CONFLICT(id) DO UPDATE SET
                    first_name = excluded.first_name,
                    username = excluded.username,
                    updated_at = CURRENT_TIMESTAMP""",
-            (user["id"], user.get("first_name"), user.get("username"), STARTING_TOKENS, referred_by),
+            (user["id"], user.get("first_name"), user.get("username"), STARTING_TOKENS, referred_by,
+             # شرط پاداش معرف همان لحظه‌ی ثبت‌نام «قفل» می‌شود؛ تغییر یا خاموش‌کردن بعدی روی قبلی‌ها اثر ندارد
+             None if referred_by is None else (REFERRAL_ACTIVITY_THRESHOLD if ref_act_on() else 0)),
         )
 
 
@@ -390,8 +399,32 @@ REFERRAL_CONFIRMED_TEXT = (
 )
 
 
+def ref_act_on():
+    """شرط «فعالیت لازم زیرمجموعه» روشن است؟ (پیش‌فرض روشن). خاموش = پاداش معرف همان لحظه‌ی ورود زیرمجموعه."""
+    return get_setting("ref_act_on", "1") != "0"
+
+
+def _reward_referrer_now(referrer_id, new_user_id):
+    """پاداش فوری (وقتی شرط فعالیت خاموش است)؛ با پرچم referral_rewarded فقط یک‌بار پرداخت می‌شود"""
+    with get_db() as c:
+        cur = c.execute("UPDATE users SET referral_rewarded=1 WHERE id=? AND referred_by=? AND COALESCE(referral_rewarded,0)=0",
+                        (new_user_id, referrer_id))
+        if cur.rowcount != 1:
+            return False
+        c.execute("UPDATE users SET tokens = tokens + ? WHERE id=?", (REFERRAL_REWARD, referrer_id))
+    rep_ev_ref_ok(referrer_id, new_user_id)
+    r = send(referrer_id, REFERRAL_CONFIRMED_TEXT)
+    if not r.get("ok"):
+        logging.warning("referral instant reward notify to %s failed: %s", referrer_id, r)
+    return True
+
+
 def notify_new_referral(referrer_id, new_user=None):
-    """همان لحظه‌ای که کاربر جدید از لینک زیرمجموعه‌گیری وارد شد (هنوز پاداشی داده نمی‌شود)"""
+    """همان لحظه‌ای که کاربر جدید از لینک زیرمجموعه‌گیری وارد شد (اگر شرط فعالیت روشن است هنوز پاداشی داده نمی‌شود)"""
+    nid = (new_user or {}).get("id")
+    if not ref_act_on() and nid:
+        rep_ev_ref_new(referrer_id, new_user)
+        return _reward_referrer_now(referrer_id, nid)
     rep_ev_ref_new(referrer_id, new_user)
     for attempt in range(3):
         r = send(referrer_id, REFERRAL_SIGNUP_TEXT)
@@ -434,12 +467,14 @@ def maybe_reward_referrer(user_id):
     کسر/افزایش و ست‌کردن پرچم reward در یک تراکنش واحد انجام می‌شود تا دوبار پرداخت نشود."""
     with get_db() as c:
         row = c.execute(
-            "SELECT referred_by, activity_tokens, referral_rewarded FROM users WHERE id=?", (user_id,)
+            "SELECT referred_by, activity_tokens, referral_rewarded, ref_need FROM users WHERE id=?", (user_id,)
         ).fetchone()
         if not row:
             return
-        referred_by, activity_tokens, rewarded = row
-        if not referred_by or rewarded or activity_tokens < REFERRAL_ACTIVITY_THRESHOLD:
+        referred_by, activity_tokens, rewarded, need = row
+        if need is None:
+            need = REFERRAL_ACTIVITY_THRESHOLD       # ردیف قدیمی بدون شرط ثبت‌شده
+        if not referred_by or rewarded or activity_tokens < need:
             return
         c.execute("UPDATE users SET tokens = tokens + ? WHERE id=?", (REFERRAL_REWARD, referred_by))
         c.execute("UPDATE users SET referral_rewarded=1 WHERE id=?", (user_id,))
@@ -2730,7 +2765,8 @@ def render_referral():
         "👥 <b>تنظیمات زیرمجموعه</b>\n"
         f"{LINE}\n"
         f"🎁 پاداش معرف: <b>{_t(REFERRAL_REWARD)}</b> شاهی\n"
-        f"🎯 فعالیت لازم زیرمجموعه: <b>{_t(REFERRAL_ACTIVITY_THRESHOLD)}</b> شاهی از جوین‌ها\n"
+        + (f"🎯 فعالیت لازم زیرمجموعه: <b>🟢 روشن • {_t(REFERRAL_ACTIVITY_THRESHOLD)}</b> شاهی از جوین‌ها\n" if ref_act_on() else
+           "🎯 فعالیت لازم زیرمجموعه: <b>🔴 خاموش</b>\n⚡️ پاداش معرف همان لحظه‌ی ورود زیرمجموعه پرداخت می‌شود.\n") +
         f"{LINE}\n"
         f"🧑‍🤝‍🧑 معرف‌ها: <b>{_n(refs)}</b> نفر\n"
         f"📥 زیرمجموعه‌های دعوت‌شده: <b>{_n(invited)}</b> نفر\n"
@@ -2740,6 +2776,8 @@ def render_referral():
     kb = _kb(
         [_ab("🎁 تغییر پاداش معرف", "adm_p:r:in:rr", PRIMARY)],
         [_ab("🎯 تغییر فعالیت لازم", "adm_p:r:in:rt", PRIMARY)],
+        [_ab("🔴 خاموش کردن شرط فعالیت" if ref_act_on() else "🟢 روشن کردن شرط فعالیت", "adm_p:r:rtg",
+             DANGER if ref_act_on() else SUCCESS)],
         [_ab("🏆 برترین معرف‌ها", "adm_p:r:top", SUCCESS)],
     )
     return text, kb
@@ -3352,6 +3390,10 @@ def admin_panel_callback(cq):
                 return home()
 
         # --- زیرمجموعه ---
+        if sec == "r" and act == "rtg":
+            set_setting("ref_act_on", "0" if ref_act_on() else "1")
+            ack("🟢 شرط فعالیت روشن شد." if ref_act_on() else "🔴 شرط فعالیت خاموش شد؛ از این به بعد پاداش معرف فوری است.")
+            return home()
         if sec == "r" and act == "top":
             ack()
             with get_db() as c:

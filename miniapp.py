@@ -489,7 +489,7 @@ def build_state(user):
         ).fetchall()
         joins_n = c.execute("SELECT COUNT(*) FROM joins WHERE user_id=? AND left_at IS NULL", (uid,)).fetchone()[0]
         friends = c.execute(
-            "SELECT id, activity_tokens, referral_rewarded, first_name FROM users WHERE referred_by=? ORDER BY created_at",
+            "SELECT id, activity_tokens, referral_rewarded, first_name, ref_need FROM users WHERE referred_by=? ORDER BY created_at",
             (uid,),
         ).fetchall()
 
@@ -552,8 +552,10 @@ def build_state(user):
     orders = [o for _, o in allo[:120]]
     thr = bot.REFERRAL_ACTIVITY_THRESHOLD
     friend_list = [
-        {"id": fid, "name": (fname or "").strip(), "cur": min(int(act), thr) if not rewarded else thr, "rewarded": bool(rewarded)}
-        for fid, act, rewarded, fname in friends
+        {"id": fid, "name": (fname or "").strip(), "need": int(thr if need is None else need),
+         "cur": (int(thr if need is None else need) if rewarded else min(int(act), int(thr if need is None else need))),
+         "rewarded": bool(rewarded)}
+        for fid, act, rewarded, fname, need in friends
     ]
     if not bot.BOT_USERNAME:
         ensure_ready()
@@ -598,6 +600,7 @@ def build_state(user):
             "payMethods": [m for m in ("card", "zarin", "crypto") if bot.method_enabled(m)],
             "refReward": bot.REFERRAL_REWARD,
             "refThreshold": thr,
+            "refActOn": bool(bot.ref_act_on()),
             "botUsername": username,
             "support": getattr(bot, "SUPPORT_ID", "") or "",
             "rules": (bot.get_setting("rules_text") or bot.RULES_TEXT).replace("*", ""),
