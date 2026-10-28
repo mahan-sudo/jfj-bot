@@ -671,8 +671,10 @@ def _chan_blocked(link, chat_id_num):
 
 
 def api_join_list(uid, body):
+    """همه‌ی درخواست‌های درحال‌انجام که کاربر هنوز عضوشان نیست (چک زنده‌ی عضویت، مثل خود ربات).
+    کانالی که کاربر همین الان باز کرده و جوین شده تا زمان «تأیید عضویت» در لیست می‌ماند تا شاهی‌اش را بگیرد."""
     need_sec(uid, "sj")
-    """همه‌ی درخواست‌های درحال‌انجام که کاربر هنوز عضوشان نیست (چک زنده‌ی عضویت، مثل خود ربات)"""
+    opened = {str(x) for x in (body.get("opened") or [])[:60]} if isinstance(body.get("opened"), list) else set()
     try:
         left_now = reconcile_leaves(uid, min_gap=5)
     except Exception:
@@ -698,6 +700,8 @@ def api_join_list(uid, body):
             bot.cancel_request_not_admin(row[0], "miniapp list")
             return None
         if st0 not in ("left", "kicked"):
+            if row[0] in opened and st0 not in (None, "creator"):
+                return row + (chat_title(row[0], ident),)   # تازه جوین شده؛ منتظر تأیید و دریافت شاهی
             return None  # همین الان عضو است یا بررسی ممکن نیست
         return row + (chat_title(row[0], ident),)
 

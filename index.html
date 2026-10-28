@@ -793,7 +793,7 @@ function loadList(quiet) { if (listP) return listP; listP = loadList0(quiet).fin
 async function loadList0(quiet) {
   S.listLoading = true; if (S.list === undefined && !quiet) render();
   try {
-    const r = await api('/api/join/list', {});
+    const r = await api('/api/join/list', { opened: Object.keys(S.opened || {}) });
     showLeft(r.leftNow);
     if (r.leftNow && r.leftNow.length) loadState(true);
     S.list = r.items;
