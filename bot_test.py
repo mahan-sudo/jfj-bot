@@ -349,6 +349,15 @@ def migrate_schema():
             except sqlite3.OperationalError:
                 pass  # ستون از قبل وجود دارد
         try:
+            c.execute("ALTER TABLE users ADD COLUMN fj_ok INTEGER NOT NULL DEFAULT 0")
+            c.execute("UPDATE users SET fj_ok=1")        # کاربران قبلی همین حالا هم از قفل جوین اجباری گذشته‌اند
+        except sqlite3.OperationalError:
+            pass
+        try:
+            c.execute("ALTER TABLE users ADD COLUMN fj_shown INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
             c.execute("ALTER TABLE users ADD COLUMN ref_need INTEGER")
             # زیرمجموعه‌های قدیمیِ پاداش‌نگرفته با شرط همان زمان (مقدار فعلی) ثبت می‌شوند
             c.execute("UPDATE users SET ref_need=? WHERE referred_by IS NOT NULL AND COALESCE(referral_rewarded,0)=0",
@@ -389,45 +398,42 @@ def get_balance(user_id):
         return row[0] if row else 0
 
 
-REFERRAL_SIGNUP_TEXT = (
-    "✅️ *زیرمجموعه جدید گرفتی!*\n\n"
-    f"💎 *با جمع‌آوری {REFERRAL_ACTIVITY_THRESHOLD} شاهی توسط زیرمجموعه، {REFERRAL_REWARD} شاهی دریافت میکنید!*"
-)
-REFERRAL_CONFIRMED_TEXT = (
-    "✅ *زیرمجموعه شما تایید شد!*\n\n"
-    f"🎉 *به کیف پول شما ‌{REFERRAL_REWARD} شاهی افزوده شد.*"
-)
-
-
 def ref_act_on():
-    """شرط «فعالیت لازم زیرمجموعه» روشن است؟ (پیش‌فرض روشن). خاموش = پاداش معرف همان لحظه‌ی ورود زیرمجموعه."""
+    """شرط «فعالیت لازم زیرمجموعه» روشن است؟ (پیش‌فرض روشن). خاموش = برای زیرمجموعه‌های جدید شرطی جز جوین اجباری نیست."""
     return get_setting("ref_act_on", "1") != "0"
 
 
-def _reward_referrer_now(referrer_id, new_user_id):
-    """پاداش فوری (وقتی شرط فعالیت خاموش است)؛ با پرچم referral_rewarded فقط یک‌بار پرداخت می‌شود"""
-    with get_db() as c:
-        cur = c.execute("UPDATE users SET referral_rewarded=1 WHERE id=? AND referred_by=? AND COALESCE(referral_rewarded,0)=0",
-                        (new_user_id, referrer_id))
-        if cur.rowcount != 1:
-            return False
-        c.execute("UPDATE users SET tokens = tokens + ? WHERE id=?", (REFERRAL_REWARD, referrer_id))
-    rep_ev_ref_ok(referrer_id, new_user_id)
-    r = send(referrer_id, REFERRAL_CONFIRMED_TEXT)
-    if not r.get("ok"):
-        logging.warning("referral instant reward notify to %s failed: %s", referrer_id, r)
-    return True
+def referral_signup_text(need=None):
+    """متن خبر زیرمجموعه‌ی جدید؛ هر بار با مقدارهای فعلی ساخته می‌شود (تغییر پاداش/شرط در پنل فوراً اثر می‌کند)"""
+    if need is None:
+        need = REFERRAL_ACTIVITY_THRESHOLD if ref_act_on() else 0
+    if need > 0:
+        return ("✅️ *زیرمجموعه جدید گرفتی!*\n\n"
+                f"💎 *با جمع‌آوری {fmt_num(need)} شاهی توسط زیرمجموعه، {fmt_num(REFERRAL_REWARD)} شاهی دریافت میکنید!*")
+    return ("✅️ *زیرمجموعه جدید گرفتی!*\n\n"
+            f"💎 *با عضویت زیرمجموعه در کانال‌های اجباری، {fmt_num(REFERRAL_REWARD)} شاهی دریافت میکنید!*")
+
+
+def referral_confirmed_text():
+    return ("✅ *زیرمجموعه شما تایید شد!*\n\n"
+            f"🎉 *به کیف پول شما ‌{fmt_num(REFERRAL_REWARD)} شاهی افزوده شد.*")
 
 
 def notify_new_referral(referrer_id, new_user=None):
-    """همان لحظه‌ای که کاربر جدید از لینک زیرمجموعه‌گیری وارد شد (اگر شرط فعالیت روشن است هنوز پاداشی داده نمی‌شود)"""
+    """همان لحظه‌ای که کاربر جدید از لینک زیرمجموعه‌گیری وارد شد.
+    پاداش فقط بعد از شرط فعالیت (در صورت روشن بودن) و عضویت در جوین اجباری پرداخت می‌شود."""
     nid = (new_user or {}).get("id")
-    if not ref_act_on() and nid:
-        rep_ev_ref_new(referrer_id, new_user)
-        return _reward_referrer_now(referrer_id, nid)
+    need = None
+    if nid:
+        with get_db() as c:
+            r = c.execute("SELECT ref_need FROM users WHERE id=?", (nid,)).fetchone()
+        need = r[0] if r else None
     rep_ev_ref_new(referrer_id, new_user)
+    if nid and need == 0 and not fj_entries():
+        # بدون شرط فعالیت و بدون جوین اجباری: همین حالا پاداش (پیام «تایید شد» خودش می‌رود)
+        return maybe_reward_referrer(nid)
     for attempt in range(3):
-        r = send(referrer_id, REFERRAL_SIGNUP_TEXT)
+        r = send(referrer_id, referral_signup_text(need))
         if r.get("ok"):
             return True
         logging.warning("referral signup notify to %s failed (try %s): %s", referrer_id, attempt + 1, r)
@@ -462,27 +468,47 @@ def add_activity_tokens(user_id, amount):
         c.execute("UPDATE users SET activity_tokens = activity_tokens + ? WHERE id=?", (amount, user_id))
 
 
+def ref_fj_passed(user_id):
+    """زیرمجموعه باید در جوین اجباری عضو باشد و (اگر قفل به او نشان داده شده) روی «عضو شدم | بررسی» زده باشد"""
+    try:
+        if is_admin(user_id) or not fj_entries():
+            return True                          # ادمین از قفل جوین اجباری معاف است
+        with get_db() as c:
+            r = c.execute("SELECT fj_ok FROM users WHERE id=?", (user_id,)).fetchone()
+        if not (r and r[0]):
+            return False
+        return not fj_missing(user_id)
+    except Exception:
+        logging.exception("ref_fj_passed")
+        return False
+
+
 def maybe_reward_referrer(user_id):
-    """وقتی زیرمجموعه به‌اندازه‌ی کافی از فعالیت (جوین در JFJ) کسب کرد، معرف پاداش می‌گیرد.
-    کسر/افزایش و ست‌کردن پرچم reward در یک تراکنش واحد انجام می‌شود تا دوبار پرداخت نشود."""
+    """وقتی زیرمجموعه شرط خودش (فعالیت جوین در JFJ که در زمان ثبت‌نامش ثبت شده) و عضویت در جوین اجباری را انجام داد،
+    معرف پاداش می‌گیرد. پرچم و افزایش موجودی در یک تراکنش‌اند و پرچم با rowcount بررسی می‌شود تا دوبار پرداخت نشود."""
     with get_db() as c:
         row = c.execute(
             "SELECT referred_by, activity_tokens, referral_rewarded, ref_need FROM users WHERE id=?", (user_id,)
         ).fetchone()
-        if not row:
-            return
-        referred_by, activity_tokens, rewarded, need = row
-        if need is None:
-            need = REFERRAL_ACTIVITY_THRESHOLD       # ردیف قدیمی بدون شرط ثبت‌شده
-        if not referred_by or rewarded or activity_tokens < need:
-            return
+    if not row:
+        return False
+    referred_by, activity_tokens, rewarded, need = row
+    if need is None:
+        need = REFERRAL_ACTIVITY_THRESHOLD       # ردیف قدیمی بدون شرط ثبت‌شده
+    if not referred_by or rewarded or activity_tokens < need:
+        return False
+    if not ref_fj_passed(user_id):               # بررسی شبکه‌ای خارج از تراکنش دیتابیس
+        return False
+    with get_db() as c:
+        cur = c.execute("UPDATE users SET referral_rewarded=1 WHERE id=? AND COALESCE(referral_rewarded,0)=0", (user_id,))
+        if cur.rowcount != 1:
+            return False
         c.execute("UPDATE users SET tokens = tokens + ? WHERE id=?", (REFERRAL_REWARD, referred_by))
-        c.execute("UPDATE users SET referral_rewarded=1 WHERE id=?", (user_id,))
     rep_ev_ref_ok(referred_by, user_id)
-    r = send(referred_by, REFERRAL_CONFIRMED_TEXT)
+    r = send(referred_by, referral_confirmed_text())
     if not r.get("ok"):
         logging.warning("referral confirmed notify to %s failed: %s", referred_by, r)
-
+    return True
 
 
 def deduct_tokens(user_id, amount):
@@ -4530,6 +4556,43 @@ def fj_missing(uid):
     return [e for e, st in zip(ents, sts) if st in ("left", "kicked")]
 
 
+def fj_mark_ok(uid):
+    """کاربر روی «عضو شدم | بررسی» زد و واقعاً عضو است؛ پاداش معرفش (اگر منتظر همین بود) داده می‌شود"""
+    with get_db() as c:
+        r = c.execute("SELECT fj_ok FROM users WHERE id=?", (uid,)).fetchone()
+        if not r or r[0]:
+            return
+        c.execute("UPDATE users SET fj_ok=1, fj_shown=1 WHERE id=?", (uid,))
+    try:
+        maybe_reward_referrer(uid)
+    except Exception:
+        logging.exception("fj_mark_ok reward")
+
+
+def _fj_after_pass(uid, chat_id, callback_id):
+    """کاربر همین الان در همه‌ی کانال‌های اجباری عضو است. اگر قفل را هرگز ندیده، رد می‌شود.
+    اگر قفل را دیده ولی هنوز «عضو شدم | بررسی» نزده، همان‌جا از او خواسته می‌شود بزند (شرط پاداش معرف)."""
+    try:
+        with get_db() as c:
+            r = c.execute("SELECT fj_ok, fj_shown FROM users WHERE id=?", (uid,)).fetchone()
+        if not r or r[0]:
+            return False
+        if not r[1]:
+            with get_db() as c:
+                c.execute("UPDATE users SET fj_ok=1 WHERE id=?", (uid,))
+            maybe_reward_referrer(uid)
+            return False
+    except Exception:
+        logging.exception("_fj_after_pass")
+        return False
+    if callback_id:
+        answer_callback(callback_id, "✅ عضویت شما دیده شد؛ روی «عضو شدم | بررسی» بزنید.", show_alert=True)
+    if chat_id:
+        send(chat_id, "✅ *عضویت شما در کانال‌ها تأیید شد!*\n\n👇 *برای ادامه، روی دکمه‌ی زیر بزنید.*",
+             {"inline_keyboard": [[btn_inline("عضو شدم | بررسی ✅️", "fj_check", SUCCESS)]]})
+    return True
+
+
 def fj_gate(uid, chat_id, callback_id=None, data=""):
     """True یعنی کاربر باید اول در کانال‌ها عضو شود و کار متوقف شد"""
     if is_admin(uid) or data == "fj_check":
@@ -4540,7 +4603,12 @@ def fj_gate(uid, chat_id, callback_id=None, data=""):
         logging.exception("fj_gate")
         return False
     if not missing:
-        return False
+        return _fj_after_pass(uid, chat_id, callback_id)
+    try:
+        with get_db() as c:
+            c.execute("UPDATE users SET fj_shown=1 WHERE id=?", (uid,))
+    except Exception:
+        logging.exception("fj_shown")
     items = []
     for e in missing:
         i = fj_info(e)
@@ -4565,6 +4633,7 @@ def handle_fj_check(cq):
         answer_callback(cq["id"], "هنوز در همه‌ی کانال‌ها عضو نشده‌اید.", show_alert=True)
         return
     answer_callback(cq["id"], "✅ عضویت شما تأیید شد.")
+    fj_mark_ok(uid)
     cid = cq["message"]["chat"]["id"]
     tg("deleteMessage", chat_id=cid, message_id=cq["message"]["message_id"])
     send_main_menu(cid, uid)
@@ -7449,7 +7518,8 @@ def rep_ev_ref_new(referrer_id, new_user):
         total = get_referral_count(referrer_id)
         return (_rp_head("ref", "زیرمجموعه جدید") + _rp_user(referrer_id, "🧲 معرف") + "\n"
                 + (_rp_user(nid, "🆕 کاربر جدید") + "\n" if nid else "") + f"👥 مجموع زیرمجموعه‌های معرف: {_rp_n(total)}"
-                + f"\n⏳ پاداش بعد از کسب {_rp_t(REFERRAL_ACTIVITY_THRESHOLD)} شاهی توسط زیرمجموعه پرداخت می‌شود." + _rp_time())
+                + (f"\n⏳ پاداش بعد از کسب {_rp_t(REFERRAL_ACTIVITY_THRESHOLD)} شاهی توسط زیرمجموعه پرداخت می‌شود." if ref_act_on()
+                   else "\n⏳ پاداش بعد از عضویت زیرمجموعه در جوین اجباری پرداخت می‌شود.") + _rp_time())
     report("ref", b, key=f"ref:{nid}" if nid else None)
 
 

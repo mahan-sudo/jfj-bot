@@ -1931,6 +1931,7 @@ def admin_cb(act, args, admin_id, chat_id):
         if act == "gx_mon_tg":
             now_on = not mon_auto_on()
             B.set_setting("g_m_on", "1" if now_on else "0")
+            _AG[0] = 0.0
             toast = "🟢 ارسال خودکار روشن شد." if now_on else "🔴 ارسال خودکار خاموش شد (ارسال دستی همچنان ممکن است)."
         elif act == "gx_mon_i":
             threading.Thread(target=_art_bootstrap, daemon=True, name="art-install").start()
@@ -2730,6 +2731,18 @@ _SERVICE_KEYS = ("new_chat_members", "left_chat_member", "pinned_message", "new_
                  "video_chat_scheduled", "video_chat_participants_invited")
 
 
+_AG = [0.0, False]
+
+
+def _auto_gate():
+    """روشن بودن ارسال خودکار + ربات؛ برای سبک ماندن شمارش پیام‌ها هر ۵ ثانیه یک بار از دیتابیس خوانده می‌شود"""
+    now = time.time()
+    if now - _AG[0] > 5:
+        _AG[1] = bool(mon_auto_on() and B.get_setting("bot_enabled", "1") != "0")
+        _AG[0] = now
+    return _AG[1]
+
+
 def on_chat_message(m):
     """هر پیام کاربران گروه (غیرربات، غیرسرویسی) را می‌شمارد؛ بعد از ۲۵ تا ۶۰ پیام هیولا می‌فرستد.
     کاملاً در حافظه و ارزان است؛ ارسال در پس‌زمینه انجام می‌شود."""
@@ -2740,7 +2753,7 @@ def on_chat_message(m):
         u = m.get("from") or {}
         if not u.get("id") or u.get("is_bot") or any(k in m for k in _SERVICE_KEYS):
             return
-        if not mon_auto_on() or B.get_setting("bot_enabled", "1") == "0":
+        if not _auto_gate():
             return
         cid, now = chat["id"], time.time()
         fire_thread, fire = None, False

@@ -1081,6 +1081,11 @@ def application(environ, start_response):
                     miss = [] if uid in bot.ADMIN_IDS else bot.fj_missing(uid)
                 except Exception:
                     miss = []
+                if not miss and uid not in bot.ADMIN_IDS:
+                    try:
+                        bot.fj_mark_ok(uid)       # «عضو شدم» در مینی‌اپ هم شرط پاداش معرف را کامل می‌کند
+                    except Exception:
+                        traceback.print_exc()
                 return respond(start_response, "200 OK", {"ok": not miss, "fj": [bot.fj_info(e) for e in miss]})
             if uid not in bot.ADMIN_IDS:
                 try:
@@ -1092,6 +1097,11 @@ def application(environ, start_response):
                         "error": "برای استفاده از مینی‌اپ ابتدا در کانال‌های اجباری عضو شو.",
                         "code": "fj", "fj": [bot.fj_info(e) for e in miss]})
             if path == "/api/state" and method == "GET":
+                if uid not in bot.ADMIN_IDS:
+                    try:
+                        bot.fj_mark_ok(uid)       # وارد مینی‌اپ شده یعنی از قفل جوین اجباری گذشته
+                    except Exception:
+                        traceback.print_exc()
                 return respond(start_response, "200 OK", build_state(user))
             if path == "/api/leaderboard" and method == "GET":
                 bot.upsert_user(user)
