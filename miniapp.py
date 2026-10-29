@@ -291,7 +291,19 @@ def fetch_uphoto(uid):
             if f.get("ok"):
                 path = f["result"]["file_path"]
                 with urllib.request.urlopen(f"https://api.telegram.org/file/bot{bot.BOT_TOKEN}/{path}", timeout=12) as resp:
-                    result = (mimetypes.guess_type(path)[0] or "image/jpeg", resp.read(2_000_000))
+                    raw = resp.read(2_000_000)
+                ctype, data = mimetypes.guess_type(path)[0] or "image/jpeg", raw
+                try:
+                    import io
+                    from PIL import Image
+                    im = Image.open(io.BytesIO(raw))
+                    im = im.convert("RGBA") if "A" in im.getbands() else im.convert("RGB")
+                    buf = io.BytesIO()
+                    im.save(buf, "WEBP", quality=80, method=4)
+                    ctype, data = "image/webp", buf.getvalue()
+                except Exception:
+                    pass
+                result = (ctype, data)
     except Exception:
         result = None
     if len(_uphoto_cache) > 600:
@@ -809,8 +821,19 @@ def fetch_photo(code):
                         with urllib.request.urlopen(
                             f"https://api.telegram.org/file/bot{bot.BOT_TOKEN}/{path}", timeout=12
                         ) as resp:
-                            data = resp.read(2_000_000)
-                        result = (mimetypes.guess_type(path)[0] or "image/jpeg", data)
+                            raw = resp.read(2_000_000)
+                        ctype, data = mimetypes.guess_type(path)[0] or "image/jpeg", raw
+                        try:
+                            import io
+                            from PIL import Image
+                            im = Image.open(io.BytesIO(raw))
+                            im = im.convert("RGBA") if "A" in im.getbands() else im.convert("RGB")
+                            buf = io.BytesIO()
+                            im.save(buf, "WEBP", quality=80, method=4)
+                            ctype, data = "image/webp", buf.getvalue()
+                        except Exception:
+                            pass
+                        result = (ctype, data)
                     except Exception:
                         result = None
     if len(_photo_cache) > 300:
