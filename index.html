@@ -1062,7 +1062,7 @@ boot();
   function mk(e) {
     const img = document.createElement('img');
     img.className = 'ap'; img.alt = e; img.draggable = false; img.decoding = 'async';
-    const tries = []; names(e).forEach((n) => BASES.forEach((b) => tries.push(b + n + '.png')));
+    const tries = []; names(e).forEach((n) => { tries.push('/static/emoji/' + n + '.webp'); BASES.forEach((b) => tries.push(b + n + '.png')); });
     let i = 0;
     img.onerror = () => { i++; if (i < tries.length) img.src = tries[i]; else { const sp = document.createElement('span'); sp.className = 'noap'; sp.textContent = e; img.replaceWith(sp); } };
     img.src = tries[0];
