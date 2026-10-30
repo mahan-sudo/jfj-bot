@@ -19,8 +19,9 @@ input{outline:none}
 [style*="border-radius"]{corner-shape:squircle}
 .round[style*="border-radius"]{corner-shape:round}
 .glass{}
-/* بدون blur، لایه‌های روی محتوا باید مات باشند تا متن زیرشان دیده نشود */
-#nav{background:color-mix(in srgb,var(--bg) 90%,var(--ink) 10%)!important}
+:root{--sat:max(env(safe-area-inset-top),calc(var(--tg-safe-area-inset-top,0px) + var(--tg-content-safe-area-inset-top,0px)))}
+/* blur فقط روی اکشن‌بارها (نوار پایین، محو بالا/پایین، منو) با شدت کم؛ کارت‌ها بدون blur تا روان بمانند */
+#nav{-webkit-backdrop-filter:blur(12px) saturate(1.4);backdrop-filter:blur(12px) saturate(1.4)}
 .scroller{scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .scroller::-webkit-scrollbar{display:none}
 .press{transition:transform .15s cubic-bezier(0.2,0,0,1)}
@@ -30,7 +31,7 @@ button:disabled{cursor:default}
 .page{animation:pageIn .35s cubic-bezier(0.2,0,0,1) backwards}
 @keyframes toastIn{from{opacity:0;transform:translate(-50%,-10px)}to{opacity:1;transform:translate(-50%,0)}}
 @keyframes tnIn{0%{opacity:0;transform:translateY(-140%) scale(.94)}60%{opacity:1}100%{opacity:1;transform:translateY(0) scale(1)}}
-.tn{pointer-events:auto;touch-action:none;display:flex;align-items:center;gap:12px;direction:rtl;padding:12px 14px;border-radius:26px;background:color-mix(in srgb,var(--bg) 97%,var(--ink) 3%);border:1px solid var(--edge);box-shadow:0 12px 40px rgba(24,27,63,0.22),0 2px 6px rgba(24,27,63,0.08);animation:tnIn .75s cubic-bezier(0.16,1,0.3,1) both;transition:transform .45s cubic-bezier(0.16,1,0.3,1),opacity .45s ease;will-change:transform,opacity}
+.tn{pointer-events:auto;touch-action:none;display:flex;align-items:center;gap:12px;direction:rtl;padding:12px 14px;border-radius:26px;background:color-mix(in srgb,var(--bg) 90%,transparent);border:1px solid var(--edge);box-shadow:0 12px 40px rgba(24,27,63,0.22),0 2px 6px rgba(24,27,63,0.08);animation:tnIn .75s cubic-bezier(0.16,1,0.3,1) both;transition:transform .45s cubic-bezier(0.16,1,0.3,1),opacity .45s ease;will-change:transform,opacity}
 @keyframes tnOut{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-150%) scale(.94)}}
 .tn.out{animation:tnOut .5s cubic-bezier(0.55,0,0.8,0.2) both}
 .tn-ic{width:40px;height:40px;flex-shrink:0;border-radius:13px;display:flex;align-items:center;justify-content:center}
@@ -81,12 +82,12 @@ button:disabled{cursor:default}
 .theme-dark{--reqc:#3B82F6;--reqt:rgba(59,130,246,0.18);--hsub:#C4C8EA;--aur1:rgba(40,50,200,0.38);--bg:#080B1F;--surface:rgba(24,27,54,0.4);--edge:rgba(255,255,255,0.1);--ink:#ECEEFF;--muted:#B0B5DC;--track:rgba(255,255,255,0.12);--primary:#3440D6;--onprimarysub:#ECEEFF;--accent:#A9B1FF;--tint:rgba(169,177,255,0.16);--mint:#5FD9B0;--minttint:rgba(95,217,176,0.14);--mintfill:#2FBF92;--gifttint:rgba(245,194,107,0.16);--gifticon:#F5C26B;--violet:#C4B5FD;--violettint:rgba(167,139,250,0.2);--rose:#FF8DA1;--rosetint:rgba(255,141,161,0.16);--tick:#FFFFFF;--field:rgba(9,10,26,0.55);--card1:#2E38BC;--card2:#141848;--sh1:rgba(0,0,0,0.2);--sh2:rgba(0,0,0,0.35);--psh:rgba(52,64,214,0.3);--cgl:rgba(52,64,214,0.24);--navglass:rgba(28,32,66,0.36);--navactive:rgba(169,177,255,0.2);--nsh1:rgba(0,0,0,0.5);--nsh2:rgba(255,255,255,0.12);--nsh3:rgba(52,64,214,0.12);--ared:#FF5C7A;--agreen:#34E0A8;--agreenbtn:#1FA97B;--aredt:rgba(255,92,122,0.18);--agreent:rgba(52,224,168,0.16)}
 .fz{position:absolute;left:0;right:0;z-index:9;pointer-events:none}
 .fz i{position:absolute;top:0;right:0;bottom:0;left:0}
-.fz-t{top:0;height:calc(124px + env(safe-area-inset-top))}
+.fz-t{top:0;height:calc(124px + var(--sat))}
 .fz-b{bottom:0;height:calc(150px + env(safe-area-inset-bottom))}
-.fz-t i:nth-child(1){-webkit-mask-image:linear-gradient(to bottom,#000 30%,transparent 78%);mask-image:linear-gradient(to bottom,#000 30%,transparent 78%)}
-.fz-t i:nth-child(2){background:linear-gradient(to bottom,color-mix(in srgb,var(--bg) 62%,transparent),transparent);-webkit-mask-image:linear-gradient(to bottom,#000 55%,transparent);mask-image:linear-gradient(to bottom,#000 55%,transparent)}
-.fz-b i:nth-child(1){-webkit-mask-image:linear-gradient(to top,#000 30%,transparent 78%);mask-image:linear-gradient(to top,#000 30%,transparent 78%)}
-.fz-b i:nth-child(2){background:linear-gradient(to top,color-mix(in srgb,var(--bg) 62%,transparent),transparent);-webkit-mask-image:linear-gradient(to top,#000 55%,transparent);mask-image:linear-gradient(to top,#000 55%,transparent)}
+.fz-t i:nth-child(1){-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);-webkit-mask-image:linear-gradient(to bottom,#000 30%,transparent 78%);mask-image:linear-gradient(to bottom,#000 30%,transparent 78%)}
+.fz-t i:nth-child(2){-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);background:linear-gradient(to bottom,color-mix(in srgb,var(--bg) 62%,transparent),transparent);-webkit-mask-image:linear-gradient(to bottom,#000 55%,transparent);mask-image:linear-gradient(to bottom,#000 55%,transparent)}
+.fz-b i:nth-child(1){-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);-webkit-mask-image:linear-gradient(to top,#000 30%,transparent 78%);mask-image:linear-gradient(to top,#000 30%,transparent 78%)}
+.fz-b i:nth-child(2){-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);background:linear-gradient(to top,color-mix(in srgb,var(--bg) 62%,transparent),transparent);-webkit-mask-image:linear-gradient(to top,#000 55%,transparent);mask-image:linear-gradient(to top,#000 55%,transparent)}
 .glow-l,.glow-d{position:absolute;top:0;right:0;bottom:0;left:0;background-repeat:no-repeat;pointer-events:none;transition:opacity .32s ease-out}
 .tswitch .glass{}
 .glow-l{background-image:radial-gradient(300px 320px at 100% 0px,rgba(245,165,36,0.2),transparent 70%),radial-gradient(260px 300px at 0% 300px,rgba(255,214,102,0.22),transparent 70%),radial-gradient(300px 340px at 100% 640px,rgba(249,115,22,0.12),transparent 70%),radial-gradient(280px 320px at 0% 980px,rgba(245,165,36,0.14),transparent 70%),radial-gradient(300px 320px at 100% 1300px,rgba(255,214,102,0.16),transparent 70%)}
@@ -104,11 +105,11 @@ button:disabled{cursor:default}
 .theme-dark3{--bg:#1A1A1A;--hsub:#E7D9B0;--aur1:rgba(139,0,0,0.45);--surface:rgba(46,36,30,0.55);--edge:rgba(212,175,55,0.24);--ink:#F7F0DC;--muted:#C2B189;--track:rgba(255,255,255,0.12);--primary:#8B0000;--onprimarysub:#FFE9B0;--accent:#D4AF37;--tint:rgba(212,175,55,0.14);--mint:#E8CB6A;--minttint:rgba(212,175,55,0.14);--mintfill:#D4AF37;--reqc:#D4AF37;--reqt:rgba(212,175,55,0.16);--gifttint:rgba(212,175,55,0.16);--gifticon:#D4AF37;--violet:#E0C4FF;--tick:#D4AF37;--field:rgba(10,8,6,0.6);--card1:#8B0000;--card2:#2B0606;--sh1:rgba(0,0,0,0.3);--sh2:rgba(0,0,0,0.45);--psh:rgba(139,0,0,0.5);--cgl:rgba(139,0,0,0.4);--navglass:rgba(40,30,24,0.5);--navactive:rgba(212,175,55,0.22);--nsh1:rgba(0,0,0,0.55);--nsh2:rgba(255,255,255,0.1);--nsh3:rgba(212,175,55,0.14)}
 .theme-light4 .glow-l{background-image:radial-gradient(300px 320px at 100% 0px,rgba(139,0,0,0.12),transparent 70%),radial-gradient(260px 300px at 0% 300px,rgba(212,175,55,0.3),transparent 70%),radial-gradient(300px 340px at 100% 640px,rgba(139,0,0,0.08),transparent 70%),radial-gradient(280px 320px at 0% 980px,rgba(212,175,55,0.24),transparent 70%),radial-gradient(300px 320px at 100% 1300px,rgba(139,0,0,0.08),transparent 70%)}
 .theme-dark3 .glow-d{background-image:radial-gradient(300px 320px at 100% 0px,rgba(139,0,0,0.4),transparent 70%),radial-gradient(260px 300px at 0% 300px,rgba(212,175,55,0.14),transparent 70%),radial-gradient(300px 340px at 100% 640px,rgba(139,0,0,0.3),transparent 70%),radial-gradient(280px 320px at 0% 980px,rgba(212,175,55,0.1),transparent 70%),radial-gradient(300px 320px at 100% 1300px,rgba(139,0,0,0.26),transparent 70%)}
-#menuBack{position:absolute;top:0;right:0;bottom:0;left:0;z-index:12;border:0;padding:0;cursor:default;background:rgba(10,10,20,0.22);animation:mbIn .32s ease both}
+#menuBack{position:absolute;top:0;right:0;bottom:0;left:0;z-index:12;border:0;padding:0;cursor:default;background:rgba(10,10,20,0.22);-webkit-backdrop-filter:blur(3px) saturate(1.05);backdrop-filter:blur(3px) saturate(1.05);animation:mbIn .32s ease both}
 #menu.out #menuBack{animation:mbOut .26s ease both}
 @keyframes mbIn{from{opacity:0}to{opacity:1}}
 @keyframes mbOut{from{opacity:1}to{opacity:0}}
-#menuPanel{position:absolute;z-index:13;left:20px;width:min(284px,calc(100% - 40px));border-radius:30px;padding:8px;background:color-mix(in srgb,var(--bg) 94%,var(--ink) 6%);border:1px solid var(--edge);box-shadow:0 30px 70px rgba(0,0,0,0.28),0 6px 18px rgba(0,0,0,0.12),inset 0 1px 0 rgba(255,255,255,0.35);transform-origin:26px -10px;animation:menuIn .46s cubic-bezier(0.2,0.95,0.25,1.12) both}
+#menuPanel{position:absolute;z-index:13;left:20px;width:min(284px,calc(100% - 40px));border-radius:30px;padding:8px;-webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);background:color-mix(in srgb,var(--bg) 80%,transparent);border:1px solid var(--edge);box-shadow:0 30px 70px rgba(0,0,0,0.28),0 6px 18px rgba(0,0,0,0.12),inset 0 1px 0 rgba(255,255,255,0.35);transform-origin:26px -10px;animation:menuIn .46s cubic-bezier(0.2,0.95,0.25,1.12) both}
 #menu.out #menuPanel{animation:menuOut .24s cubic-bezier(0.4,0,0.9,0.6) both}
 @keyframes menuIn{0%{opacity:0;transform:scale(0.35)}55%{opacity:1}100%{opacity:1;transform:scale(1)}}
 @keyframes menuOut{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(0.45)}}
@@ -170,19 +171,12 @@ button:disabled{cursor:default}
 #splash .rise{animation:spRise .7s cubic-bezier(0.2,0,0,1) backwards}
 @media (prefers-reduced-motion: reduce){#splash *{animation:none!important}}
 @media (prefers-reduced-motion: reduce){.theme-light,.theme-dark,.theme-system{transition:none}.glow-l,.glow-d{transition:none}.page{animation:none}}
-/* blur اکشن‌بارها با شدت کم */
-#nav{background:var(--navglass)!important;-webkit-backdrop-filter:blur(12px) saturate(1.4);backdrop-filter:blur(12px) saturate(1.4)}
-.tn{background:color-mix(in srgb,var(--bg) 90%,transparent)!important}
-.fz-t i:nth-child(1),.fz-b i:nth-child(1){-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
-.fz-t i:nth-child(2),.fz-b i:nth-child(2){-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
-#menuBack{-webkit-backdrop-filter:blur(3px) saturate(1.05);backdrop-filter:blur(3px) saturate(1.05)}
-#menuPanel{-webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);background:color-mix(in srgb,var(--bg) 80%,transparent)!important}
 </style>
 </head>
 <body>
 <div id="root" class="theme-dark" style="position:relative;width:100%;max-width:520px;margin:0 auto;height:100vh;height:100dvh;box-sizing:border-box;overflow:hidden;background-color:var(--bg);color:var(--ink);direction:rtl;font-family:'Vazirmatn',system-ui,-apple-system,'Segoe UI',Tahoma,sans-serif">
   <div id="scroller" class="scroller" style="position:absolute;top:0;right:0;bottom:0;left:0;overflow-x:hidden;overflow-y:auto">
-    <div style="position:relative;box-sizing:border-box;min-height:100vh;min-height:100dvh;padding-top:calc(88px + env(safe-area-inset-top));padding-bottom:calc(132px + env(safe-area-inset-bottom))">
+    <div style="position:relative;box-sizing:border-box;min-height:100vh;min-height:100dvh;padding-top:calc(88px + var(--sat));padding-bottom:calc(132px + env(safe-area-inset-bottom))">
       <div class="glow-l"></div><div class="glow-d"></div>
       <div style="position:relative;z-index:1;display:flex;flex-direction:column">
         <div id="page"></div>
@@ -192,7 +186,7 @@ button:disabled{cursor:default}
   <div class="fz fz-t" aria-hidden="true"><i></i><i></i></div>
   <div class="fz fz-b" aria-hidden="true"><i></i><i></i></div>
   <div id="menu"></div>
-  <div id="head" style="position:absolute;top:env(safe-area-inset-top);left:0;right:0;z-index:11"></div>
+  <div id="head" style="position:absolute;top:var(--sat);left:0;right:0;z-index:11"></div>
   <nav id="nav" aria-label="ناوبری اصلی" class="glass round" style="position:absolute;left:24px;right:24px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:10;border-radius:36px;padding:7px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;background:var(--navglass);border:1px solid var(--edge);box-shadow:var(--navshadow)"></nav>
   <div id="splash" role="status" aria-live="polite">
     <div id="spArt" class="rise" style="position:relative;width:min(340px,92vw);height:230px">
@@ -226,7 +220,7 @@ button:disabled{cursor:default}
     <div id="fjGate"></div>
     <div id="spErr" style="position:relative;margin-top:22px;display:none;flex-direction:column;align-items:center;gap:12px;max-width:80vw;text-align:center"></div>
   </div>
-  <div id="toast" style="position:absolute;top:0;left:0;right:0;z-index:150;padding:max(10px,env(safe-area-inset-top)) 12px 0;pointer-events:none"></div>
+  <div id="toast" style="position:absolute;top:0;left:0;right:0;z-index:150;padding:max(10px,var(--sat)) 12px 0;pointer-events:none"></div>
 </div>
 
 <script>
@@ -681,7 +675,7 @@ function menuHtml() {
   const row = (i, act, icon, label, extra = '') => `<button class="mrow" style="--i:${i}" data-act="${act}"><span class="mic">${ic(icon, 20, 2)}</span><span style="flex:1">${label}</span>${extra}</button>`;
   const themes = THEME_LIST.map(([g, items]) => (g ? `<div class="mgrp">${g}</div>` : '<div style="height:6px"></div>') + items.map(([k, n, c1, c2]) => `<button class="mrow" data-act="setTheme" data-v="${k}" style="min-height:46px;animation:none"><span class="sw" style="background:linear-gradient(135deg,${c1} 50%,${c2} 50%)"></span><span style="flex:1;font-weight:${S.theme === k ? 800 : 600}">${n}</span>${S.theme === k ? `<span style="color:var(--accent);display:flex">${ic(P.check, 20, 2.4)}</span>` : ''}</button>`).join('')).join('');
   const open = m === 'theme';
-  return `<button id="menuBack" data-act="menuClose" aria-label="بستن منو"></button><div id="menuPanel" role="menu" style="top:calc(env(safe-area-inset-top) + 96px)">${row(0, 'goRules', P.info, 'راهنما و قوانین')}<div class="msep"></div>${row(1, 'goSupportM', P.support, 'پشتیبانی')}<div class="msep"></div>${row(2, 'menuTheme', P.palette, 'تغییر تم', `<span style="display:flex;color:var(--muted);transition:transform .42s cubic-bezier(0.32,0.72,0,1);transform:rotate(${open ? 180 : 0}deg)">${ic(P.chevD, 18, 2.2)}</span>`)}<div class="msub ${open ? 'open' : ''}"><div>${themes}</div></div></div>`;
+  return `<button id="menuBack" data-act="menuClose" aria-label="بستن منو"></button><div id="menuPanel" role="menu" style="top:calc(var(--sat) + 96px)">${row(0, 'goRules', P.info, 'راهنما و قوانین')}<div class="msep"></div>${row(1, 'goSupportM', P.support, 'پشتیبانی')}<div class="msep"></div>${row(2, 'menuTheme', P.palette, 'تغییر تم', `<span style="display:flex;color:var(--muted);transition:transform .42s cubic-bezier(0.32,0.72,0,1);transform:rotate(${open ? 180 : 0}deg)">${ic(P.chevD, 18, 2.2)}</span>`)}<div class="msub ${open ? 'open' : ''}"><div>${themes}</div></div></div>`;
 }
 
 function pageRules() {
@@ -759,7 +753,7 @@ function render(full) {
   try {
     if (TG) {
       const sub = ['buyToken', 'service', 'sponsor', 'newRequest', 'account', 'notices', 'top', 'support', 'rules', 'subs'].includes(S.tab);
-      sub ? TG.BackButton.show() : TG.BackButton.hide();
+      (sub || TG.isFullscreen) ? TG.BackButton.show() : TG.BackButton.hide();
     }
   } catch (e) {}
 }
@@ -961,7 +955,12 @@ document.addEventListener('input', (e) => {
 try {
   if (TG) {
     TG.ready(); TG.expand();
-    TG.BackButton.onClick(() => A.back());
+    /* حالت تمام‌صفحه (Bot API 8.0+): هدر تلگرام شفاف می‌شود و دکمه‌های Back / کوچک‌کردن / منو به‌صورت قرص روی محتوا می‌آیند */
+    try {
+      if (TG.requestFullscreen && TG.isVersionAtLeast && TG.isVersionAtLeast('8.0') && (TG.platform === 'android' || TG.platform === 'ios') && !TG.isFullscreen) TG.requestFullscreen();
+      if (TG.onEvent) TG.onEvent('fullscreenChanged', () => { try { render(); } catch (e) {} });
+    } catch (e) {}
+    TG.BackButton.onClick(() => { if (S.tab === 'home' && !S.back && !S.menu) { try { TG.close(); } catch (e) {} } else A.back(); });
     try { TG.disableVerticalSwipes && TG.disableVerticalSwipes(); } catch (e) {}
   }
 } catch (e) {}
