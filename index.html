@@ -170,6 +170,13 @@ button:disabled{cursor:default}
 #splash .rise{animation:spRise .7s cubic-bezier(0.2,0,0,1) backwards}
 @media (prefers-reduced-motion: reduce){#splash *{animation:none!important}}
 @media (prefers-reduced-motion: reduce){.theme-light,.theme-dark,.theme-system{transition:none}.glow-l,.glow-d{transition:none}.page{animation:none}}
+/* blur اکشن‌بارها با شدت کم */
+#nav{background:var(--navglass)!important;-webkit-backdrop-filter:blur(12px) saturate(1.4);backdrop-filter:blur(12px) saturate(1.4)}
+.tn{background:color-mix(in srgb,var(--bg) 90%,transparent)!important}
+.fz-t i:nth-child(1),.fz-b i:nth-child(1){-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.fz-t i:nth-child(2),.fz-b i:nth-child(2){-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+#menuBack{-webkit-backdrop-filter:blur(3px) saturate(1.05);backdrop-filter:blur(3px) saturate(1.05)}
+#menuPanel{-webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);background:color-mix(in srgb,var(--bg) 80%,transparent)!important}
 </style>
 </head>
 <body>
