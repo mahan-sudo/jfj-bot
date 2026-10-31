@@ -1730,6 +1730,8 @@ SIMPLE_SERVICES = {
         "order_name": "ممبر فیک چنل",
         "ask_text": "👥️ *خرید ممبر فیک چنل*\n\n🔢 *تعداد ممبر مورد نظر را وارد کنید.*\n*حداقل سفارش: {min} عدد*",
         "count_line": "👥 *تعداد: {qty} ممبر*",
+        "link_prompt": "🔗 *حالا لینک کانال یا گروه خودتو بفرست.*",
+        "link_err": "🛑 *لطفا لینک کانال یا گروه را به‌صورت صحیح (با http یا https) ارسال کنید.*",
     },
     "stars": {
         "item_word": "استارز",
@@ -2077,21 +2079,28 @@ def handle_svc_wait_qty(chat_id, user_id, text, data):
         send(chat_id, f"🛑 *حداقل سفارش {p['min_qty']} عدد است.*")
         return
     cost = calc_cost(p, qty)
-    set_state(user_id, "svc_wait_link", {"order_name": svc["order_name"], "qty": qty, "cost": cost})
+    set_state(user_id, "svc_wait_link", {"order_name": svc["order_name"], "qty": qty, "cost": cost, "svc": data["service"]})
     send(
         chat_id,
         f"✅ *تعداد {svc['item_word']} دریافت شد.*\n\n"
         f"{svc['count_line'].format(qty=qty)}\n"
         f"🪙 *هزینه: {fmt_tokens(cost)} شاهی*\n\n"
-        "🔗 *حالا لینک پست مورد نظر رو ارسال کنید.*",
+        + svc.get("link_prompt", "🔗 *حالا لینک پست مورد نظر رو ارسال کنید.*"),
     )
 
 
 # ---------- قدم مشترک نهایی: دریافت لینک و ثبت سفارش (ویو/ممبر/استارز/ری‌اکشن/پرمیومی) ----------
 def handle_svc_wait_link(chat_id, user_id, text, data):
+    svc = SIMPLE_SERVICES.get(data.get("svc") or "", {})
+    if data.get("svc") == "members":              # ممبر فیک = کانال/گروه؛ @آیدی و t.me/... هم پذیرفته می‌شود
+        text = text.strip()
+        if re.fullmatch(r"@[A-Za-z0-9_]{4,}", text):
+            text = "https://t.me/" + text[1:]
+        elif text.lower().startswith("t.me/"):
+            text = "https://" + text
     low = text.lower()
     if not (low.startswith("http://") or low.startswith("https://")):
-        send(chat_id, "🛑 *لطفا لینک پست را به‌صورت صحیح (با http یا https) ارسال کنید.*")
+        send(chat_id, svc.get("link_err", "🛑 *لطفا لینک پست را به‌صورت صحیح (با http یا https) ارسال کنید.*"))
         return
 
     order_name, qty, cost = data["order_name"], data["qty"], data["cost"]

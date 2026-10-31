@@ -990,7 +990,7 @@ def api_service(uid, body):
     elif link.lower().startswith("t.me/"):
         link = "https://" + link
     if not link.lower().startswith(("http://", "https://")):
-        raise ApiError("لینک را درست وارد کن (https://t.me/...).")
+        raise ApiError("لینک کانال یا گروه را درست وارد کن (https://t.me/...)." if key == "members" else "لینک را درست وارد کن (https://t.me/...).")
     emoji = None
     combos = ("ری‌اکشن ترکیبی مثبت🥳", "ری‌اکشن ترکیبی منفی🤮")
     if key == "reaction":

@@ -1145,7 +1145,7 @@ def _tick_xfer(now):
             _xfer_edit(x, "🛑 انتقال شاهی خودکار لغو شد.")
 
 
-# ---------------- 👑 پروفایل شاهنشاهی ----------------
+# ---------------- 🏰 پروفایل شاهنشاهی ----------------
 _PROF_LAST = {}
 
 
@@ -1160,15 +1160,15 @@ def _profile_text(uid, name, tokens):
     def line(k):
         r = st.get(k)
         return f"برد ›› {_n(r['wins'] if r else 0)} باخت ›› {_n(r['losses'] if r else 0)}"
-    return ("👑 پروفایل شاهنشاهی\n\n"
+    return ("🏰 پروفایل شاهنشاهی\n\n"
             f"👤 کاربر › {_mention(uid, name)} {random.choice(PLAYER_EMOJIS)}\n"
             f"\u200f🪪 آیدی عددی ›› <code>{int(uid)}</code>\n\n"
             f"🏦 موجودی ››› {_t(tokens)} شاهی 💎\n"
             f"🎖️ رتبه › {_n(_lb_rank('t', uid))}ام لیدربرد\n\n"
             "📊 آمار بازی ها\n🃏 کازینو\n"
-            f"⤫ 🎲 تاس › {line('d')}\n"
-            f"⤫ 🎰 اسلات › {line('s')}\n"
-            f"⤫ 🪨📄✂️ سنگ‌کاغذ‌قیچی › {line('r')}\n\n"
+            f"⤫ 🎲 تاس\n{line('d')}\n"
+            f"⤫ 🎰 اسلات\n{line('s')}\n"
+            f"⤫ ✂️ سنگ‌کاغذ‌قیچی\n{line('r')}\n\n"
             f"⤫🕹 دوز › {line('x')}")
 
 
@@ -1670,21 +1670,12 @@ def _rps_view(t, ps):
     hist = _rps_hist(t)
 
     def st(p):
-        return "✅ انتخاب شد 🔒" if p["pick"] else "⏳ در انتظار انتخاب…"
+        return "انتخاب شد" if p["pick"] else "⏳ در انتظار انتخاب…"
     p1, p2 = ps[0], ps[1]
-    prev = ""
-    if hist:
-        a, b = hist[-1]
-        w = _rps_round_win(a, b)
-        who = "مساوی" if w == 0 else f"برد {'بازیکن اول' if w == 1 else 'بازیکن دوم'}"
-        s1, s2 = _rps_score(hist)
-        prev = (f"🔍 نتیجه راند قبل ››› {RPS_SYM[a]} ⚔ {RPS_SYM[b]} ({who})\n"
-                f"📊 امتیاز ››› {_n(s1)} - {_n(s2)}\n\n")
     txt = (f"{GAMES['r']['short']}\n\n"
            f"🏦 مبلغ ورودی ›› {_t(t['stake'])} شاهی 💎\n\n"
            f"👑 بازیکن اول › {_pname(p1)}\n⁉️ انتخاب › {st(p1)}\n"
            f"👑 بازیکن دوم ›› {_pname(p2)}  \n⁉️ انتخاب › {st(p2)}\n\n"
-           f"{prev}"
            f"🏆 راند بازی ››› {ORD[rnd]}\n\n"
            "‼️ لطفا حرکت خود را سریع انتخاب کنید.\n\n"
            f"⏰️ فقط {_n(cv('rp'))} ثانیه فرصت دارید…")
@@ -1698,7 +1689,7 @@ def _rps_result(t, ps, winner_uid, note=""):
     rows = []
     for i, (a, b) in enumerate(hist, 1):
         w = _rps_round_win(a, b)
-        rows.append(f"{NUM_EMO[i]} {RPS_SYM[a]} ⚔ {RPS_SYM[b]} ‹ " + ("مساوی" if w == 0 else f"برد {'بازیکن اول' if w == 1 else 'بازیکن دوم'}"))
+        rows.append(f"راند {_n(i)}. {RPS_SYM[a]} ⤬ {RPS_SYM[b]} ‹ " + ("مساوی" if w == 0 else f"برد {'بازیکن اول' if w == 1 else 'بازیکن دوم'}"))
     txt = (f"{GAMES['r']['short']}\n\n🏦 مبلغ ورودی › {_t(t['stake'])} شاهی 💎\n\n"
            f"👑 بازیکن اول › {_pname(p1)}\n🎉 امتیاز ››› {_n(s1)}\n"
            f"👑 بازیکن دوم ›› {_pname(p2)}\n🎉 امتیاز ››› {_n(s2)}\n\n")
