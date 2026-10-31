@@ -5695,7 +5695,7 @@ def delete_request_admin(code, refund, admin_id=None):
     return True
 
 
-GAME_KEYS = (("s", "🎰 گردونه شانس"), ("d", "🎲 تاس"), ("x", "❌⭕ دوز شاهی"))
+GAME_KEYS = (("s", "🎰 گردونه شانس"), ("d", "🎲 تاس"), ("r", "🪨📄✂️ سنگ کاغذ قیچی"), ("x", "❌⭕ دوز شاهی"))
 
 
 def game_setting_on(key):
@@ -6018,7 +6018,7 @@ def v2_admin_callback(cq):
                 return True
             if act == "gmt":
                 key = "casino_on" if args[0] == "all" else f"g_{args[0]}_on"
-                if args[0] == "all" or args[0] in ("s", "d", "x", "t", "l", "p"):
+                if args[0] == "all" or args[0] in ("s", "d", "r", "x", "t", "l", "p"):
                     set_setting(key, "1" if get_setting(key, "1") == "0" else "0")
                 ack("انجام شد.")
                 return page("gm") or True

@@ -31,6 +31,8 @@ XFER_WORD = "انتقال"
 LB_WORD = "لیدربرد"
 PROF_SELF = ("پروفایل", "شاهیام", "شاهی ام")          # پروفایل خودم
 PROF_OTHER = ("پروفایلش", "شاهیاش", "شاهی اش")        # فقط با ریپلای روی کاربر
+RPS_SEC = 60                  # مهلت انتخاب حرکت در هر راند سنگ‌کاغذ‌قیچی
+RPS_ROUNDS = 3
 XO_SEC = 150                  # کل زمان بازی دوز؛ بعد از آن بازیکنِ نوبت‌دار بازنده است
 MIN_STAKE = 5
 MAX_STAKE_DEFAULT = 100       # سقف مبلغ ورودی؛ کلید تنظیمات casino_max (0 = بدون سقف)
@@ -53,6 +55,8 @@ NUM_EMO = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣", 5: "5️⃣",
 GAMES = {
     "s": {"emoji": "🎰", "title": "🃏 کازینو گردونه شانس 🎰", "short": "🃏 گردونه شانس 🎰", "maxp": 3, "word": "گردونه"},
     "d": {"emoji": "🎲", "title": "🃏 کازینو تاس 🎲", "short": "🃏 کازینو تاس 🎲", "maxp": 2, "word": "تاس"},
+    "r": {"emoji": "🪨📄✂️", "title": "🃏 کازینو سنگ کاغذ قیچی 🪨📄✂️", "short": "🃏 کازینو سنگ کاغذ قیچی 🪨📄✂️", "maxp": 2,
+          "word": "سنگ کاغذ قیچی"},
     "x": {"emoji": "", "title": "🕹 دوز شاهنشاهی XO", "short": "🕹 دوز شاهنشاهی XO", "maxp": 2, "word": "دوز",
           "trigger": TRIGGER_XO},
 }
@@ -63,7 +67,7 @@ XO_LINES = ((0, 1, 2), (3, 4, 5), (6, 7, 8), (0, 3, 6), (1, 4, 7), (2, 5, 8), (0
 # تنظیمات قابل‌تغییر از پنل ادمین: نام → (کلید ذخیره در settings، نام ثابت پیش‌فرض)
 _CFGK = {
     "max": ("casino_max", "MAX_STAKE_DEFAULT"), "min": ("g_min", "MIN_STAKE"), "xmin": ("g_xmin", "XO_MIN_STAKE"),
-    "join": ("g_join", "JOIN_SEC"), "send": ("g_send", "SEND_SEC"), "xo": ("g_xo", "XO_SEC"),
+    "join": ("g_join", "JOIN_SEC"), "send": ("g_send", "SEND_SEC"), "xo": ("g_xo", "XO_SEC"), "rp": ("g_rp", "RPS_SEC"),
     "cool": ("g_cool", "COOLDOWN_SEC"), "xfer": ("g_xfer", "XFER_SEC"), "stale": ("g_stale", "STALE_SEC"),
     "dp": ("g_dp", "DICE_MULT_PAIR"), "dn": ("g_dn", "DICE_MULT_NUM"), "d6": ("g_d6", "DICE_MULT_SIX"),
 }
@@ -206,7 +210,7 @@ def game_on(key):
 
 
 def casino_games():
-    return [k for k in ("s", "d") if game_on(k)]
+    return [k for k in ("s", "d", "r") if game_on(k)]
 
 
 def _max_stake():
@@ -513,7 +517,9 @@ def _render(tid):
         if not t:
             return
         st = t["state"]
-        if st == "play":
+        if st == "play" and t["game"] == "r":
+            txt, kb = _rps_view(t, _players(tid))
+        elif st == "play":
             txt, kb = _xo_view(t, _players(tid))
         elif st == "send":
             txt, kb = _send_view(t, _players(tid))
@@ -528,7 +534,7 @@ def _render(tid):
         _edit(t, txt, kb)
 
 
-EXPIRE_NOTE = {"menu": "گردونه", "s": "گردونه", "d": "میز تاس", "x": "میز دوز"}
+EXPIRE_NOTE = {"menu": "گردونه", "s": "گردونه", "d": "میز تاس", "x": "میز دوز", "r": "میز سنگ کاغذ قیچی"}
 
 
 def _expire_note(t):
@@ -556,6 +562,7 @@ def _say(chat_id, text, thread_id=None, reply_to=None):
 _MENU_PARTS = {
     "s": "🎰 گردونه شانس\nمحدودیت بازیکن › 1 - 3 بازیکن",
     "d": "🎲 تاس\nمحدودیت بازیکن › 1 - 2 بازیکن",
+    "r": "🪨📄✂️ سنگ کاغذ قیچی\nمحدودیت بازیکن › 2 بازیکن",
 }
 
 
@@ -580,6 +587,8 @@ def _setup_head(t):
         return (f"{g['title']}\n\n🛎 لطفا میز دوز XO را بچینید!\n\n{_owner_line(t)}\n🏦 مبلغ ورودی › {stake}")
     stake = f"{_t(t['stake'])} شاهی 💎" if t["stake"] else "تعیین نشده ❌"
     maxp = f"{_n(t['maxp'])} بازیکن" if t["maxp"] else "تعیین نشده ❌"
+    if t["game"] == "r":
+        maxp = f"{_n(2)} بازیکن"             # تعداد بازیکن در این بازی ثابت است
     return (f"{g['title']}\n\n🛎 لطفا میز قمار را بچینید!\n\n"
             f"🏦 مبلغ ورودی › {stake}\n👑 تعداد بازیکن › {maxp}")
 
@@ -604,6 +613,12 @@ def _setup_view(t):
                 "🔻 لطفا مبلغ ورودی را در جواب همین پنل وارد کنید.\n"
                 f"حداقل مبلغ › {_n(cv('min'))} شاهی",
                 _kb([_btn("بازگشت ◁", f"g:bk:{tid}", B.DANGER)]))
+    if t["game"] == "r" and t["state"] != "stake_wait":      # تعداد بازیکن ثابت (۲): فقط مبلغ ورودی
+        if not t["stake"]:
+            return (head, _kb([_btn("تعیین مبلغ ورودی 💰", f"g:stk:{tid}")],
+                              [_btn("بازگشت ◁", f"g:menu:{tid}", B.DANGER)]))
+        return (head, _kb([_btn("ساخت میز قمار 🃏", f"g:mk:{tid}", B.SUCCESS)],
+                          [_btn("تغییر مبلغ ورودی 💰", f"g:stk:{tid}", B.SUCCESS)]))
     if t["state"] == "pick":
         nums = [_btn(NUM_EMO[i], f"g:n:{tid}:{i}") for i in range(1, g["maxp"] + 1)]
         return head, _kb(nums, [_btn("بازگشت ◁", f"g:bk:{tid}", B.DANGER)])
@@ -1152,7 +1167,8 @@ def _profile_text(uid, name, tokens):
             f"🎖️ رتبه › {_n(_lb_rank('t', uid))}ام لیدربرد\n\n"
             "📊 آمار بازی ها\n🃏 کازینو\n"
             f"⤫ 🎲 تاس › {line('d')}\n"
-            f"⤫ 🎰 اسلات › {line('s')}\n\n"
+            f"⤫ 🎰 اسلات › {line('s')}\n"
+            f"⤫ 🪨📄✂️ سنگ‌کاغذ‌قیچی › {line('r')}\n\n"
             f"⤫🕹 دوز › {line('x')}")
 
 
@@ -1375,6 +1391,8 @@ def on_callback(cq):
         return _cb_pick(cq, tid, arg, ans)
     if act == "xo":
         return _cb_xo(cq, tid, arg, ans)
+    if act == "rp":
+        return _cb_rps(cq, tid, arg, ans)
     if act == "tx":
         return _cb_xfer(cq, tid, arg, ans)
 
@@ -1387,6 +1405,8 @@ def on_callback(cq):
             return ans("⌛ این پنل منقضی شده است.", True)
         if t["owner"] != uid:
             return ans(f"🃏 این پنل مخصوص {t['owner_name']} است. خودتان بنویسید «{TRIGGER}».", True)
+        if act in ("np", "n") and t["game"] == "r":
+            return ans()        # سنگ‌کاغذ‌قیچی همیشه ۲ بازیکن است
         if act in ("sel", "mk", "md", "stk", "np", "n") and not game_on(arg if (act == "sel" and arg in GAMES) else t["game"]):
             return ans()        # بازی خاموش شده: بی‌صدا
         U = lambda sql, a: c.execute(sql, a)
@@ -1394,11 +1414,15 @@ def on_callback(cq):
             U("UPDATE g_tables SET state='expired' WHERE id=?", (tid,))
             cancelled = True
         elif act == "sel":
-            if arg not in ("s", "d") or t["game"] == "x":
+            if arg not in ("s", "d", "r") or t["game"] == "x":
                 return ans()
             mp = GAMES[arg]["maxp"]
             U("UPDATE g_tables SET game=?, state='setup', mode=NULL, maxp=CASE WHEN maxp>? THEN NULL ELSE maxp END, touched=? WHERE id=?",
               (arg, mp, now, tid))
+            if arg == "r":
+                U("UPDATE g_tables SET maxp=2 WHERE id=?", (tid,))
+            elif t["game"] == "r":
+                U("UPDATE g_tables SET maxp=NULL WHERE id=?", (tid,))
         elif act == "menu":
             U("UPDATE g_tables SET state='menu', touched=? WHERE id=?", (now, tid))
         elif act == "stk":
@@ -1487,6 +1511,8 @@ def _cb_join(cq, tid, ans):
             now = time.time()
             if t["game"] == "x":
                 _start_xo_in(c, t, uid, now)
+            elif t["game"] == "r":
+                _start_rps_in(c, t, now)
             else:
                 c.execute("UPDATE g_tables SET state='send', send_dl=?, touched=? WHERE id=? AND state='join'",
                           (now + cv('send'), now, tid))
@@ -1589,6 +1615,9 @@ def _cb_xo(cq, tid, arg, ans):
 
 def _xo_timeout(tid):
     """زمان تمام شد: بازیکنِ نوبت‌دار بازنده است"""
+    g0 = _row("SELECT game FROM g_tables WHERE id=?", (tid,))
+    if g0 and g0["game"] == "r":
+        return _rps_timeout(tid)
     with _Tx() as c:
         t = c.execute("SELECT * FROM g_tables WHERE id=? AND state='play' AND send_dl<=?", (tid, time.time())).fetchone()
         if not t:
@@ -1599,6 +1628,178 @@ def _xo_timeout(tid):
             return
     t = _table(tid)
     _edit(t, _xo_result(t, _players(tid), winner, True))
+    _purge(tid)
+
+
+
+# ---------------- سنگ کاغذ قیچی (۲ نفره، ۳ راند، انتخاب مخفی) ----------------
+RPS_SYM = {"R": "🪨", "P": "📄", "S": "✂️"}
+RPS_NAME = {"R": "🪨سنگ", "P": "📄کاغذ", "S": "✂️قیچی"}
+_RPS_BEATS = {"R": "S", "S": "P", "P": "R"}          # کلید، مقدار را می‌برد
+
+
+def _rps_hist(t):
+    """board = نتیجه‌ی راندهای تمام‌شده، جداشده با ویرگول؛ هر راند دو حرف (حرکت بازیکن اول و دوم). مثال: 'RS,PP'"""
+    return [x for x in (t.get("board") or "").split(",") if len(x) == 2]
+
+
+def _rps_round_win(a, b):
+    """1 = بازیکن اول، 2 = بازیکن دوم، 0 = مساوی؛ حرکتِ ثبت‌نشده (None/'-') می‌بازد"""
+    if a == b:
+        return 0
+    if a not in RPS_SYM:
+        return 2
+    if b not in RPS_SYM:
+        return 1
+    return 1 if _RPS_BEATS[a] == b else 2
+
+
+def _rps_score(hist):
+    w1 = sum(1 for h in hist if _rps_round_win(h[0], h[1]) == 1)
+    w2 = sum(1 for h in hist if _rps_round_win(h[0], h[1]) == 2)
+    return w1, w2
+
+
+def _rps_kb(tid):
+    return _kb([_btn(RPS_SYM[k], f"g:rp:{tid}:{k}") for k in ("R", "P", "S")])
+
+
+def _rps_view(t, ps):
+    """پنل راند جاری: حرکت هیچ‌کس تا پایان راند نمایش داده نمی‌شود (فقط «انتخاب شد»)"""
+    rnd = int(t["turn"] or 1)
+    hist = _rps_hist(t)
+
+    def st(p):
+        return "✅ انتخاب شد 🔒" if p["pick"] else "⏳ در انتظار انتخاب…"
+    p1, p2 = ps[0], ps[1]
+    prev = ""
+    if hist:
+        a, b = hist[-1]
+        w = _rps_round_win(a, b)
+        who = "مساوی" if w == 0 else f"برد {'بازیکن اول' if w == 1 else 'بازیکن دوم'}"
+        s1, s2 = _rps_score(hist)
+        prev = (f"🔍 نتیجه راند قبل ››› {RPS_SYM[a]} ⚔ {RPS_SYM[b]} ({who})\n"
+                f"📊 امتیاز ››› {_n(s1)} - {_n(s2)}\n\n")
+    txt = (f"{GAMES['r']['short']}\n\n"
+           f"🏦 مبلغ ورودی ›› {_t(t['stake'])} شاهی 💎\n\n"
+           f"👑 بازیکن اول › {_pname(p1)}\n⁉️ انتخاب › {st(p1)}\n"
+           f"👑 بازیکن دوم ›› {_pname(p2)}  \n⁉️ انتخاب › {st(p2)}\n\n"
+           f"{prev}"
+           f"🏆 راند بازی ››› {ORD[rnd]}\n\n"
+           "‼️ لطفا حرکت خود را سریع انتخاب کنید.\n\n"
+           f"⏰️ فقط {_n(cv('rp'))} ثانیه فرصت دارید…")
+    return txt, _rps_kb(t["id"])
+
+
+def _rps_result(t, ps, winner_uid, note=""):
+    hist = _rps_hist(t)
+    s1, s2 = _rps_score(hist)
+    p1, p2 = ps[0], ps[1]
+    rows = []
+    for i, (a, b) in enumerate(hist, 1):
+        w = _rps_round_win(a, b)
+        rows.append(f"{NUM_EMO[i]} {RPS_SYM[a]} ⚔ {RPS_SYM[b]} ‹ " + ("مساوی" if w == 0 else f"برد {'بازیکن اول' if w == 1 else 'بازیکن دوم'}"))
+    txt = (f"{GAMES['r']['short']}\n\n🏦 مبلغ ورودی › {_t(t['stake'])} شاهی 💎\n\n"
+           f"👑 بازیکن اول › {_pname(p1)}\n🎉 امتیاز ››› {_n(s1)}\n"
+           f"👑 بازیکن دوم ›› {_pname(p2)}\n🎉 امتیاز ››› {_n(s2)}\n\n")
+    if rows:
+        txt += "🔍 نتیجه راندها:\n" + "\n".join(rows) + "\n\n"
+    if note:
+        txt += note + "\n\n"
+    if winner_uid is None:
+        txt += "🃏 بازی مساوی شد ، مبلغ به کیف پول بازمیگردد."
+    else:
+        w = p1 if p1["user_id"] == winner_uid else p2
+        txt += f"🏆 برنده نهایی ››› {_pname(w)} 🎉\n🏆 مبلغ دریافتی برنده ››› {_t(w['payout'])} شاهی 💎"
+    return txt
+
+
+def _start_rps_in(c, t, now):
+    """داخل تراکنش: وقتی هر دو نفر نشستند راند ۱ شروع می‌شود (turn = شماره‌ی راند)"""
+    cur = c.execute("UPDATE g_tables SET state='play', board='', turn=1, send_dl=?, touched=? WHERE id=? AND state='join'",
+                    (now + cv("rp"), now, t["id"]))
+    return cur.rowcount == 1
+
+
+def _rps_finish_in(c, t, ps, winner_uid, board):
+    """داخل تراکنش: پایان بازی؛ برنده کل جایزه، مساوی = برگشت ورودی هر دو. فقط یک‌بار (قفل با state)"""
+    cur = c.execute("UPDATE g_tables SET state='done', board=? WHERE id=? AND state='play'", (board, t["id"]))
+    if cur.rowcount != 1:
+        return False
+    pot = round(sum(p["stake"] for p in ps), 2)
+    now = time.time()
+    for p in ps:
+        p["payout"] = p["stake"] if winner_uid is None else (pot if p["user_id"] == winner_uid else 0.0)
+        if p["payout"]:
+            _pay_in(c, p["user_id"], p["payout"])
+        c.execute("UPDATE g_players SET payout=? WHERE table_id=? AND user_id=?", (p["payout"], t["id"], p["user_id"]))
+        if p["user_id"] == t["owner"]:          # مثل گردونه/تاس: فقط سازنده‌ی میز کول‌داون می‌گیرد
+            c.execute("INSERT INTO g_cool (user_id, ts) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET ts=excluded.ts",
+                      (p["user_id"], now))
+    _log_in(c, t, ps, "draw" if winner_uid is None else "win")
+    return True
+
+
+def _cb_rps(cq, tid, arg, ans):
+    uid = cq["from"]["id"]
+    if arg not in RPS_SYM:
+        return ans()
+    finished = False
+    win = None
+    with _Tx() as c:
+        t = c.execute("SELECT * FROM g_tables WHERE id=?", (tid,)).fetchone()
+        if not t or t["state"] != "play" or t["game"] != "r":
+            return ans("⌛ این بازی تمام شده است.", True)
+        ps = c.execute("SELECT * FROM g_players WHERE table_id=? ORDER BY rid", (tid,)).fetchall()
+        me = next((p for p in ps if p["user_id"] == uid), None)
+        if not me:
+            return ans("🃏 شما بازیکن این میز نیستید!", True)
+        if time.time() >= t["send_dl"]:
+            return ans("⏰️ زمان این راند تمام شد!", True)
+        if me["pick"]:
+            return ans("✅ حرکت شما قبلاً ثبت شده است.", True)
+        c.execute("UPDATE g_players SET pick=? WHERE table_id=? AND user_id=? AND pick IS NULL", (arg, tid, uid))
+        me["pick"] = arg
+        if all(p["pick"] for p in ps):                # هر دو انتخاب کردند: راند تمام می‌شود
+            board = ",".join(_rps_hist(t) + [ps[0]["pick"] + ps[1]["pick"]])
+            t["board"] = board
+            hist = _rps_hist(t)
+            if len(hist) >= RPS_ROUNDS:
+                s1, s2 = _rps_score(hist)
+                win = None if s1 == s2 else (ps[0]["user_id"] if s1 > s2 else ps[1]["user_id"])
+                finished = _rps_finish_in(c, t, ps, win, board)
+            else:
+                now = time.time()
+                c.execute("UPDATE g_players SET pick=NULL WHERE table_id=?", (tid,))
+                c.execute("UPDATE g_tables SET board=?, turn=?, send_dl=?, touched=? WHERE id=? AND state='play'",
+                          (board, len(hist) + 1, now + cv("rp"), now, tid))
+    ans("✅ حرکت شما ثبت شد!" if not finished else None)
+    t = _table(tid)
+    if finished:
+        _edit(t, _rps_result(t, _players(tid), win))
+        _purge(tid)
+    else:
+        _render(tid)
+
+
+def _rps_timeout(tid):
+    """مهلت راند تمام شد: کسی که انتخاب نکرده بازنده‌ی کل بازی است؛ اگر هیچ‌کدام انتخاب نکردند مساوی (برگشت ورودی)"""
+    with _Tx() as c:
+        t = c.execute("SELECT * FROM g_tables WHERE id=? AND state='play' AND game='r' AND send_dl<=?", (tid, time.time())).fetchone()
+        if not t:
+            return
+        ps = c.execute("SELECT * FROM g_players WHERE table_id=? ORDER BY rid", (tid,)).fetchall()
+        missing = [p for p in ps if not p["pick"]]
+        if len(missing) == 2 or not missing:
+            win = None
+        else:
+            win = next(p["user_id"] for p in ps if p["pick"])
+        if not _rps_finish_in(c, t, ps, win, t["board"] or ""):
+            return
+    t = _table(tid)
+    _edit(t, _rps_result(t, _players(tid), win,
+                         "⏰️ زمان انتخاب حرکت تمام شد؛ بازیکنِ انتخاب‌نکرده بازنده شد." if win else
+                         "⏰️ هیچ‌کدام حرکت خود را انتخاب نکردند."))
     _purge(tid)
 
 
@@ -1740,6 +1941,7 @@ _ACFG = [
     ("join", "مهلت پیوستن به میز", "ثانیه", "int", 10, 600, "⏰️"),
     ("send", "مهلت ارسال گردونه/تاس", "ثانیه", "int", 15, 600, "🎰"),
     ("xo", "کل زمان بازی دوز", "ثانیه", "int", 30, 1800, "🕹"),
+    ("rp", "مهلت هر راند سنگ‌کاغذ‌قیچی", "ثانیه", "int", 15, 300, "🪨"),
     ("cool", "کول‌داون سازنده‌ی میز", "ثانیه", "int", 0, 3600, "⏳"),
     ("xfer", "مهلت تأیید انتقال", "ثانیه", "int", 15, 600, "💸"),
     ("stale", "انقضای پنل بی‌فعالیت", "ثانیه", "int", 60, 3600, "⌛"),
@@ -1805,11 +2007,11 @@ def _rep_page(days):
                 players.add(e[0])
         except Exception:
             pass
-    names = {"s": "🎰 گردونه", "d": "🎲 تاس", "x": "❌⭕ دوز", "m": "🎃 هیولا"}
+    names = {"s": "🎰 گردونه", "d": "🎲 تاس", "x": "❌⭕ دوز", "r": "🪨📄✂️ سنگ‌کاغذ‌قیچی", "m": "🎃 هیولا"}
     title = {1: "امروز", 7: "۷ روز اخیر", 30: "۳۰ روز اخیر"}[days]
     lines = [f"📊 <b>گزارش بازی‌های گروهی — {title}</b>", B.LINE]
     ts = tp = tn = 0
-    for k in ("s", "d", "x", "m"):
+    for k in ("s", "d", "x", "r", "m"):
         if k in agg:
             n, st, pa = agg[k]
             ts, tp, tn = ts + st, tp + pa, tn + n
@@ -1888,7 +2090,7 @@ def _user_page(uid):
              f"🏦 موجودی: {_t(u['tokens'])} شاهی",
              f"⏳ کول‌داون: {_fmt_wait(cool) if cool > 0 else 'ندارد'}",
              f"⛔ وضعیت بازی‌ها: {'محروم' if banned else 'آزاد'}", B.LINE,
-             f"🎲 تاس: {ln('d')}", f"🎰 گردونه: {ln('s')}", f"🕹 دوز: {ln('x')}", B.LINE, "🧾 <b>آخرین بازی‌ها</b>"]
+             f"🎲 تاس: {ln('d')}", f"🎰 گردونه: {ln('s')}", f"🕹 دوز: {ln('x')}", f"🪨📄✂️ سنگ‌کاغذ‌قیچی: {ln('r')}", B.LINE, "🧾 <b>آخرین بازی‌ها</b>"]
     shown = 0
     for r in _rows("SELECT ts, game, kind, detail FROM g_log WHERE detail LIKE ? ORDER BY ts DESC LIMIT 60", (f"%[{int(uid)}, %",)):
         try:
@@ -1896,7 +2098,7 @@ def _user_page(uid):
         except Exception:
             continue
         net = round((e[3] or 0) - (e[2] or 0), 2)
-        em = {"s": "🎰", "d": "🎲", "x": "🕹"}.get(r["game"], "🃏")
+        em = {"s": "🎰", "d": "🎲", "x": "🕹", "r": "🪨"}.get(r["game"], "🃏")
         res = "✅" if net > 0 else ("❌" if net < 0 else "➖")
         lines.append(f"{res} {em} {_fts(r['ts'])} • ورودی {_t(e[2] or 0)} ← دریافتی {_t(e[3] or 0)}")
         shown += 1
@@ -2072,7 +2274,9 @@ def _tick_join(t, now):
         n = c.execute("SELECT COUNT(*) AS n FROM g_players WHERE table_id=?", (t["id"],)).fetchone()["n"]
         moved = False
         full = n >= t["maxp"]       # بازی فقط با «همان تعداد انتخاب‌شده» شروع می‌شود، نه کمتر
-        if full:
+        if full and t["game"] == "r":
+            moved = _start_rps_in(c, t, now)
+        elif full:
             cur = c.execute("UPDATE g_tables SET state='send', send_dl=?, touched=? WHERE id=? AND state='join'",
                             (now + cv('send'), now, t["id"]))
             moved = cur.rowcount == 1
@@ -3115,7 +3319,7 @@ def casino_day_block(day):
     rows = [r for r in rows if r["kind"] != "cancel"]
     if not rows:
         return ""
-    names = {"s": "🎰 گردونه", "d": "🎲 تاس", "x": "❌⭕ دوز", "m": "🎃 هیولا"}
+    names = {"s": "🎰 گردونه", "d": "🎲 تاس", "x": "❌⭕ دوز", "r": "🪨📄✂️ سنگ‌کاغذ‌قیچی", "m": "🎃 هیولا"}
     agg, big = {}, None
     for r in rows:
         a = agg.setdefault(r["game"], [0, 0.0, 0.0])
@@ -3131,7 +3335,7 @@ def casino_day_block(day):
             pass
     lines = []
     tot_s = tot_p = 0.0
-    for k in ("s", "d", "x", "m"):
+    for k in ("s", "d", "x", "r", "m"):
         if k in agg:
             n, st, pa = agg[k]
             tot_s += st
