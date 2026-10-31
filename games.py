@@ -5,7 +5,7 @@
 بازی ۳: ❌⭕ دوز شاهنشاهی (۲ بازیکن، نوبتی)
 + 💎 انتقال شاهی در گروه (ریپلای + «انتقال شاهی مقدار»)
 
-امنیت پول: هر کسر/پرداخت/تغییر وضعیت در «یک تراکنش» sqlite با BEGIN IMMEDIATE انجام می‌شود
+امنیت پول: هر کسر/پرداخت/تغییر وضعیت در «یک تراکنش» PostgreSQL با قفل مشورتی (معادل BEGIN IMMEDIATE) انجام می‌شود
 (یا کامل انجام می‌شود یا هیچ؛ حتی با کرش یا دو نمونه‌ی هم‌زمان ربات روی یک دیتابیس).
 tg() ربات تمام متن‌ها را خودکار Bold می‌کند.
 """
@@ -233,11 +233,12 @@ def _RF(cur, row):
 
 
 _TL = threading.local()
+GAMES_LOCK_KEY = 7461001        # کلید قفل مشورتی PostgreSQL برای تراکنش‌های پولیِ بازی‌ها
 NET_TIMEOUT = 12        # ثانیه؛ تماس کند تلگرام نباید ترد را دقیقه‌ها قفل کند
 
 
 class _Tx:
-    """تراکنش اتمیک: BEGIN IMMEDIATE (قفل نوشتن دیتابیس از اول) ؛ خطا = rollback کامل.
+    """تراکنش اتمیک: قفل مشورتی PostgreSQL از ابتدا (معادل BEGIN IMMEDIATE: هر لحظه فقط یک تراکنش بازی/پول) ؛ خطا = rollback کامل.
     هیچ تماس شبکه‌ای وسط تراکنش انجام نمی‌شود: پاسخ‌های callback تا بعد از commit نگه داشته می‌شوند
     (وگرنه یک تلگرامِ کند، قفل نوشتن را نگه می‌داشت و کل ربات قفل می‌شد)."""
 
@@ -246,7 +247,7 @@ class _Tx:
         try:
             self.c = B.get_db()
             self.c.row_factory = _RF
-            self.c.execute("BEGIN IMMEDIATE")
+            self.c.lock(GAMES_LOCK_KEY)      # در چند پردازه/رپلیکا هم امن؛ با commit/rollback آزاد می‌شود
         except BaseException:
             _LK.release()
             raise
@@ -286,6 +287,11 @@ def _later(fn, *a):
 def init(bot):
     global B
     B = bot
+    with B._db.schema_lock():
+        _init_tables()
+
+
+def _init_tables():
     with B.get_db() as c:
         c.execute("""CREATE TABLE IF NOT EXISTS g_tables (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -327,9 +333,8 @@ def init(bot):
         for tbl, col, ddl in (("g_tables", "game", "TEXT NOT NULL DEFAULT 's'"), ("g_tables", "mode", "TEXT"),
                               ("g_players", "pick", "TEXT"), ("g_tables", "board", "TEXT"),
                               ("g_tables", "turn", "INTEGER"), ("g_tables", "oemo", "TEXT"), ("g_players", "mid", "INTEGER")):
-            cols = [r[1] for r in c.execute(f"PRAGMA table_info({tbl})")]
-            if col not in cols:
-                c.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {ddl}")
+            B._db.add_column(c, tbl, col, ddl)
+        B._db.add_column(c, "g_players", "rid", "BIGSERIAL")      # ترتیب ورود بازیکنان (جای rowid در SQLite)
 
 
 def _row(q, args=()):
@@ -393,7 +398,7 @@ def _table(tid):
 
 
 def _players(tid):
-    return _rows("SELECT * FROM g_players WHERE table_id=? ORDER BY rowid", (tid,))
+    return _rows("SELECT * FROM g_players WHERE table_id=? ORDER BY rid", (tid,))
 
 
 def _active_in(c, uid):
@@ -417,14 +422,14 @@ def _active_table_of(uid):
 
 
 def _pay_in(c, uid, amount):
-    cur = c.execute("UPDATE users SET tokens = ROUND(tokens + ?, 2) WHERE id=?", (amount, uid))
+    cur = c.execute("UPDATE users SET tokens = ROUND((tokens + ?)::numeric, 2) WHERE id=?", (amount, uid))
     if cur.rowcount != 1:
         logging.error("games: payout to missing user %s amount %s", uid, amount)
     return cur.rowcount == 1
 
 
 def _charge_in(c, uid, amount):
-    cur = c.execute("UPDATE users SET tokens = ROUND(tokens - ?, 2) WHERE id=? AND ROUND(tokens, 2) >= ROUND(?, 2)",
+    cur = c.execute("UPDATE users SET tokens = ROUND((tokens - ?)::numeric, 2) WHERE id=? AND ROUND(tokens::numeric, 2) >= ROUND((?)::numeric, 2)",
                     (amount, uid, amount))
     return cur.rowcount == 1
 
@@ -439,7 +444,7 @@ def _log_in(c, t, ps, kind):
         net = round((p.get("payout") or 0) - (p.get("stake") or 0), 2)
         if net:
             c.execute("INSERT INTO g_stats (user_id, game, wins, losses) VALUES (?,?,?,?) "
-                      "ON CONFLICT(user_id, game) DO UPDATE SET wins=wins+excluded.wins, losses=losses+excluded.losses",
+                      "ON CONFLICT(user_id, game) DO UPDATE SET wins=g_stats.wins+excluded.wins, losses=g_stats.losses+excluded.losses",
                       (p["user_id"], t["game"], 1 if net > 0 else 0, 1 if net < 0 else 0))
 
 
@@ -855,12 +860,12 @@ def _on_trigger(m, u, kind="c"):
             c.execute("UPDATE g_tables SET state='expired' WHERE id=?", (o["id"],))
         if kind == "x":
             cur = c.execute("INSERT INTO g_tables (chat_id, thread_id, owner, owner_name, state, touched, created, "
-                            "game, maxp, oemo) VALUES (?,?,?,?, 'setup', ?, ?, 'x', 2, ?)",
+                            "game, maxp, oemo) VALUES (?,?,?,?, 'setup', ?, ?, 'x', 2, ?) RETURNING id",
                             (chat_id, th, uid, _name(u), now, now, random.choice(PLAYER_EMOJIS)))
         else:
             cur = c.execute("INSERT INTO g_tables (chat_id, thread_id, owner, owner_name, state, touched, created) "
-                            "VALUES (?,?,?,?, 'menu', ?, ?)", (chat_id, th, uid, _name(u), now, now))
-        tid = cur.lastrowid
+                            "VALUES (?,?,?,?, 'menu', ?, ?) RETURNING id", (chat_id, th, uid, _name(u), now, now))
+        tid = cur.fetchone()["id"]
     for o in olds:
         _expire_note(o)
         _purge(o["id"])
@@ -1035,9 +1040,9 @@ def _on_transfer(m, u, nt):
         for o in olds:
             c.execute("DELETE FROM g_xfer WHERE id=?", (o["id"],))
         cur = c.execute("INSERT INTO g_xfer (chat_id, thread_id, sender, sname, semo, recipient, rname, remo, amount, "
-                        "state, deadline) VALUES (?,?,?,?,?,?,?,?,?, 'pending', ?)",
+                        "state, deadline) VALUES (?,?,?,?,?,?,?,?,?, 'pending', ?) RETURNING id",
                         (chat_id, th, uid, _name(u), e1, to_id, to_name, e2, amount, now + cv('xfer')))
-        xid = cur.lastrowid
+        xid = cur.fetchone()["id"]
     for o in olds:
         if o.get("msg_id"):
             B.tg("deleteMessage", _timeout=NET_TIMEOUT, chat_id=o["chat_id"], message_id=o["msg_id"])
@@ -1220,17 +1225,17 @@ _LB_SQL = {
           "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id ORDER BY v DESC, u.id LIMIT ?",
           "SELECT COUNT(*) AS v FROM users WHERE referred_by=?",
           "SELECT COUNT(*) AS n FROM (SELECT u.id AS uid, COUNT(*) AS c FROM users u JOIN users r ON r.referred_by=u.id "
-          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id) WHERE c > ? OR (c = ? AND uid < ?)"),
+          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id) lb WHERE c > ? OR (c = ? AND uid < ?)"),
     "q": ("SELECT u.id AS uid, u.first_name, COUNT(*) AS v FROM users u JOIN requests q ON q.user_id=u.id "
           "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id ORDER BY v DESC, u.id LIMIT ?",
           "SELECT COUNT(*) AS v FROM requests WHERE user_id=?",
           "SELECT COUNT(*) AS n FROM (SELECT u.id AS uid, COUNT(*) AS c FROM users u JOIN requests q ON q.user_id=u.id "
-          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id) WHERE c > ? OR (c = ? AND uid < ?)"),
+          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id) lb WHERE c > ? OR (c = ? AND uid < ?)"),
     "j": ("SELECT u.id AS uid, u.first_name, COUNT(*) AS v FROM users u JOIN joins j ON j.user_id=u.id "
           "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id ORDER BY v DESC, u.id LIMIT ?",
           "SELECT COUNT(*) AS v FROM joins WHERE user_id=?",
           "SELECT COUNT(*) AS n FROM (SELECT u.id AS uid, COUNT(*) AS c FROM users u JOIN joins j ON j.user_id=u.id "
-          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id) WHERE c > ? OR (c = ? AND uid < ?)"),
+          "WHERE COALESCE(u.banned,0)=0 GROUP BY u.id) lb WHERE c > ? OR (c = ? AND uid < ?)"),
 }
 _LB_LAST = {}
 
@@ -1548,7 +1553,7 @@ def _cb_xo(cq, tid, arg, ans):
         t = c.execute("SELECT * FROM g_tables WHERE id=?", (tid,)).fetchone()
         if not t or t["state"] != "play" or t["game"] != "x":
             return ans("⌛ این بازی تمام شده است.", True)
-        ps = c.execute("SELECT * FROM g_players WHERE table_id=? ORDER BY rowid", (tid,)).fetchall()
+        ps = c.execute("SELECT * FROM g_players WHERE table_id=? ORDER BY rid", (tid,)).fetchall()
         me = next((p for p in ps if p["user_id"] == uid), None)
         if not me:
             return ans("🃏 شما بازیکن این میز نیستید!", True)
@@ -1588,7 +1593,7 @@ def _xo_timeout(tid):
         t = c.execute("SELECT * FROM g_tables WHERE id=? AND state='play' AND send_dl<=?", (tid, time.time())).fetchone()
         if not t:
             return
-        ps = c.execute("SELECT * FROM g_players WHERE table_id=? ORDER BY rowid", (tid,)).fetchall()
+        ps = c.execute("SELECT * FROM g_players WHERE table_id=? ORDER BY rid", (tid,)).fetchall()
         winner = next(p["user_id"] for p in ps if p["user_id"] != t["turn"])
         if not _xo_finish_in(c, t, ps, t["board"], winner):
             return
@@ -1605,7 +1610,7 @@ def _settle(tid):
         if cur.rowcount != 1:
             return
         t = c.execute("SELECT * FROM g_tables WHERE id=?", (tid,)).fetchone()
-        ps = c.execute("SELECT * FROM g_players WHERE table_id=? ORDER BY rowid", (tid,)).fetchall()
+        ps = c.execute("SELECT * FROM g_players WHERE table_id=? ORDER BY rid", (tid,)).fetchall()
         game = t["game"]
         senders = [p for p in ps if p["sent"]]
         for p in ps:
@@ -2861,9 +2866,9 @@ def mon_send(chat_id, thread_id=None):
             return False, "در این گروه همین الان یک هیولای فعال هست."
         hp = random.randint(int(cv("mhpmin")), max(int(cv("mhpmin")), int(cv("mhpmax"))))
         cur = c.execute("INSERT INTO g_mon (chat_id, thread_id, state, hp, maxhp, seed, chances, created, expires) "
-                        "VALUES (?,?,?,?,?,?,?,?,?)",
+                        "VALUES (?,?,?,?,?,?,?,?,?) RETURNING id",
                         (chat_id, thread_id, "live", hp, hp, random.randrange(1000), int(cv("mch")), now, now + cv("mttl") * 60))
-        mid = cur.lastrowid
+        mid = cur.fetchone()["id"]
     m = _mon(mid)
     text, kb, png = _mon_view(m)
     ok_, msg_id, has_photo, err = _mon_post(m, text, kb, png)
@@ -2953,7 +2958,7 @@ def _cb_mon(cq, mid, ans):
 
 def _mon_log_in(c, m, state, reward):
     """دفتر مالی: ورودی = تعداد اتک‌ها، پرداختی = جایزه‌ی برنده"""
-    hs = c.execute("SELECT user_id, name, COUNT(*) n FROM g_mon_hits WHERE mon_id=? GROUP BY user_id", (m["id"],)).fetchall()
+    hs = c.execute("SELECT user_id, MAX(name) AS name, COUNT(*) n FROM g_mon_hits WHERE mon_id=? GROUP BY user_id", (m["id"],)).fetchall()
     win = c.execute("SELECT winner FROM g_mon WHERE id=?", (m["id"],)).fetchone()
     wid = win["winner"] if win else None
     det = [[h["user_id"], h["name"], float(h["n"] * cv("mcost")), float(reward) if h["user_id"] == wid else 0.0, 1] for h in hs]
@@ -3079,7 +3084,7 @@ def _mrep_page(days):
     hits = _row("SELECT COUNT(*) n, COALESCE(SUM(hit),0) h, COALESCE(SUM(dmg),0) d, COUNT(DISTINCT user_id) u "
                 "FROM g_mon_hits WHERE mon_id IN (SELECT id FROM g_mon WHERE created>=?)", (start,))
     fin = _row("SELECT COALESCE(SUM(stake_total),0) s, COALESCE(SUM(payout_total),0) p FROM g_log WHERE game='m' AND ts>=?", (start,))
-    top = _rows("SELECT h.user_id, h.name, COUNT(*) n FROM g_mon m JOIN g_mon_hits h ON h.mon_id=m.id AND h.user_id=m.winner "
+    top = _rows("SELECT h.user_id, MAX(h.name) AS name, COUNT(*) n FROM g_mon m JOIN g_mon_hits h ON h.mon_id=m.id AND h.user_id=m.winner "
                 "WHERE m.state='done' AND m.created>=? GROUP BY h.user_id ORDER BY n DESC LIMIT 3", (start,))
     title = {1: "امروز", 7: "۷ روز اخیر", 30: "۳۰ روز اخیر"}[days]
     prof = round(fin["s"] - fin["p"], 2)

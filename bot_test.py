@@ -1,6 +1,6 @@
 """
 نسخه‌ی تست تک‌فایلی - بدون نیاز به نصب هیچ پکیجی (فقط کتابخانه‌ی استاندارد پایتون)
-- دیتابیس: SQLite
+- دیتابیس: PostgreSQL (psycopg2 + pool؛ db.py)
 - ریس کاندیشن: جلوگیری از پردازش دوباره‌ی آپدیت + قفل هر کاربر + کسر/افزایش اتمیک توکن
 - فلوها: درخواست JFJ | حساب من (زیرمجموعه‌گیری و چالش امروز) | بانک انتقال
 - تاریخ/ساعت شمسی بدون کتابخانه‌ی جانبی محاسبه می‌شود
@@ -18,7 +18,6 @@ import json
 import logging
 import random
 import re
-import sqlite3
 import threading
 import time
 import urllib.error
@@ -27,11 +26,13 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+import db as _db            # لایه‌ی PostgreSQL (pool + سازگاری رابط)
+
 # ===================== تنظیمات =====================
 BOT_TOKEN = os.environ.get("BOT_TOKEN") or "PUT_YOUR_NEW_TOKEN_HERE"  # روی Railway در Variables با نام BOT_TOKEN بگذارید
 ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "8322577437").replace(" ", "").split(",") if x]  # آیدی عددی ادمین (می‌توانید چند آیدی بگذارید: [111, 222])
-# مسیر دیتابیس: اگر متغیر محیطی DB_PATH (مثلاً /data/bot.db روی Railway با Volume) تنظیم شود همان استفاده می‌شود
-DB_PATH = os.environ.get("DB_PATH") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.db")
+# دیتابیس: PostgreSQL — آدرس اتصال فقط از متغیر محیطی DATABASE_URL (رمز هرگز در سورس نیست). جزئیات: db.py و README_POSTGRES.md
+BACKUP_DIR = os.environ.get("BACKUP_DIR") or os.path.dirname(os.path.abspath(__file__))   # محل فایل‌های موقت/restore.* (دیتابیس دیگر فایل نیست)
 TIMEZONE = "Asia/Tehran"
 
 TOKENS_PER_MEMBER = 1       # هزینه‌ی هر ممبر در درخواست JFJ
@@ -244,11 +245,12 @@ def stamp(label="زمان ثبت", md=True):
 
 
 # ===================== دیتابیس =====================
+ROWID_TABLES = ("requests", "joins", "service_orders")     # جدول‌هایی که ترتیب درج (rid) در کوئری‌ها لازم است
+
+
 def get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=10)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=10000")
-    return conn
+    """اتصال PostgreSQL از pool؛ with get_db() as c: خروج موفق=commit ، خطا=rollback و برگشت اتصال به pool"""
+    return _db.get_db()
 
 
 def install_schema():
@@ -329,46 +331,36 @@ def install_schema():
 
 
 def migrate_schema():
-    """برای دیتابیس‌های قدیمی‌تر که ستون‌های جدید را ندارند"""
+    """برای دیتابیس‌های قدیمی‌تر که ستون‌های جدید را ندارند (هر ستون فقط اگر نباشد ساخته می‌شود؛ backfillها یک‌بار)"""
     alters = [
-        "ALTER TABLE users ADD COLUMN activity_tokens INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN referral_rewarded INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE requests ADD COLUMN initial_member_count INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE requests ADD COLUMN chat_id INTEGER",
-        "ALTER TABLE requests ADD COLUMN last_requested_at TEXT",
-        "ALTER TABLE joins ADD COLUMN left_at TEXT",
-        "ALTER TABLE invoices ADD COLUMN kind TEXT NOT NULL DEFAULT 'vip'",
-        "ALTER TABLE invoices ADD COLUMN meta TEXT",
-        "ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE bc_jobs ADD COLUMN pin INTEGER NOT NULL DEFAULT 0",
+        ("users", "activity_tokens", "INTEGER NOT NULL DEFAULT 0"),
+        ("users", "referral_rewarded", "INTEGER NOT NULL DEFAULT 0"),
+        ("requests", "initial_member_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("requests", "chat_id", "INTEGER"),
+        ("requests", "last_requested_at", "TEXT"),
+        ("joins", "left_at", "TEXT"),
+        ("invoices", "kind", "TEXT NOT NULL DEFAULT 'vip'"),
+        ("invoices", "meta", "TEXT"),
+        ("users", "banned", "INTEGER NOT NULL DEFAULT 0"),
+        ("bc_jobs", "pin", "INTEGER NOT NULL DEFAULT 0"),
     ]
     with get_db() as c:
-        for stmt in alters:
-            try:
-                c.execute(stmt)
-            except sqlite3.OperationalError:
-                pass  # ستون از قبل وجود دارد
-        try:
-            c.execute("ALTER TABLE users ADD COLUMN fj_ok INTEGER NOT NULL DEFAULT 0")
+        for tbl, col, ddl in alters:
+            if _db.table_exists(c, tbl):
+                _db.add_column(c, tbl, col, ddl)
+        if _db.add_column(c, "users", "fj_ok", "INTEGER NOT NULL DEFAULT 0"):
             c.execute("UPDATE users SET fj_ok=1")        # کاربران قبلی همین حالا هم از قفل جوین اجباری گذشته‌اند
-        except sqlite3.OperationalError:
-            pass
-        try:
-            c.execute("ALTER TABLE users ADD COLUMN fj_shown INTEGER NOT NULL DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            c.execute("ALTER TABLE users ADD COLUMN ref_need INTEGER")
+        _db.add_column(c, "users", "fj_shown", "INTEGER NOT NULL DEFAULT 0")
+        if _db.add_column(c, "users", "ref_need", "INTEGER"):
             # زیرمجموعه‌های قدیمیِ پاداش‌نگرفته با شرط همان زمان (مقدار فعلی) ثبت می‌شوند
             c.execute("UPDATE users SET ref_need=? WHERE referred_by IS NOT NULL AND COALESCE(referral_rewarded,0)=0",
                       (REFERRAL_ACTIVITY_THRESHOLD,))
-        except sqlite3.OperationalError:
-            pass
-        try:
-            c.execute("ALTER TABLE service_orders ADD COLUMN admin_notified INTEGER NOT NULL DEFAULT 0")
+        if _db.add_column(c, "service_orders", "admin_notified", "INTEGER NOT NULL DEFAULT 0"):
             c.execute("UPDATE service_orders SET admin_notified=1")  # سفارش‌های قدیمی دوباره ارسال نشوند
-        except sqlite3.OperationalError:
-            pass
+        # PostgreSQL ستون rowid ندارد؛ rid ترتیب درج را (مثل rowid) نگه می‌دارد
+        for tbl in ROWID_TABLES:
+            if _db.table_exists(c, tbl):
+                _db.add_column(c, tbl, "rid", "BIGSERIAL")
     v2_migrate()
 
 
@@ -526,6 +518,8 @@ def add_tokens(user_id, amount):
 def transfer_tokens(sender_id, recipient_id, amount):
     """انتقال اتمیک: کسر از فرستنده و افزایش گیرنده در یک تراکنش واحد"""
     with get_db() as c:
+        # قفل هر دو ردیف با ترتیب ثابتِ id: انتقال هم‌زمان A→B و B→A دچار deadlock نمی‌شود
+        c.execute("SELECT id FROM users WHERE id IN (?, ?) ORDER BY id FOR UPDATE", (sender_id, recipient_id))
         cur = c.execute("UPDATE users SET tokens = tokens - ? WHERE id=? AND tokens >= ?", (amount, sender_id, amount))
         if cur.rowcount != 1:
             return False
@@ -622,7 +616,7 @@ def user_cooldown_left(user_id):
     with get_db() as c:
         row = c.execute(
             "SELECT COALESCE(last_requested_at, created_at) FROM requests WHERE user_id=? "
-            "ORDER BY created_at DESC, rowid DESC LIMIT 1", (user_id,)).fetchone()
+            "ORDER BY created_at DESC, rid DESC LIMIT 1", (user_id,)).fetchone()
     if not row or not row[0]:
         return 0
     try:
@@ -1313,7 +1307,7 @@ def cancel_request_not_admin(code, why=""):
 
 
 def _table_exists(c, name):
-    return bool(c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone())
+    return _db.table_exists(c, name)
 
 
 def request_sweeper():
@@ -1400,7 +1394,7 @@ def chan_key(chat_id_num, link):
 def record_join(user_id, code):
     """ثبت جوین؛ اگر قبلاً لفت داده بود دوباره فعال می‌شود. True یعنی جوین تازه ثبت/فعال شد"""
     with get_db() as c:
-        cur = c.execute("INSERT OR IGNORE INTO joins (user_id, tracking_code) VALUES (?, ?)", (user_id, code))
+        cur = c.execute("INSERT INTO joins (user_id, tracking_code) VALUES (?, ?) ON CONFLICT DO NOTHING", (user_id, code))
         if cur.rowcount == 1:
             new = True
         else:
@@ -1776,7 +1770,7 @@ def seed_products():
     with get_db() as c:
         for key, d in PRODUCT_DEFS.items():
             c.execute(
-                "INSERT OR IGNORE INTO products (key, enabled, min_qty, rate_cost) VALUES (?, 1, ?, ?)",
+                "INSERT INTO products (key, enabled, min_qty, rate_cost) VALUES (?, 1, ?, ?) ON CONFLICT DO NOTHING",
                 (key, d["default_min"], d["default_rate"]),
             )
         # یک‌بار: قیمت‌هایی که هنوز روی پیش‌فرض قدیمی‌اند به پیش‌فرض جدید می‌روند (قیمت‌های دست‌کاری‌شده‌ی ادمین دست نمی‌خورند)
@@ -1785,7 +1779,7 @@ def seed_products():
             for key, old in _OLD_DEFAULT_RATES.items():
                 c.execute("UPDATE products SET rate_cost=? WHERE key=? AND rate_cost=?",
                           (PRODUCT_DEFS[key]["default_rate"], key, old))
-            c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('pricedef_v3','1')")
+            c.execute("INSERT INTO settings (key, value) VALUES ('pricedef_v3','1') ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value")
 
 
 def get_product(key):
@@ -1801,7 +1795,7 @@ def set_product_field(key, field, value):
     d = PRODUCT_DEFS[key]
     with get_db() as c:
         c.execute(
-            "INSERT OR IGNORE INTO products (key, enabled, min_qty, rate_cost) VALUES (?, 1, ?, ?)",
+            "INSERT INTO products (key, enabled, min_qty, rate_cost) VALUES (?, 1, ?, ?) ON CONFLICT DO NOTHING",
             (key, d["default_min"], d["default_rate"]),
         )
         c.execute(f"UPDATE products SET {field}=? WHERE key=?", (value, key))
@@ -2473,7 +2467,7 @@ def is_banned(user_id):
         with get_db() as c:
             r = c.execute("SELECT banned FROM users WHERE id=?", (user_id,)).fetchone()
         return bool(r and r[0])
-    except sqlite3.OperationalError:
+    except _db.Error:
         return False
 
 
@@ -3900,7 +3894,7 @@ def send_orders(chat_id, user_id):
     with get_db() as c:
         svc = c.execute(
             "SELECT tracking_code, service, quantity, link, status, token_cost FROM service_orders "
-            "WHERE user_id=? ORDER BY created_at DESC, rowid DESC LIMIT 5", (user_id,)).fetchall()
+            "WHERE user_id=? ORDER BY created_at DESC, rid DESC LIMIT 5", (user_id,)).fetchall()
         inv = c.execute(
             "SELECT code, product_name, final_amount, status FROM invoices "
             "WHERE buyer_id=? AND status IN ('awaiting_receipt','review','paid','rejected') "
@@ -4115,20 +4109,17 @@ def _utcnow_str(dt=None):
 
 def v2_migrate():
     alters = [
-        "ALTER TABLE users ADD COLUMN card_blocked INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN phone TEXT",
-        "ALTER TABLE users ADD COLUMN phone_req INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE invoices ADD COLUMN method TEXT",
-        "ALTER TABLE invoices ADD COLUMN ref TEXT",
-        "ALTER TABLE invoices ADD COLUMN receipt_chat INTEGER",
-        "ALTER TABLE invoices ADD COLUMN receipt_mid INTEGER",
+        ("users", "card_blocked", "INTEGER NOT NULL DEFAULT 0"),
+        ("users", "phone", "TEXT"),
+        ("users", "phone_req", "INTEGER NOT NULL DEFAULT 0"),
+        ("invoices", "method", "TEXT"),
+        ("invoices", "ref", "TEXT"),
+        ("invoices", "receipt_chat", "INTEGER"),
+        ("invoices", "receipt_mid", "INTEGER"),
     ]
     with get_db() as c:
-        for stmt in alters:
-            try:
-                c.execute(stmt)
-            except sqlite3.OperationalError:
-                pass
+        for tbl, col, ddl in alters:
+            _db.add_column(c, tbl, col, ddl)
         c.execute("""CREATE TABLE IF NOT EXISTS user_products (
             user_id INTEGER NOT NULL, key TEXT NOT NULL, PRIMARY KEY (user_id, key))""")
         c.execute("""CREATE TABLE IF NOT EXISTS discount_codes (
@@ -4161,10 +4152,13 @@ def v2_migrate():
             prog_chat INTEGER, prog_mid INTEGER,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
         for _col in ("pin", "fwd"):
-            try:
-                c.execute(f"ALTER TABLE bc_jobs ADD COLUMN {_col} INTEGER NOT NULL DEFAULT 0")
-            except sqlite3.OperationalError:
-                pass
+            _db.add_column(c, "bc_jobs", _col, "INTEGER NOT NULL DEFAULT 0")
+        # جدول‌هایی که قبلاً هنگام اولین استفاده ساخته می‌شدند؛ در PostgreSQL فقط یک‌بار و در شروع ساخته می‌شوند
+        c.execute("CREATE TABLE IF NOT EXISTS pay_ctx (tok TEXT PRIMARY KEY, uid INTEGER NOT NULL, data TEXT NOT NULL, "
+                  "created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+        c.execute("CREATE TABLE IF NOT EXISTS rep_msgs (k TEXT PRIMARY KEY, mid INTEGER NOT NULL)")
+        c.execute("CREATE TABLE IF NOT EXISTS rep_daily (day TEXT NOT NULL, k TEXT NOT NULL, n REAL NOT NULL DEFAULT 0, "
+                  "PRIMARY KEY (day, k))")
         # اشتراک‌های قدیمیِ پرداخت‌شده که هنوز ردیف ندارند
         old = c.execute(
             "SELECT i.code, i.buyer_id, i.meta, i.created_at FROM invoices i WHERE i.kind='sponsor' AND i.status='paid' "
@@ -4364,9 +4358,9 @@ def bc_create(admin_id, chat_id, src_chat, src_mid, aud, pin=0, fwd=0):
     targets = bc_targets(aud)
     with get_db() as c:
         cur = c.execute(
-            "INSERT INTO bc_jobs (admin_id, src_chat, src_mid, audience, targets, prog_chat, pin, fwd) VALUES (?,?,?,?,?,?,?,?)",
+            "INSERT INTO bc_jobs (admin_id, src_chat, src_mid, audience, targets, prog_chat, pin, fwd) VALUES (?,?,?,?,?,?,?,?) RETURNING id",
             (admin_id, src_chat, src_mid, aud, json.dumps(targets), chat_id, 1 if pin else 0, 1 if fwd else 0))
-        jid = cur.lastrowid
+        jid = cur.fetchone()[0]
     r = _hsend(chat_id, _bc_progress_text(jid), _kb([_ab("⛔ توقف ارسال", f"adm_p:x:bcc:{jid}", DANGER)]))
     if r.get("ok"):
         with get_db() as c:
@@ -4858,10 +4852,7 @@ def _price_lines(item, ctx):
 
 
 def _ctx_conn():
-    c = get_db()
-    c.execute("CREATE TABLE IF NOT EXISTS pay_ctx (tok TEXT PRIMARY KEY, uid INTEGER NOT NULL, data TEXT NOT NULL, "
-              "created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
-    return c
+    return get_db()          # جدول pay_ctx در v2_migrate ساخته می‌شود
 
 
 def ctx_save(uid, ctx):
@@ -5171,9 +5162,9 @@ def apply_paid_invoice(code):
         with get_db() as c:
             cur = c.execute(
                 "INSERT INTO sponsor_subs (user_id, invoice_code, hours, status, chat_kind, link_kind, chat_ref, invite_link) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "VALUES (?,?,?,?,?,?,?,?) RETURNING id",
                 (buyer, code, meta.get("hours", 0), "pending", si.get("kind"), si.get("lk"), si.get("ref"), si.get("link")))
-            sid = cur.lastrowid
+            sid = cur.fetchone()[0]
         rep_ev_sponsor_new(sid, code)
         send(buyer, f"✅ *پرداخت شما تأیید شد.*\n🔍 *کد فاکتور: {code}*\n{stamp('زمان تأیید')}\n\n🎗 *اسپانسری شما بعد از بررسی ادمین فعال می‌شود و همین‌جا اطلاع می‌دهیم.*")
         txt = (f"🎗 اشتراک اسپانسری جدید (منتظر فعال‌سازی)\n{stamp('زمان تأیید پرداخت', md=False)}\n\n🔍 فاکتور: {code}\n📦 {product}\n"
@@ -5390,9 +5381,9 @@ def sponsor_shift(sid, hours):
     with get_db() as c:
         if status == "active" and ends:
             e = datetime.strptime(ends[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc) + timedelta(hours=hours)
-            c.execute("UPDATE sponsor_subs SET ends_at=?, hours=MAX(hours+?,0) WHERE id=?", (_utcnow_str(e), hours, sid))
+            c.execute("UPDATE sponsor_subs SET ends_at=?, hours=GREATEST(hours+?,0) WHERE id=?", (_utcnow_str(e), hours, sid))
         else:
-            c.execute("UPDATE sponsor_subs SET hours=MAX(hours+?,0) WHERE id=?", (hours, sid))
+            c.execute("UPDATE sponsor_subs SET hours=GREATEST(hours+?,0) WHERE id=?", (hours, sid))
     rep_ev_sponsor("ah" if hours > 0 else "sh", sid, f"{fmt_tokens(abs(hours))} ساعت")
     if hours > 0:
         send(r[1], f"🎁 *{fmt_tokens(hours)} ساعت به اشتراک اسپانسری شما اضافه شد.*\n{stamp('زمان ثبت')}")
@@ -5969,9 +5960,9 @@ def v2_handle_input(chat_id, user, text, data):
                 _err(chat_id, "آیدی نامعتبر است؛ @آیدی یا عدد منفی بفرستید یا - برای رد کردن.")
                 return True
         with get_db() as c:
-            cur = c.execute("INSERT INTO sponsor_subs (user_id, hours, status, chat_kind, chat_ref) VALUES (?,?,?,?,?)",
+            cur = c.execute("INSERT INTO sponsor_subs (user_id, hours, status, chat_kind, chat_ref) VALUES (?,?,?,?,?) RETURNING id",
                             (data["uid"], data["hours"], "pending", "public" if (ref or "").startswith("@") else "private", ref))
-            sid = cur.lastrowid
+            sid = cur.fetchone()[0]
         sponsor_activate(sid)
         _fin(chat_id, admin_id, data, f"اشتراک #{sid} ساخته و فعال شد.")
     else:
@@ -6369,7 +6360,7 @@ def v2_admin_callback(cq):
                         c.execute("DELETE FROM user_products WHERE user_id=? AND key=?", (uid, key))
                         added = False
                     else:
-                        c.execute("INSERT OR IGNORE INTO user_products (user_id, key) VALUES (?,?)", (uid, key))
+                        c.execute("INSERT INTO user_products (user_id, key) VALUES (?,?) ON CONFLICT DO NOTHING", (uid, key))
                         added = True
                 if added:
                     send(uid, f"🎁 *محصول «{PRODUCT_DEFS[key]['title']}» برای شما فعال شد.*\n\n🛍 *از بخش «خرید محصولات» می‌توانید آن را سفارش دهید.*")
@@ -6479,7 +6470,7 @@ def admin_panel_callback_fake(cq, sec, act, *args):
 # ===================== دیسپچ آپدیت =====================
 def claim_update(update_id):
     with get_db() as c:
-        cur = c.execute("INSERT OR IGNORE INTO processed_updates (update_id) VALUES (?)", (update_id,))
+        cur = c.execute("INSERT INTO processed_updates (update_id) VALUES (?) ON CONFLICT DO NOTHING", (update_id,))
         return cur.rowcount == 1
 
 
@@ -6624,7 +6615,7 @@ REPORT_SEND_GAP = 3.2  # تلگرام: حداکثر ۲۰ پیام در دقیق�
 REPORT_TOPICS = [
     ("buy", "🛍 گزارش خرید", "گزارش خرید خدمات، خرید شاهی، اسپانسری و نتیجه‌ی سفارش‌ها."),
     ("fin", "💰 گزارش مالی", "گزارش افزایش/کاهش موجودی کاربران (خرید شاهی، شارژ و کسر مدیر، شارژ همگانی، بازگشت هزینه)."),
-    ("bak", "🗃 بکاپ ربات", "هر ۶ ساعت یک‌بار فایل بکاپ دیتابیس (با فرمت .sql) اینجا ارسال می‌شود."),
+    ("bak", "🗃 بکاپ ربات", "هر ۶ ساعت یک‌بار فایل بکاپ دیتابیس (با فرمت JSON) اینجا ارسال می‌شود."),
     ("ref", "👥️ گزارش زیرمجموعه", "گزارش زیرمجموعه‌گیری کاربران و قبولی‌ها (پاداش معرف)."),
     ("rcp", "🧾 گزارش رسید", "گزارش رسیدهای واریزی، تأیید/رد رسید و پرداخت‌های آنلاین کاربران."),
     ("jfj", "🎗 گزارش درخواست JFJ", "گزارش ثبت، تکمیل، عزل ربات و حذف درخواست‌های JFJ کاربران."),
@@ -6676,7 +6667,6 @@ def rep_msg_set(key, mid):
         return
     with _rep_lock:
         with get_db() as c:
-            c.execute("CREATE TABLE IF NOT EXISTS rep_msgs (k TEXT PRIMARY KEY, mid INTEGER NOT NULL)")
             c.execute("INSERT INTO rep_msgs (k, mid) VALUES (?,?) ON CONFLICT(k) DO UPDATE SET mid=excluded.mid", (key, int(mid)))
 
 
@@ -6704,10 +6694,7 @@ def rep_count(key, n=1):
         day = now_local().date().isoformat()
         with _rep_lock:
             with get_db() as c:
-                if not _rep_db_ready[0]:
-                    c.execute("CREATE TABLE IF NOT EXISTS rep_daily (day TEXT NOT NULL, k TEXT NOT NULL, n REAL NOT NULL DEFAULT 0, PRIMARY KEY (day, k))")
-                    _rep_db_ready[0] = True
-                c.execute("INSERT INTO rep_daily (day, k, n) VALUES (?,?,?) ON CONFLICT(day,k) DO UPDATE SET n = n + excluded.n",
+                c.execute("INSERT INTO rep_daily (day, k, n) VALUES (?,?,?) ON CONFLICT(day,k) DO UPDATE SET n = rep_daily.n + excluded.n",
                           (day, key, float(n)))
     except Exception:
         logging.exception("rep_count")
@@ -7121,44 +7108,30 @@ def render_report_delete_list():
 
 
 # ---------- بکاپ SQL ----------
+BACKUP_FORMAT = "jfj-pg-backup"
+
+
+def backup_dump():
+    """همه‌ی جدول‌های دیتابیس → dict قابل JSON (ستون‌ها + ردیف‌ها)"""
+    tables = {}
+    with get_db() as c:
+        c.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")      # تصویر یکپارچه از یک لحظه
+        for nm in _db.all_tables(c):
+            cur = c.execute(f'SELECT * FROM "{nm}"')
+            tables[nm] = {"columns": [d[0] for d in cur.description], "rows": [list(r) for r in cur.fetchall()]}
+    return {"format": BACKUP_FORMAT, "version": 1, "created": _utcnow_str(), "tables": tables}
+
+
 def rep_make_backup():
-    """(نام فایل، بایت‌ها، تعداد خط) — خروجی .sql؛ اگر بزرگ‌تر از حد تلگرام بود gzip می‌شود"""
-    src = get_db()
-    try:
-        try:
-            dump = "\n".join(src.iterdump()).encode("utf-8", "replace")
-        except Exception:
-            logging.exception("iterdump failed; per-table fallback")
-            parts = ["BEGIN TRANSACTION;"]
-            for (nm, ddl) in src.execute("SELECT name, sql FROM sqlite_master WHERE type='table' AND sql IS NOT NULL"):
-                if nm.startswith("sqlite_"):
-                    continue
-                parts.append(ddl + ";")
-                try:
-                    for row in src.execute(f'SELECT * FROM "{nm}"'):
-                        vals = []
-                        for v in row:
-                            if v is None:
-                                vals.append("NULL")
-                            elif isinstance(v, (int, float)):
-                                vals.append(repr(v))
-                            elif isinstance(v, bytes):
-                                vals.append("X'" + v.hex() + "'")
-                            else:
-                                vals.append("'" + str(v).replace("'", "''") + "'")
-                        parts.append(f'INSERT INTO "{nm}" VALUES(' + ",".join(vals) + ");")
-                except Exception:
-                    logging.exception("backup table %s", nm)
-                    parts.append(f"-- table {nm} could not be dumped")
-            parts.append("COMMIT;")
-            dump = "\n".join(parts).encode("utf-8", "replace")
-    finally:
-        src.close()
+    """(نام فایل، بایت‌ها، تعداد ردیف) — خروجی JSON؛ اگر بزرگ‌تر از حد تلگرام بود gzip می‌شود"""
+    dump = backup_dump()
+    raw = json.dumps(dump, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    nrows = sum(len(t["rows"]) for t in dump["tables"].values())
     stamp_s = now_local().strftime("%Y%m%d_%H%M")
-    name = f"jfj_backup_{stamp_s}.sql"
-    if len(dump) > 48 * 1024 * 1024:
-        return name + ".gz", _gzip.compress(dump), dump.count(b"\n")
-    return name, dump, dump.count(b"\n")
+    name = f"jfj_backup_{stamp_s}.json"
+    if len(raw) > 20 * 1024 * 1024 or len(raw) > 48 * 1024 * 1024:
+        return name + ".gz", _gzip.compress(raw), nrows
+    return name, raw, nrows
 
 
 _bak_warn = [0.0]
@@ -7644,28 +7617,17 @@ XPAGES["rep"] = render_report
 
 # =====================================================================
 #  ♻️ بازیابی بکاپ از پنل مدیریت (فایل را همان‌جا بفرستید؛ ربات خودش دیتابیس را جایگزین می‌کند)
-#  سازگار با: .sql ، .sql.gz ، .db/.sqlite ، .zip ، و فایل روی سرور (restore.*) برای فایل‌های بزرگ‌تر از ۲۰ مگابایت
-#  روی PythonAnywhere / Railway / cPanel / aaPanel / هر هاست دیگر یکسان کار می‌کند (بدون جایگزینی فایل؛ با backup-API خود SQLite)
+#  سازگار با: .json ، .json.gz ، .zip ، و فایل روی سرور (restore.*) برای فایل‌های بزرگ‌تر از ۲۰ مگابایت
+#  روی PythonAnywhere / Railway / cPanel / aaPanel / هر هاست دیگر یکسان کار می‌کند (جایگزینی در یک تراکنش PostgreSQL)
 # =====================================================================
 RS_MAX_DL = 20 * 1024 * 1024            # سقف دانلود فایل از طریق Bot API
 RS_MAX_RAW = 600 * 1024 * 1024          # سقف حجم بعد از باز کردن gzip/zip
 RS_NAMES = ("restore",)                 # فایل‌های روی سرور باید با این نام شروع شوند
-_RS_EXT = (".sql", ".sql.gz", ".gz", ".db", ".sqlite", ".sqlite3", ".zip")
-_RS_PRAGMAS = {"foreign_keys", "user_version", "journal_mode", "synchronous", "page_size", "encoding",
-               "application_id", "defer_foreign_keys", "legacy_alter_table", "cache_size", "busy_timeout"}
-
-
-def _rs_auth(action, a1, a2, dbname, trigger):
-    """امنیت: اسکریپت SQL بکاپ اجازه‌ی ATTACH/DETACH ندارد و PRAGMAهای غیرمجاز نادیده گرفته می‌شوند"""
-    if action in (sqlite3.SQLITE_ATTACH, sqlite3.SQLITE_DETACH):
-        return sqlite3.SQLITE_DENY
-    if action == sqlite3.SQLITE_PRAGMA and (a1 or "").lower() not in _RS_PRAGMAS:
-        return sqlite3.SQLITE_IGNORE
-    return sqlite3.SQLITE_OK
+_RS_EXT = (".json", ".json.gz", ".gz", ".zip")
 
 
 def _rs_unwrap(raw, fname, depth=0):
-    """gzip/zip را تا رسیدن به SQL یا فایل SQLite باز می‌کند → (bytes, نام)"""
+    """gzip/zip را تا رسیدن به JSON باز می‌کند → (bytes, نام)"""
     import gzip, zipfile, io
     if depth > 3:
         raise ValueError("فایل چندلایه است؛ فقط یک‌بار فشرده‌سازی پشتیبانی می‌شود.")
@@ -7685,7 +7647,7 @@ def _rs_unwrap(raw, fname, depth=0):
             names = [n for n in z.namelist() if not n.endswith("/")]
             if not names:
                 raise ValueError("فایل zip خالی است.")
-            pick = next((n for n in names if n.lower().endswith((".sql", ".db", ".sqlite", ".sqlite3", ".gz"))), names[0])
+            pick = next((n for n in names if n.lower().endswith((".json", ".gz"))), names[0])
             info = z.getinfo(pick)
             if info.file_size > RS_MAX_RAW:
                 raise ValueError("حجم فایل داخل zip بیش از حد بزرگ است.")
@@ -7694,72 +7656,44 @@ def _rs_unwrap(raw, fname, depth=0):
 
 
 def rs_prepare(raw, fname):
-    """فایل بکاپ (هر قالبی) → یک دیتابیس موقت سالم و بررسی‌شده کنار دیتابیس اصلی. (مسیر، اطلاعات) برمی‌گرداند؛ خطا = ValueError"""
+    """فایل بکاپ JSON → بررسی کامل و ذخیره‌ی موقت. (مسیر، اطلاعات) برمی‌گرداند؛ خطا = ValueError"""
     raw, fname = _rs_unwrap(raw, fname)
-    d = os.path.dirname(os.path.abspath(DB_PATH)) or "."
-    stamp = str(int(time.time() * 1000))
-    tmp = os.path.join(d, f"restore_tmp_{stamp}.db")
-    script = None
-    if raw[:16] == b"SQLite format 3\x00":
-        srcp = os.path.join(d, f"restore_src_{stamp}.db")
-        with open(srcp, "wb") as f:
-            f.write(raw)
-        try:
-            sc = sqlite3.connect(f"file:{srcp}?mode=ro", uri=True)
-            try:
-                ok_ = sc.execute("PRAGMA quick_check").fetchone()
-                if not ok_ or ok_[0] != "ok":
-                    raise ValueError("فایل دیتابیس آسیب دیده است (quick_check ناموفق).")
-                script = "\n".join(sc.iterdump())
-            finally:
-                sc.close()
-        except sqlite3.DatabaseError as e:
-            raise ValueError(f"فایل دیتابیس قابل خواندن نیست: {e}")
-        finally:
-            try:
-                os.remove(srcp)
-            except OSError:
-                pass
-    else:
-        try:
-            script = raw.decode("utf-8-sig")
-        except UnicodeDecodeError:
-            script = raw.decode("utf-8", "replace")
-        if not re.search(r"create\s+table", script, re.I):
-            raise ValueError("این فایل بکاپ ربات (SQL یا دیتابیس SQLite) به نظر نمی‌رسد.")
+    if raw[:16] == b"SQLite format 3\x00" or raw.lstrip()[:1] not in (b"{",):
+        raise ValueError("این فایل بکاپ PostgreSQL ربات (JSON) نیست. بکاپ‌های قدیمیِ SQLite (.db/.sql) را با ابزار "
+                         "migrate_sqlite_to_pg.py منتقل کنید (راهنما: README_POSTGRES.md).")
     try:
-        conn = sqlite3.connect(tmp)
-        try:
-            conn.set_authorizer(_rs_auth)
-            conn.executescript(script)
-            conn.set_authorizer(None)
-            conn.commit()
-            chk = conn.execute("PRAGMA integrity_check").fetchone()
-            if not chk or chk[0] != "ok":
-                raise ValueError("بررسی سلامت دیتابیس بازیابی‌شده ناموفق بود.")
-            tabs = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            if not {"users", "settings"} <= tabs:
-                raise ValueError("جدول‌های اصلی ربات (users/settings) در این بکاپ نیست؛ بکاپ ربات دیگری است.")
-            n_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-            tokens = conn.execute("SELECT COALESCE(SUM(tokens),0) FROM users").fetchone()[0]
-            try:
-                last = conn.execute("SELECT MAX(created_at) FROM users").fetchone()[0]
-            except sqlite3.DatabaseError:
-                last = None
-        finally:
-            conn.close()
-    except sqlite3.DatabaseError as e:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
-        raise ValueError(f"خطا در اجرای SQL بکاپ: {e}")
-    except Exception:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
-        raise
+        data = json.loads(raw.decode("utf-8-sig"))
+    except (ValueError, UnicodeDecodeError) as e:
+        raise ValueError(f"فایل JSON خراب است: {e}")
+    if not isinstance(data, dict) or data.get("format") != BACKUP_FORMAT or not isinstance(data.get("tables"), dict):
+        raise ValueError("این فایل بکاپ ربات نیست (قالب jfj-pg-backup ندارد).")
+    tabs = data["tables"]
+    if not {"users", "settings"} <= set(tabs):
+        raise ValueError("جدول‌های اصلی ربات (users/settings) در این بکاپ نیست؛ بکاپ ربات دیگری است.")
+    for nm, t in tabs.items():
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", nm) or not isinstance(t, dict) \
+                or not isinstance(t.get("columns"), list) or not isinstance(t.get("rows"), list):
+            raise ValueError(f"ساختار جدول «{nm}» در بکاپ نامعتبر است.")
+        for col in t["columns"]:
+            if not isinstance(col, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", col):
+                raise ValueError(f"نام ستون نامعتبر در جدول {nm}.")
+        w = len(t["columns"])
+        if any((not isinstance(r, list)) or len(r) != w for r in t["rows"]):
+            raise ValueError(f"ردیف نامعتبر در جدول {nm}.")
+    ucols = tabs["users"]["columns"]
+    n_users = len(tabs["users"]["rows"])
+    tokens = 0
+    if "tokens" in ucols:
+        i = ucols.index("tokens")
+        tokens = sum((r[i] or 0) for r in tabs["users"]["rows"])
+    last = None
+    if "created_at" in ucols:
+        i = ucols.index("created_at")
+        vals = [r[i] for r in tabs["users"]["rows"] if r[i]]
+        last = max(vals) if vals else None
+    tmp = os.path.join(BACKUP_DIR, f"restore_tmp_{int(time.time() * 1000)}.json")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
     return tmp, {"fname": fname, "tables": len(tabs), "users": n_users, "tokens": tokens, "last": last,
                  "size": os.path.getsize(tmp)}
 
@@ -7767,7 +7701,7 @@ def rs_prepare(raw, fname):
 def rs_server_files():
     """فایل‌های restore.* که کنار دیتابیس/ربات/پوشه‌ی جاری گذاشته شده‌اند (برای فایل‌های بزرگ‌تر از ۲۰ مگابایت)"""
     seen, out = set(), []
-    dirs = [os.path.dirname(os.path.abspath(DB_PATH)), os.path.dirname(os.path.abspath(__file__)), os.getcwd()]
+    dirs = [BACKUP_DIR, os.path.dirname(os.path.abspath(__file__)), os.getcwd()]
     for d in dirs:
         if d in seen or not os.path.isdir(d):
             continue
@@ -7783,46 +7717,39 @@ def rs_server_files():
 
 
 def rs_host_note():
-    path = os.path.abspath(DB_PATH)
-    if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID") or os.environ.get("RAILWAY_SERVICE_ID"):
-        vol = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH")
-        if vol and path.startswith(vol.rstrip("/") + "/"):
-            return "🚆 Railway — ✅ دیتابیس روی Volume است و بعد از هر دیپلوی می‌ماند."
-        return ("🚆 Railway — ⚠️ دیتابیس روی Volume نیست؛ با هر دیپلوی جدید پاک می‌شود! یک Volume (مثلاً در /data) بسازید و "
-                "متغیر <code>DB_PATH=/data/bot.db</code> را تنظیم کنید.")
-    if os.environ.get("PYTHONANYWHERE_DOMAIN") or "pythonanywhere" in path.lower() or path.startswith("/home/"):
-        return "🐍 PythonAnywhere/هاست اشتراکی — ✅ فایل‌ها دائمی‌اند."
-    if "/www/wwwroot" in path:
-        return "🧩 aaPanel — ✅ فایل‌ها دائمی‌اند."
-    if "public_html" in path or os.path.isdir(os.path.expanduser("~/.cpanel")):
-        return "🗂 cPanel — ✅ فایل‌ها دائمی‌اند."
-    return "🖥 سرور/هاست — ✅ فایل‌ها دائمی‌اند (اگر داکر دارید، دیتابیس را روی Volume بگذارید)."
+    try:
+        with get_db() as c:
+            ver = c.execute("SHOW server_version").fetchone()[0]
+    except Exception:
+        ver = "؟"
+    return f"🐘 PostgreSQL {_h(str(ver))} — ✅ داده‌ها روی سرور دیتابیس‌اند و با هر دیپلوی می‌مانند."
 
 
 def render_restore():
-    for f in os.listdir(os.path.dirname(os.path.abspath(DB_PATH)) or "."):      # نظافت فایل‌های موقتِ جامانده
-        if f.startswith(("restore_tmp_", "restore_src_")):
-            fp = os.path.join(os.path.dirname(os.path.abspath(DB_PATH)) or ".", f)
+    for f in os.listdir(BACKUP_DIR):      # نظافت فایل‌های موقتِ جامانده
+        if f.startswith("restore_tmp_"):
+            fp = os.path.join(BACKUP_DIR, f)
             try:
                 if time.time() - os.path.getmtime(fp) > 3600:
                     os.remove(fp)
             except OSError:
                 pass
     try:
-        size = os.path.getsize(DB_PATH)
-    except OSError:
+        with get_db() as c:
+            size = c.execute("SELECT pg_database_size(current_database())").fetchone()[0]
+    except Exception:
         size = 0
     files = rs_server_files()
     text = ("♻️ <b>بازیابی بکاپ</b>\n" + LINE + "\n"
             f"{rs_host_note()}\n"
-            f"📍 مسیر دیتابیس: <code>{_h(os.path.abspath(DB_PATH))}</code>\n"
-            f"💽 حجم فعلی: {_rp_n(round(size / 1024, 1))} کیلوبایت • 👥 کاربران: {_rp_n(_q1('SELECT COUNT(*) FROM users'))}\n\n"
+            f"💽 حجم فعلی دیتابیس: {_rp_n(round(size / 1024, 1))} کیلوبایت • 👥 کاربران: {_rp_n(_q1('SELECT COUNT(*) FROM users'))}\n\n"
             "📤 <b>روش اول:</b> دکمه‌ی «ارسال فایل بکاپ» را بزنید و فایل بکاپ را (همان فایلی که ربات در تاپیک بکاپ می‌فرستد؛ "
-            "<code>.sql</code> یا <code>.sql.gz</code> یا <code>.db</code> یا <code>.zip</code>) همین‌جا بفرستید.\n"
-            "📂 <b>روش دوم (فایل بزرگ‌تر از ۲۰ مگابایت):</b> فایل را با نام <code>restore.sql</code> (یا restore.sql.gz / restore.db) "
-            "کنار فایل‌های ربات یا کنار دیتابیس آپلود کنید؛ بعد دکمه‌اش اینجا ظاهر می‌شود.\n\n"
+            "<code>.json</code> یا <code>.json.gz</code> یا <code>.zip</code>) همین‌جا بفرستید.\n"
+            "📂 <b>روش دوم (فایل بزرگ‌تر از ۲۰ مگابایت):</b> فایل را با نام <code>restore.json</code> (یا restore.json.gz) "
+            "کنار فایل‌های ربات آپلود کنید؛ بعد دکمه‌اش اینجا ظاهر می‌شود.\n\n"
             "🛡 قبل از هر بازیابی، از وضعیت فعلی یک بکاپ گرفته و برای شما ارسال می‌شود تا هر لحظه برگردید. "
-            "بعد از بازیابی نیازی به ری‌استارت نیست؛ ساختار جدول‌ها هم خودکار با نسخه‌ی فعلی ربات هماهنگ می‌شود.")
+            "بازیابی در «یک تراکنش» انجام می‌شود: یا کامل اعمال می‌شود یا هیچ‌چیز تغییر نمی‌کند. "
+            "بعد از بازیابی نیازی به ری‌استارت نیست.")
     rows = [[_ab("📤 ارسال فایل بکاپ", "adm_p:x:rs_arm", SUCCESS)]]
     for i, fp in enumerate(files):
         rows.append([_ab(f"📂 {os.path.basename(fp)} ({_rp_n(round(os.path.getsize(fp) / 1024))} KB)", f"adm_p:x:rs_f:{i}", SUCCESS)])
@@ -7846,7 +7773,7 @@ def _rs_summary(info, now_users, now_tokens):
 def _rs_download(message):
     doc = message["document"]
     if (doc.get("file_size") or 0) > RS_MAX_DL:
-        raise ValueError("حجم فایل بیش از ۲۰ مگابایت است (محدودیت تلگرام). فایل را با نام restore.sql (یا restore.sql.gz) روی سرور "
+        raise ValueError("حجم فایل بیش از ۲۰ مگابایت است (محدودیت تلگرام). فایل را با نام restore.json (یا restore.json.gz) روی سرور "
                          "کنار ربات آپلود کنید و از «روش دوم» استفاده کنید.")
     r = tg("getFile", file_id=doc["file_id"])
     path = (r.get("result") or {}).get("file_path")
@@ -7897,7 +7824,7 @@ def _rs_safety_backup(admin_id):
         logging.exception("rs safety backup")
         return None
     pre = "pre_restore_" + name.replace("jfj_backup_", "")
-    d = os.path.dirname(os.path.abspath(DB_PATH)) or "."
+    d = BACKUP_DIR
     saved = None
     try:
         with open(os.path.join(d, pre), "wb") as f:
@@ -7918,8 +7845,30 @@ def _rs_safety_backup(admin_id):
     return saved or pre
 
 
+def rs_restore_data(data):
+    """جایگزینی کامل داده‌ها در «یک تراکنش» (قفل مشورتی: هیچ تراکنش بازی/پولی هم‌زمان وسط کار نمی‌آید).
+    خطا = rollback کامل و دیتابیس فعلی دست‌نخورده می‌ماند."""
+    tabs = data["tables"]
+    with get_db() as c:
+        c.lock(GAMES.GAMES_LOCK_KEY if GAMES else 7461001)
+        have = _db.all_tables(c)
+        c.execute("TRUNCATE TABLE " + ", ".join(f'"{t}"' for t in have) + " RESTART IDENTITY")
+        for nm, t in tabs.items():
+            if nm not in have:
+                continue
+            cols = [col for col in t["columns"] if _db.column_exists(c, nm, col)]
+            if not cols or not t["rows"]:
+                continue
+            idx = [t["columns"].index(col) for col in cols]
+            c.insert_many(nm, cols, [[r[i] for i in idx] for r in t["rows"]])
+        for nm in have:           # شمارنده‌های خودکار بعد از بیشینه‌ی آیدی‌ها
+            for col in ("id", "rid"):
+                if _db.column_exists(c, nm, col):
+                    _db.reset_sequence(c, nm, col)
+
+
 def rs_apply(tmp, admin_id, chat_id, src="tg"):
-    """جایگزینی کل دیتابیس با بکاپ بررسی‌شده، با backup-API خود SQLite (امن در حضور اتصال‌های باز و WAL)"""
+    """جایگزینی کل داده‌ها با بکاپ بررسی‌شده در یک تراکنش PostgreSQL"""
     if not os.path.isfile(tmp):
         _hsend(chat_id, "❌ فایل موقت بکاپ پیدا نشد؛ دوباره فایل را بفرستید.")
         return False
@@ -7929,15 +7878,8 @@ def rs_apply(tmp, admin_id, chat_id, src="tg"):
     if lock:
         lock.acquire()
     try:
-        s_ = sqlite3.connect(tmp)
-        d_ = sqlite3.connect(DB_PATH, timeout=60)
-        try:
-            d_.execute("PRAGMA busy_timeout=60000")
-            s_.backup(d_)
-            d_.commit()
-        finally:
-            s_.close()
-            d_.close()
+        with open(tmp, encoding="utf-8") as f_:
+            rs_restore_data(json.load(f_))
     except Exception as e:
         logging.exception("rs_apply")
         _hsend(chat_id, f"❌ بازیابی ناموفق بود: {_h(type(e).__name__)}: {_h(str(e))}\n"
@@ -7989,7 +7931,7 @@ def rs_callback(act, args, admin_id, chat_id, mid, ack, show):
         set_state(admin_id, "adm_in", {"name": "rs_wait", "back": "x"})
         ack()
         _hsend(chat_id, "📤 <b>فایل بکاپ را بفرستید</b>\n\nفایل را به‌صورت <b>فایل (Document)</b> ارسال کنید "
-                        "(.sql / .sql.gz / .db / .zip).",
+                        "(.json / .json.gz / .zip).",
                _kb([_ab("❌ انصراف", "adm_p:x:rs_no", DANGER)]))
         return True
     if act == "rs_no":
@@ -8047,8 +7989,13 @@ XPAGES["rs"] = render_restore
 def main():
     global BOT_USERNAME, BOT_ID
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    install_schema()
-    migrate_schema()
+    try:
+        logging.info("PostgreSQL %s", _db.check_connection())
+    except Exception as e:
+        raise SystemExit(f"اتصال به PostgreSQL برقرار نشد: {_db._safe(e)}")
+    with _db.schema_lock():
+        install_schema()
+        migrate_schema()
     apply_settings()
     seed_products()
 

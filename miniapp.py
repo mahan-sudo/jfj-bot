@@ -6,7 +6,7 @@
     sys.path.insert(0, '/home/USERNAME/jfjtest')
     from miniapp import application
 """
-import hashlib, hmac, json, mimetypes, os, sqlite3, sys, threading, time, traceback
+import hashlib, hmac, json, mimetypes, os, sys, threading, time, traceback
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -21,14 +21,6 @@ import bot_test as bot  # noqa: E402
 mimetypes.add_type("font/woff2", ".woff2")
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# مسیر دیتابیس مطلق شود (در WSGI مسیر کاری متفاوت است)
-bot.DB_PATH = os.environ.get("JFJ_DB") or os.path.join(HERE, "bot.db")
-try:  # اگر پوشه‌ی دیتابیس (مثل /data روی Volume) وجود ندارد بساز؛ نشد از کنار فایل‌ها استفاده کن
-    os.makedirs(os.path.dirname(bot.DB_PATH) or ".", exist_ok=True)
-    open(bot.DB_PATH, "a").close()
-except OSError:
-    print("WARNING: مسیر دیتابیس در دسترس نیست؛ از bot.db کنار فایل‌ها استفاده می‌شود", flush=True)
-    bot.DB_PATH = os.path.join(HERE, "bot.db")
 DEV_UID = os.environ.get("JFJ_DEV_UID")
 DEV_PHOTO = os.environ.get("JFJ_DEV_PHOTO", "")
 MINI_BUILD = "sec3-1028"   # شناسه‌ی نسخه؛ برای اطمینان از آپلود درست فایل‌ها
@@ -40,32 +32,38 @@ _init_lock = __import__("threading").Lock()
 _schema_done = False
 
 
+def _mini_tables():
+    """جدول‌های مینی‌اپ (داخل قفل اسکیما صدا زده می‌شود)"""
+    with bot.get_db() as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS mini_seen (
+            user_id INTEGER NOT NULL,
+            code TEXT NOT NULL,
+            verified INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (user_id, code))""")
+        c.execute("CREATE TABLE IF NOT EXISTS mini_meta (k TEXT PRIMARY KEY, v TEXT)")
+        c.execute("""CREATE TABLE IF NOT EXISTS mini_notices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            ukey TEXT NOT NULL,
+            kind TEXT NOT NULL DEFAULT 'info',
+            title TEXT NOT NULL,
+            body TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            UNIQUE (user_id, ukey))""")
+        c.execute("CREATE TABLE IF NOT EXISTS mini_notice_read (user_id INTEGER PRIMARY KEY, last_id INTEGER NOT NULL DEFAULT 0)")
+
+
 def ensure_ready():
     """ساخت جدول‌ها (یک‌بار) + گرفتن یوزرنیم/آیدی ربات (تا موفق شود هر بار دوباره تلاش می‌کند)"""
     global _schema_done
     if not _schema_done:
         with _init_lock:
             if not _schema_done:
-                bot.install_schema()
-                bot.migrate_schema()
+                with bot._db.schema_lock():
+                    bot.install_schema()
+                    bot.migrate_schema()
+                    _mini_tables()
                 bot.seed_products()
-                with bot.get_db() as c:
-                    c.execute("""CREATE TABLE IF NOT EXISTS mini_seen (
-                        user_id INTEGER NOT NULL,
-                        code TEXT NOT NULL,
-                        verified INTEGER NOT NULL DEFAULT 0,
-                        PRIMARY KEY (user_id, code))""")
-                    c.execute("CREATE TABLE IF NOT EXISTS mini_meta (k TEXT PRIMARY KEY, v TEXT)")
-                    c.execute("""CREATE TABLE IF NOT EXISTS mini_notices (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL,
-                        ukey TEXT NOT NULL,
-                        kind TEXT NOT NULL DEFAULT 'info',
-                        title TEXT NOT NULL,
-                        body TEXT NOT NULL DEFAULT '',
-                        created_at TEXT NOT NULL,
-                        UNIQUE (user_id, ukey))""")
-                    c.execute("CREATE TABLE IF NOT EXISTS mini_notice_read (user_id INTEGER PRIMARY KEY, last_id INTEGER NOT NULL DEFAULT 0)")
                 _schema_done = True
     if not bot.BOT_USERNAME or not bot.BOT_ID:
         with bot.get_db() as c:
@@ -81,8 +79,8 @@ def ensure_ready():
                 bot.BOT_USERNAME = me["result"].get("username")
                 bot.BOT_ID = me["result"].get("id")
                 with bot.get_db() as c:
-                    c.execute("INSERT OR REPLACE INTO mini_meta (k, v) VALUES ('bot_username', ?)", (bot.BOT_USERNAME,))
-                    c.execute("INSERT OR REPLACE INTO mini_meta (k, v) VALUES ('bot_id', ?)", (str(bot.BOT_ID),))
+                    c.execute("INSERT INTO mini_meta (k, v) VALUES ('bot_username', ?) ON CONFLICT (k) DO UPDATE SET v=EXCLUDED.v", (bot.BOT_USERNAME,))
+                    c.execute("INSERT INTO mini_meta (k, v) VALUES ('bot_id', ?) ON CONFLICT (k) DO UPDATE SET v=EXCLUDED.v", (str(bot.BOT_ID),))
 
 
     try:  # آیدی ربات همیشه از خودِ توکن مشخص است؛ کش قدیمی دیتابیس نباید آن را خراب کند
@@ -263,13 +261,13 @@ def api_leaderboard(uid, query):
     items = items[:limit]
     agg = LB_AGG[cat]
     with bot.get_db() as c:
-        row = c.execute(f"SELECT score FROM ({agg}) WHERE id=?", (uid,)).fetchone()
+        row = c.execute(f"SELECT score FROM ({agg}) s WHERE id=?", (uid,)).fetchone()
         mine = row[0] if row else 0
         rank = None
         if mine and mine > 0:
-            rank = c.execute(f"SELECT COUNT(*) FROM ({agg}) WHERE score > ? OR (score = ? AND id < ?)",
+            rank = c.execute(f"SELECT COUNT(*) FROM ({agg}) s WHERE score > ? OR (score = ? AND id < ?)",
                              (mine, mine, uid)).fetchone()[0] + 1
-        total = c.execute(f"SELECT COUNT(*) FROM ({agg})").fetchone()[0]
+        total = c.execute(f"SELECT COUNT(*) FROM ({agg}) s").fetchone()[0]
     return {"cat": cat, "items": items, "more": more, "total": total,
             "me": {"rank": rank, "score": clean_num(mine or 0)}}
 
@@ -366,7 +364,7 @@ def add_notice(user_id, title, body="", kind="info", ukey=None, created_at=None)
     uid = 0 if user_id is None else int(user_id)
     ts = created_at or datetime.now(timezone.utc).isoformat()
     with bot.get_db() as c:
-        c.execute("INSERT OR IGNORE INTO mini_notices (user_id, ukey, kind, title, body, created_at) VALUES (?,?,?,?,?,?)",
+        c.execute("INSERT INTO mini_notices (user_id, ukey, kind, title, body, created_at) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING",
                   (uid, ukey or ("n%d" % time.time_ns()), kind, title, body, ts))
 
 
@@ -414,7 +412,7 @@ def sync_notices(uid):
     if first:
         with bot.get_db() as c:
             last = c.execute("SELECT COALESCE(MAX(id),0) FROM mini_notices WHERE user_id IN (?,0)", (uid,)).fetchone()[0]
-            c.execute("INSERT OR IGNORE INTO mini_notice_read (user_id, last_id) VALUES (?,?)", (uid, last))
+            c.execute("INSERT INTO mini_notice_read (user_id, last_id) VALUES (?,?) ON CONFLICT DO NOTHING", (uid, last))
         add_notice(uid, "خوش آمدی", "به جفج شاهنشاهی خوش آمدی! اعلان‌ها و پیام‌های تو اینجا نمایش داده می‌شود.", "welcome", "welcome")
 
 
@@ -432,7 +430,7 @@ def get_notices(uid):
 def api_notices_read(uid, body):
     with bot.get_db() as c:
         mx = c.execute("SELECT COALESCE(MAX(id),0) FROM mini_notices WHERE user_id IN (?,0)", (uid,)).fetchone()[0]
-        c.execute("INSERT OR REPLACE INTO mini_notice_read (user_id, last_id) VALUES (?,?)", (uid, mx))
+        c.execute("INSERT INTO mini_notice_read (user_id, last_id) VALUES (?,?) ON CONFLICT (user_id) DO UPDATE SET last_id=EXCLUDED.last_id", (uid, mx))
     return {"ok": True}
 
 
@@ -469,7 +467,7 @@ def reconcile_leaves(uid, min_gap=12):
         rows = c.execute(
             """SELECT j.tracking_code, r.link, r.chat_id, r.user_id
                FROM joins j JOIN requests r ON r.tracking_code=j.tracking_code
-               WHERE j.user_id=? AND j.left_at IS NULL ORDER BY j.rowid DESC LIMIT 25""", (uid,)
+               WHERE j.user_id=? AND j.left_at IS NULL ORDER BY j.rid DESC LIMIT 25""", (uid,)
         ).fetchall()
     if not rows:
         return []
@@ -530,7 +528,7 @@ def build_state(user):
         reqs = c.execute(
             """SELECT r.tracking_code, r.member_count, r.link, r.status, r.created_at,
                       (SELECT COUNT(*) FROM joins j WHERE j.tracking_code=r.tracking_code AND j.left_at IS NULL)
-               FROM requests r WHERE r.user_id=? ORDER BY r.created_at DESC, r.rowid DESC LIMIT 100""",
+               FROM requests r WHERE r.user_id=? ORDER BY r.created_at DESC, r.rid DESC LIMIT 100""",
             (uid,),
         ).fetchall()
         joins_n = c.execute("SELECT COUNT(*) FROM joins WHERE user_id=? AND left_at IS NULL", (uid,)).fetchone()[0]
@@ -573,7 +571,7 @@ def build_state(user):
     with bot.get_db() as c:
         svc_rows = c.execute(
             "SELECT tracking_code, service, quantity, link, status, created_at FROM service_orders "
-            "WHERE user_id=? ORDER BY created_at DESC, rowid DESC LIMIT 60", (uid,)).fetchall()
+            "WHERE user_id=? ORDER BY created_at DESC, rid DESC LIMIT 60", (uid,)).fetchall()
         inv_rows = c.execute(
             "SELECT code, product_name, status, created_at FROM invoices "
             "WHERE buyer_id=? AND status IN ('awaiting_receipt','review','paid','rejected') "
@@ -736,7 +734,7 @@ def api_join_list(uid, body):
                FROM requests r
                WHERE r.status='in_progress' AND r.user_id != ?
                  AND r.tracking_code NOT IN (SELECT tracking_code FROM joins WHERE user_id=? AND left_at IS NULL)
-               ORDER BY r.created_at, r.rowid LIMIT 60""",
+               ORDER BY r.created_at, r.rid LIMIT 60""",
             (uid, uid),
         ).fetchall()
 
@@ -774,7 +772,7 @@ def api_join_list(uid, body):
             c.execute("DELETE FROM mini_seen WHERE user_id=? AND code NOT IN (%s)" % ",".join("?" * len(keep)), [uid] + keep)
         else:
             c.execute("DELETE FROM mini_seen WHERE user_id=?", (uid,))
-        c.executemany("INSERT OR REPLACE INTO mini_seen (user_id, code, verified) VALUES (?, ?, 1)",
+        c.executemany("INSERT INTO mini_seen (user_id, code, verified) VALUES (?, ?, 1) ON CONFLICT (user_id, code) DO UPDATE SET verified=EXCLUDED.verified",
                       [(uid, r[0]) for r in ok])
     return {"leftNow": left_now, "items": [
         {"code": r[0], "channel": display_name(r[1]), "title": r[5], "url": tme_url(r[1]),
