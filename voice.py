@@ -11,6 +11,7 @@
 * اگر تلگرام دکمه را نپذیرفت، بدون دکمه ارسال می‌شود. اگر پیام موقت ممکن نبود، (در صورت فعال بودن پشتیبان) PUBLIC می‌رود.
 tg() ربات تمام متن‌ها را خودکار Bold می‌کند.
 """
+import html as _html
 import logging
 import random
 import re
@@ -411,8 +412,13 @@ def _desc(r):
     return str((r or {}).get("description") or (r or {}).get("error_description") or "")
 
 
+def fmt(text):
+    """متن → HTML امن؛ هر «/start» به‌صورت Mono (کلیک نمی‌شود و پیام اضافه در گروه نمیفرستد)"""
+    return _html.escape(text, quote=False).replace("/start", "<code>/start</code>")
+
+
 def _send(chat_id, user_id, mid, thread, text, kb, hide):
-    p = {"chat_id": chat_id, "text": text}
+    p = {"chat_id": chat_id, "text": fmt(text), "parse_mode": "HTML"}
     if kb:
         p["reply_markup"] = kb
     if hide:

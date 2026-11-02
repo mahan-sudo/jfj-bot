@@ -6184,7 +6184,8 @@ def v2_admin_callback(cq):
                 try:
                     cat = random.choice(("pv", "rip", "left", "member", "q", "gen"))
                     sample = VOICE.render(cat, {"first_name": "علی"}, 0, 0)
-                    send(chat_id, "👁 نمونه پاسخ (دسته‌ی " + cat + "):\n\n" + sample, VOICE.keyboard(), markdown=False)
+                    tg("sendMessage", chat_id=chat_id, parse_mode="HTML", reply_markup=VOICE.keyboard(),
+                       text="👁 نمونه پاسخ (دسته‌ی " + cat + "):\n\n" + VOICE.fmt(sample))
                 except Exception:
                     logging.exception("vc preview")
                 return True
@@ -6666,6 +6667,31 @@ def handle_update(update):
         logging.exception("update %s failed", update_id)
     finally:
         lock.release()
+
+
+def setup_bot_commands():
+    """منوی دستورات (/start و /help) فقط در چت خصوصی دیده شود؛ در گروه‌ها هیچ منویی نباشد.
+    دستورهای ثبت‌شده در BotFather (scope پیش‌فرض) به scope «چت‌های خصوصی» منتقل و از پیش‌فرض/گروه‌ها پاک می‌شوند."""
+    try:
+        r = tg("getMyCommands")
+        cmds = r.get("result") if r.get("ok") else None
+        if not isinstance(cmds, list):
+            return
+        priv = tg("getMyCommands", scope={"type": "all_private_chats"})
+        pcmds = priv.get("result") if priv.get("ok") else None
+        if cmds:
+            keep = [{"command": c["command"], "description": c["description"]} for c in cmds]
+        elif isinstance(pcmds, list) and pcmds:
+            keep = None                      # قبلاً منتقل شده
+        else:
+            keep = [{"command": "start", "description": "شروع ربات"}, {"command": "help", "description": "راهنما"}]
+        if keep:
+            tg("setMyCommands", commands=keep, scope={"type": "all_private_chats"})
+        for sc in ({"type": "default"}, {"type": "all_group_chats"}, {"type": "all_chat_administrators"}):
+            tg("deleteMyCommands", scope=sc)
+        logging.info("منوی دستورات: فقط چت خصوصی (گروه‌ها بدون منو)")
+    except Exception:
+        logging.exception("setup_bot_commands")
 
 
 def handle_chat_member_update(cm):
@@ -8089,6 +8115,7 @@ def main():
     threading.Thread(target=rep_worker, daemon=True).start()
     threading.Thread(target=rep_scheduler, daemon=True).start()
     global GAMES, VOICE
+    setup_bot_commands()
     try:
         import voice as _voice
         _voice.init(_GlobalsProxy())
