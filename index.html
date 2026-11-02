@@ -76,6 +76,7 @@ button:disabled{cursor:default}
 @property --agreenbtn{syntax:'<color>';inherits:true;initial-value:#0E9F6E}
 @property --aredt{syntax:'<color>';inherits:true;initial-value:transparent}
 @property --agreent{syntax:'<color>';inherits:true;initial-value:transparent}
+.theme-light,.theme-dark,.theme-system{--onp:#FFFFFF}
 .theme-light,.theme-dark,.theme-system{--shadow:0 1px 2px var(--sh1);--pshadow:0 4px 12px var(--psh);--cglow:0 6px 16px var(--cgl);--navshadow:0 4px 14px var(--nsh1),inset 0 1px 0 var(--nsh2);--cardbg:linear-gradient(150deg,var(--card1) 0%,var(--card2) 65%);transition:--bg .32s ease-out,--surface .32s ease-out,--edge .32s ease-out,--ink .32s ease-out,--muted .32s ease-out,--track .32s ease-out,--primary .32s ease-out,--onprimarysub .32s ease-out,--accent .32s ease-out,--tint .32s ease-out,--mint .32s ease-out,--minttint .32s ease-out,--mintfill .32s ease-out,--gifttint .32s ease-out,--gifticon .32s ease-out,--violet .32s ease-out,--violettint .32s ease-out,--rose .32s ease-out,--rosetint .32s ease-out,--tick .32s ease-out,--field .32s ease-out,--card1 .32s ease-out,--card2 .32s ease-out,--sh1 .32s ease-out,--sh2 .32s ease-out,--psh .32s ease-out,--cgl .32s ease-out,--navglass .32s ease-out,--navactive .32s ease-out,--nsh1 .32s ease-out,--nsh2 .32s ease-out,--nsh3 .32s ease-out,--ared .32s ease-out,--agreen .32s ease-out,--agreenbtn .32s ease-out,--aredt .32s ease-out,--agreent .32s ease-out}
 .theme-light,.theme-system{--bg:#FFF7EA;--hsub:rgba(255,255,255,0.88);--aur1:rgba(245,165,36,0.38);--surface:rgba(255,255,255,0.6);--edge:rgba(255,255,255,0.9);--ink:#33200A;--muted:#85673F;--track:rgba(51,32,10,0.1);--primary:#E26F00;--onprimarysub:#FFF1DC;--accent:#B45309;--tint:rgba(245,158,11,0.16);--mint:#8A5A00;--minttint:rgba(245,190,40,0.26);--mintfill:#F2A900;--reqc:#F97316;--reqt:rgba(249,115,22,0.16);--gifttint:rgba(245,165,36,0.24);--gifticon:#8A4B00;--violet:#5B34C9;--violettint:rgba(139,92,246,0.16);--rose:#B3203F;--rosetint:rgba(179,32,63,0.12);--tick:#000000;--field:rgba(255,243,222,0.9);--card1:#F59A0B;--card2:#C2410C;--sh1:rgba(51,32,10,0.05);--sh2:rgba(226,111,0,0.08);--psh:rgba(226,111,0,0.28);--cgl:rgba(226,111,0,0.22);--navglass:rgba(255,255,255,0.5);--navactive:rgba(245,158,11,0.2);--nsh1:rgba(51,32,10,0.16);--nsh2:rgba(255,255,255,0.8);--nsh3:rgba(226,111,0,0);--ared:#D6153B;--agreen:#05906A;--agreenbtn:#0E9F6E;--aredt:rgba(214,21,59,0.14);--agreent:rgba(5,144,106,0.16)}
 @media (prefers-color-scheme: dark){.theme-system{--reqc:#3B82F6;--reqt:rgba(59,130,246,0.18);--hsub:#C4C8EA;--aur1:rgba(40,50,200,0.38);--bg:#080B1F;--surface:rgba(24,27,54,0.4);--edge:rgba(255,255,255,0.1);--ink:#ECEEFF;--muted:#B0B5DC;--track:rgba(255,255,255,0.12);--primary:#3440D6;--accent:#A9B1FF;--tint:rgba(169,177,255,0.16);--mint:#5FD9B0;--minttint:rgba(95,217,176,0.14);--mintfill:#2FBF92;--gifttint:rgba(245,194,107,0.16);--gifticon:#F5C26B;--violet:#C4B5FD;--violettint:rgba(167,139,250,0.2);--rose:#FF8DA1;--rosetint:rgba(255,141,161,0.16);--tick:#FFFFFF;--field:rgba(9,10,26,0.55);--card1:#2E38BC;--card2:#141848;--sh1:rgba(0,0,0,0.2);--sh2:rgba(0,0,0,0.35);--psh:rgba(52,64,214,0.3);--cgl:rgba(52,64,214,0.24);--navglass:rgba(28,32,66,0.36);--navactive:rgba(169,177,255,0.2);--nsh1:rgba(0,0,0,0.5);--nsh2:rgba(255,255,255,0.12);--nsh3:rgba(52,64,214,0.12);--ared:#FF5C7A;--agreen:#34E0A8;--agreenbtn:#1FA97B;--aredt:rgba(255,92,122,0.18);--agreent:rgba(52,224,168,0.16)}}
@@ -105,31 +106,65 @@ button:disabled{cursor:default}
 .theme-dark3{--bg:#1A1A1A;--hsub:#E7D9B0;--aur1:rgba(139,0,0,0.45);--surface:rgba(46,36,30,0.55);--edge:rgba(212,175,55,0.24);--ink:#F7F0DC;--muted:#C2B189;--track:rgba(255,255,255,0.12);--primary:#8B0000;--onprimarysub:#FFE9B0;--accent:#D4AF37;--tint:rgba(212,175,55,0.14);--mint:#E8CB6A;--minttint:rgba(212,175,55,0.14);--mintfill:#D4AF37;--reqc:#D4AF37;--reqt:rgba(212,175,55,0.16);--gifttint:rgba(212,175,55,0.16);--gifticon:#D4AF37;--violet:#E0C4FF;--tick:#D4AF37;--field:rgba(10,8,6,0.6);--card1:#8B0000;--card2:#2B0606;--sh1:rgba(0,0,0,0.3);--sh2:rgba(0,0,0,0.45);--psh:rgba(139,0,0,0.5);--cgl:rgba(139,0,0,0.4);--navglass:rgba(40,30,24,0.5);--navactive:rgba(212,175,55,0.22);--nsh1:rgba(0,0,0,0.55);--nsh2:rgba(255,255,255,0.1);--nsh3:rgba(212,175,55,0.14)}
 .theme-light4 .glow-l{background-image:radial-gradient(300px 320px at 100% 0px,rgba(139,0,0,0.12),transparent 70%),radial-gradient(260px 300px at 0% 300px,rgba(212,175,55,0.3),transparent 70%),radial-gradient(300px 340px at 100% 640px,rgba(139,0,0,0.08),transparent 70%),radial-gradient(280px 320px at 0% 980px,rgba(212,175,55,0.24),transparent 70%),radial-gradient(300px 320px at 100% 1300px,rgba(139,0,0,0.08),transparent 70%)}
 .theme-dark3 .glow-d{background-image:radial-gradient(300px 320px at 100% 0px,rgba(139,0,0,0.4),transparent 70%),radial-gradient(260px 300px at 0% 300px,rgba(212,175,55,0.14),transparent 70%),radial-gradient(300px 340px at 100% 640px,rgba(139,0,0,0.3),transparent 70%),radial-gradient(280px 320px at 0% 980px,rgba(212,175,55,0.1),transparent 70%),radial-gradient(300px 320px at 100% 1300px,rgba(139,0,0,0.26),transparent 70%)}
+.theme-dark4{--bg:#1A0B1A;--hsub:#FF9ECF;--aur1:rgba(255,77,159,0.38);--surface:rgba(59,24,61,0.72);--edge:rgba(126,47,90,0.62);--ink:#FFFFFF;--muted:#A78B8B;--track:rgba(126,47,90,0.4);--primary:#FF4D9F;--onp:#FFFFFF;--onprimarysub:#FFE3F1;--accent:#FF9ECF;--tint:rgba(255,77,159,0.16);--reqc:#FF9ECF;--reqt:rgba(255,158,207,0.16);--gifttint:rgba(255,158,207,0.14);--gifticon:#FF9ECF;--tick:#FF9ECF;--field:rgba(42,15,43,0.88);--card1:#D93A86;--card2:#6E1030;--sh1:rgba(0,0,0,0.3);--sh2:rgba(0,0,0,0.45);--psh:rgba(255,77,159,0.38);--cgl:rgba(255,77,159,0.3);--navglass:rgba(42,15,43,0.66);--navactive:rgba(255,77,159,0.24);--nsh1:rgba(0,0,0,0.55);--nsh2:rgba(255,158,207,0.14);--nsh3:rgba(255,77,159,0.16)}
+.theme-dark5{--bg:#0D0F0A;--hsub:#DDFDB8;--aur1:rgba(182,255,66,0.28);--surface:rgba(36,50,27,0.72);--edge:rgba(62,95,42,0.68);--ink:#FFFFFF;--muted:#A4BBA0;--track:rgba(62,95,42,0.45);--primary:#B6FF42;--onp:#0D1A00;--onprimarysub:#35540C;--accent:#DDFDB8;--tint:rgba(182,255,66,0.14);--mint:#8BC34A;--minttint:rgba(139,195,74,0.16);--mintfill:#8BC34A;--reqc:#B6FF42;--reqt:rgba(182,255,66,0.16);--gifttint:rgba(221,253,184,0.12);--gifticon:#DDFDB8;--tick:#B6FF42;--field:rgba(26,31,18,0.88);--card1:#4F7A14;--card2:#24321B;--sh1:rgba(0,0,0,0.3);--sh2:rgba(0,0,0,0.45);--psh:rgba(182,255,66,0.3);--cgl:rgba(182,255,66,0.24);--navglass:rgba(26,31,18,0.66);--navactive:rgba(182,255,66,0.2);--nsh1:rgba(0,0,0,0.55);--nsh2:rgba(221,253,184,0.12);--nsh3:rgba(182,255,66,0.12)}
+.theme-light5{--bg:#FFF0F7;--hsub:rgba(255,255,255,0.9);--aur1:rgba(255,77,159,0.3);--surface:rgba(255,255,255,0.72);--edge:rgba(255,77,159,0.24);--ink:#3A0F26;--muted:#8A5A74;--track:rgba(58,15,38,0.1);--primary:#E8308A;--onp:#FFFFFF;--onprimarysub:#FFE3F1;--accent:#B3125F;--tint:rgba(255,77,159,0.14);--mint:#2F7D5A;--minttint:rgba(47,125,90,0.14);--mintfill:#3FB27F;--reqc:#E8308A;--reqt:rgba(232,48,138,0.14);--gifttint:rgba(255,158,207,0.3);--gifticon:#B3125F;--tick:#B3125F;--field:rgba(255,226,240,0.88);--card1:#FF4D9F;--card2:#8E1457;--sh1:rgba(58,15,38,0.05);--sh2:rgba(255,77,159,0.1);--psh:rgba(232,48,138,0.3);--cgl:rgba(232,48,138,0.24);--navglass:rgba(255,255,255,0.62);--navactive:rgba(255,77,159,0.2);--nsh1:rgba(58,15,38,0.16);--nsh2:rgba(255,255,255,0.85);--nsh3:rgba(255,77,159,0)}
+.theme-light6{--bg:#F5FBE6;--hsub:rgba(255,255,255,0.9);--aur1:rgba(182,255,66,0.5);--surface:rgba(255,255,255,0.74);--edge:rgba(107,142,35,0.3);--ink:#1B2A0A;--muted:#5D7048;--track:rgba(27,42,10,0.1);--primary:#A8EE2E;--onp:#1B2A0A;--onprimarysub:#3A5A0E;--accent:#44720A;--tint:rgba(107,142,35,0.16);--mint:#2F7D32;--minttint:rgba(47,125,50,0.14);--mintfill:#5DBB63;--reqc:#6B8E23;--reqt:rgba(107,142,35,0.16);--gifttint:rgba(182,255,66,0.3);--gifticon:#44720A;--tick:#44720A;--field:rgba(231,245,200,0.88);--card1:#5E8F16;--card2:#24321B;--sh1:rgba(27,42,10,0.05);--sh2:rgba(107,142,35,0.1);--psh:rgba(107,142,35,0.35);--cgl:rgba(107,142,35,0.26);--navglass:rgba(255,255,255,0.62);--navactive:rgba(168,238,46,0.38);--nsh1:rgba(27,42,10,0.16);--nsh2:rgba(255,255,255,0.85);--nsh3:rgba(107,142,35,0)}
+.theme-light5 .glow-l{background-image:radial-gradient(300px 320px at 100% 0px,rgba(255,77,159,0.2),transparent 70%),radial-gradient(260px 300px at 0% 300px,rgba(255,158,207,0.4),transparent 70%),radial-gradient(300px 340px at 100% 640px,rgba(255,77,159,0.12),transparent 70%),radial-gradient(280px 320px at 0% 980px,rgba(255,158,207,0.32),transparent 70%),radial-gradient(300px 320px at 100% 1300px,rgba(255,77,159,0.12),transparent 70%)}
+.theme-light6 .glow-l{background-image:radial-gradient(300px 320px at 100% 0px,rgba(168,238,46,0.3),transparent 70%),radial-gradient(260px 300px at 0% 300px,rgba(221,253,184,0.6),transparent 70%),radial-gradient(300px 340px at 100% 640px,rgba(168,238,46,0.2),transparent 70%),radial-gradient(280px 320px at 0% 980px,rgba(221,253,184,0.5),transparent 70%),radial-gradient(300px 320px at 100% 1300px,rgba(168,238,46,0.2),transparent 70%)}
+.theme-dark4 .glow-d{background-image:radial-gradient(300px 320px at 100% 0px,rgba(255,77,159,0.3),transparent 70%),radial-gradient(260px 300px at 0% 300px,rgba(110,16,48,0.5),transparent 70%),radial-gradient(300px 340px at 100% 640px,rgba(255,77,159,0.18),transparent 70%),radial-gradient(280px 320px at 0% 980px,rgba(110,16,48,0.4),transparent 70%),radial-gradient(300px 320px at 100% 1300px,rgba(255,77,159,0.16),transparent 70%)}
+.theme-dark5 .glow-d{background-image:radial-gradient(300px 320px at 100% 0px,rgba(182,255,66,0.2),transparent 70%),radial-gradient(260px 300px at 0% 300px,rgba(107,142,35,0.3),transparent 70%),radial-gradient(300px 340px at 100% 640px,rgba(182,255,66,0.12),transparent 70%),radial-gradient(280px 320px at 0% 980px,rgba(107,142,35,0.24),transparent 70%),radial-gradient(300px 320px at 100% 1300px,rgba(182,255,66,0.1),transparent 70%)}
 #menuBack{position:absolute;top:0;right:0;bottom:0;left:0;z-index:12;border:0;padding:0;cursor:default;background:rgba(10,10,20,0.22);-webkit-backdrop-filter:blur(3px) saturate(1.05);backdrop-filter:blur(3px) saturate(1.05);animation:mbIn .32s ease both}
 #menu.out #menuBack{animation:mbOut .26s ease both}
 @keyframes mbIn{from{opacity:0}to{opacity:1}}
 @keyframes mbOut{from{opacity:1}to{opacity:0}}
-#menuPanel{position:absolute;z-index:13;left:20px;width:min(284px,calc(100% - 40px));border-radius:30px;padding:8px;-webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);background:color-mix(in srgb,var(--bg) 80%,transparent);border:1px solid var(--edge);box-shadow:0 30px 70px rgba(0,0,0,0.28),0 6px 18px rgba(0,0,0,0.12),inset 0 1px 0 rgba(255,255,255,0.35);transform-origin:26px -10px;animation:menuIn .46s cubic-bezier(0.2,0.95,0.25,1.12) both}
+#menuPanel{position:absolute;z-index:13;left:20px;width:min(284px,calc(100% - 40px));border-radius:24px;padding:6px;background-color:var(--bg);background-image:linear-gradient(var(--surface),var(--surface));border:1px solid var(--edge);box-shadow:var(--shadow),0 18px 44px rgba(0,0,0,0.26);transform-origin:26px -10px;animation:menuIn .46s cubic-bezier(0.2,0.95,0.25,1.12) both}
 #menu.out #menuPanel{animation:menuOut .24s cubic-bezier(0.4,0,0.9,0.6) both}
 @keyframes menuIn{0%{opacity:0;transform:scale(0.35)}55%{opacity:1}100%{opacity:1;transform:scale(1)}}
 @keyframes menuOut{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(0.45)}}
-.mrow{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;padding:0 12px;border:0;border-radius:22px;background:transparent;color:var(--ink);font:inherit;font-size:14.5px;font-weight:700;cursor:pointer;text-align:start;transition:background-color .15s ease,transform .15s ease;animation:rowIn .42s cubic-bezier(0.2,0.9,0.25,1) both;animation-delay:calc(var(--i,0) * 38ms + 90ms)}
+.mrow{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;padding:0 10px;border:0;border-radius:18px;background:transparent;color:var(--ink);font:inherit;font-size:14.5px;font-weight:700;cursor:pointer;text-align:start;transition:background-color .15s ease,transform .15s ease;animation:rowIn .42s cubic-bezier(0.2,0.9,0.25,1) both;animation-delay:calc(var(--i,0) * 38ms + 90ms)}
 @keyframes rowIn{from{opacity:0;transform:translateY(-8px) scale(0.96)}to{opacity:1;transform:none}}
 .mrow:active{background:var(--tint);transform:scale(0.97)}
-.msep{height:1px;margin:0 16px;background:var(--track);opacity:.7}
+.msep{height:1px;margin:2px 14px;background:var(--track);opacity:.7}
 .msub{display:grid;grid-template-rows:0fr;transition:grid-template-rows .42s cubic-bezier(0.32,0.72,0,1),opacity .3s ease;opacity:0}
 .msub.open{grid-template-rows:1fr;opacity:1}
 .msub>div{overflow:hidden;min-height:0}
-.mic{width:36px;height:36px;flex-shrink:0;border-radius:13px;background:linear-gradient(145deg,color-mix(in srgb,var(--primary) 22%,transparent),var(--tint));color:var(--accent);display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--primary) 12%,transparent)}
+.mic{width:40px;height:40px;flex-shrink:0;border-radius:13px;background:linear-gradient(145deg,color-mix(in srgb,var(--primary) 22%,transparent),var(--tint));color:var(--accent);display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--primary) 12%,transparent)}
 #root.mo #head{z-index:14!important}
 #head>div>div:first-child,#head [data-act=goNotices]{transition:opacity .3s ease,filter .3s ease}
 #root.mo:not(.mc) #head>div>div:first-child,#root.mo:not(.mc) #head [data-act=goNotices]{opacity:.3;pointer-events:none}
-.hb line{transition:transform .38s cubic-bezier(0.32,0.72,0,1),opacity .2s ease;transform-origin:12px 12px}
-.hb.open .l1{transform:translateY(5px) rotate(45deg)}
-.hb.open .l2{opacity:0;transform:scaleX(0.2)}
-.hb.open .l3{transform:translateY(-5px) rotate(-45deg)}
+.hb{position:relative;display:block;width:22px;height:18px;flex-shrink:0}
+.hb i{position:absolute;left:0;width:22px;height:2.4px;margin:0;border-radius:2px;background:currentColor;transform-origin:50% 50%;transition:transform .38s cubic-bezier(0.32,0.72,0,1),opacity .2s ease,width .3s ease}
+.hb i:nth-child(1){top:0}
+.hb i:nth-child(2){top:7.8px;width:15px;left:7px}
+.hb i:nth-child(3){top:15.6px}
+.hb.open i:nth-child(1){transform:translateY(7.8px) rotate(45deg)}
+.hb.open i:nth-child(2){opacity:0;transform:scaleX(0.2)}
+.hb.open i:nth-child(3){transform:translateY(-7.8px) rotate(-45deg)}
+#pickW{position:absolute;top:0;right:0;bottom:0;left:0;z-index:60;display:flex;flex-direction:column;background:var(--bg);overflow:hidden;animation:pkIn .5s cubic-bezier(0.2,0.9,0.25,1) both}
+@keyframes pkIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+#pickW .pk-aur{position:absolute;top:-160px;right:-120px;width:460px;height:460px;border-radius:50%;pointer-events:none;background:radial-gradient(closest-side,var(--aur1),transparent);transition:background .4s ease}
+#pickW .pk-aur.b{top:auto;right:auto;bottom:-200px;left:-160px;opacity:.6}
+#pickS{position:relative;flex:1;overflow-x:hidden;overflow-y:auto;padding:calc(var(--sat) + 14px) 18px 132px;-webkit-overflow-scrolling:touch}
+.pk-x{width:44px;height:44px;border-radius:22px;border:1px solid var(--edge);background:var(--surface);color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.pk-g{margin:22px 4px 10px;font-size:13px;font-weight:800;color:var(--muted)}
+.pk-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.pk-c{position:relative;display:flex;flex-direction:column;gap:10px;padding:8px 8px 12px;border-radius:26px;border:1.5px solid var(--edge);background:var(--surface);color:var(--ink);font:inherit;cursor:pointer;text-align:start;transition:transform .2s cubic-bezier(0.2,0,0,1),border-color .25s ease,box-shadow .25s ease}
+.pk-c:active{transform:scale(0.97)}
+.pk-c.on{border-color:var(--primary);box-shadow:0 0 0 1.5px var(--primary),0 12px 30px var(--psh)}
+.pk-pv{position:relative;border-radius:20px;aspect-ratio:1/0.82;padding:11px;display:flex;flex-direction:column;gap:7px;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(128,128,128,0.22)}
+.pk-pv>*{flex-shrink:0}
+.pk-r{display:flex;align-items:center;justify-content:space-between;gap:8px;direction:rtl}
+.pk-n{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 6px}
+.pk-n b{font-size:14px;font-weight:800}
+.pk-ck{width:24px;height:24px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--primary);color:var(--onp);transform:scale(0);transition:transform .3s cubic-bezier(0.3,1.5,0.5,1)}
+.pk-c.on .pk-ck{transform:scale(1)}
+.pk-cta{position:absolute;left:0;right:0;bottom:0;padding:34px 18px calc(18px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--bg) 58%,transparent)}
+.pk-go{width:100%;height:58px;border:0;border-radius:29px;background:var(--primary);color:var(--onp);font:inherit;font-size:16px;font-weight:800;cursor:pointer;box-shadow:var(--pshadow);transition:background-color .35s ease,color .35s ease,transform .15s ease}
+.pk-go:active{transform:scale(0.97)}
+@media (prefers-reduced-motion: reduce){#pickW{animation:none}}
 .mgrp{margin:8px 12px 2px;font-size:12px;font-weight:700;color:var(--muted)}
-.sw{width:34px;height:34px;flex-shrink:0;border-radius:12px;box-shadow:inset 0 0 0 1px rgba(128,128,128,0.25)}
+.sw{width:34px;height:34px;flex-shrink:0;border-radius:13px;box-shadow:inset 0 0 0 1px rgba(128,128,128,0.25)}
 @keyframes bellRing{0%,86%,100%{transform:rotate(0)}89%{transform:rotate(14deg)}92%{transform:rotate(-12deg)}95%{transform:rotate(8deg)}98%{transform:rotate(-4deg)}}
 @keyframes spFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
 @keyframes spSpin{to{transform:rotate(360deg)}}
@@ -140,8 +175,8 @@ button:disabled{cursor:default}
 #splash{position:absolute;top:0;right:0;bottom:0;left:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);overflow:hidden;transition:opacity .6s ease,transform .6s cubic-bezier(0.2,0,0,1),filter .6s ease}
 #fjGate{position:relative;width:min(340px,90vw);display:none;flex-direction:column;align-items:stretch;gap:10px;margin-top:18px;animation:spRise .5s cubic-bezier(0.2,0,0,1) backwards}
 #fjGate .fjc{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:24px;background:var(--surface);border:1px solid var(--edge);box-shadow:var(--shadow)}
-#fjGate .fjav{width:42px;height:42px;flex-shrink:0;border-radius:15px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:17px;background:linear-gradient(135deg,var(--primary),var(--accent))}
-#fjGate .fjj{border:0;border-radius:18px;height:38px;padding:0 16px;background:var(--primary);color:#fff;font:inherit;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0}
+#fjGate .fjav{width:42px;height:42px;flex-shrink:0;border-radius:15px;display:flex;align-items:center;justify-content:center;color:var(--onp);font-weight:800;font-size:17px;background:linear-gradient(135deg,var(--primary),var(--accent))}
+#fjGate .fjj{border:0;border-radius:18px;height:38px;padding:0 16px;background:var(--primary);color:var(--onp);font:inherit;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0}
 #splash.out{opacity:0;transform:scale(1.04);pointer-events:none}
 #splash .sp-aurora{position:absolute;border-radius:50%;pointer-events:none;will-change:transform}
 #splash .a1{width:340px;height:340px;top:-110px;right:-100px;background:radial-gradient(closest-side,var(--aur1),transparent);animation:spDrift1 14s ease-in-out infinite}
@@ -186,6 +221,7 @@ button:disabled{cursor:default}
   <div class="fz fz-t" aria-hidden="true"><i></i><i></i></div>
   <div class="fz fz-b" aria-hidden="true"><i></i><i></i></div>
   <div id="menu"></div>
+  <div id="pick"></div>
   <div id="head" style="position:absolute;top:var(--sat);left:0;right:0;z-index:11"></div>
   <nav id="nav" aria-label="ناوبری اصلی" class="glass round" style="position:absolute;left:24px;right:24px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:10;border-radius:36px;padding:7px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;background:var(--navglass);border:1px solid var(--edge);box-shadow:var(--navshadow)"></nav>
   <div id="splash" role="status" aria-live="polite">
@@ -242,8 +278,28 @@ const S = {
   copied: false, lb: { cat: 'wealth', items: [], more: false, me: null, loading: false }, tokenPack: 1, svc: 'views', svcIdx: 1, svcLink: '', emoji: '👍', sponsorIdx: 0, pEmoji: '',
   reqCount: 10, reqLink: '', requested: null, busy: false, invoiceSent: false, svcDone: null,
 };
-const THEMES = ['system', 'light', 'light2', 'light3', 'light4', 'dark', 'dark2', 'dark3'];
+const THEMES = ['system', 'light', 'light2', 'light3', 'light4', 'light5', 'light6', 'dark', 'dark2', 'dark3', 'dark4', 'dark5'];
 try { const t = localStorage.getItem('jfj_theme'); if (t && THEMES.includes(t)) S.theme = t; } catch (e) {}
+/* ---- ذخیره‌ی تم: localStorage + فضای ابری تلگرام (بین دستگاه‌ها هم می‌ماند) ---- */
+function themeStoreGet(cb) {
+  let ls = {};
+  try { ls = { theme: localStorage.getItem('jfj_theme'), set: localStorage.getItem('jfj_theme_set') }; } catch (e) {}
+  if (!ls.set && ls.theme && THEMES.includes(ls.theme)) ls.set = '1';   /* کاربرانی که قبلاً تمی انتخاب کرده‌اند، دوباره صفحه‌ی انتخاب را نمی‌بینند */
+  if (ls.set) return cb(ls);
+  const cs = TG && TG.CloudStorage;
+  if (!cs || !cs.getItems || !(TG.isVersionAtLeast && TG.isVersionAtLeast('6.9'))) return cb(ls);
+  let done = false; const fin = (o) => { if (done) return; done = true; cb(o); };
+  setTimeout(() => fin(ls), 1400);
+  try { cs.getItems(['jfj_theme', 'jfj_theme_set'], (err, v) => { if (err || !v) return fin(ls); fin({ theme: v.jfj_theme || ls.theme, set: v.jfj_theme_set || '' }); }); } catch (e) { fin(ls); }
+}
+function themeStoreSet(theme, mark) {
+  try { localStorage.setItem('jfj_theme', theme); if (mark) localStorage.setItem('jfj_theme_set', '1'); } catch (e) {}
+  try { const cs = TG && TG.CloudStorage; if (cs && cs.setItem && TG.isVersionAtLeast && TG.isVersionAtLeast('6.9')) { cs.setItem('jfj_theme', theme); if (mark) cs.setItem('jfj_theme_set', '1'); } } catch (e) {}
+}
+/* اولین ورود: صفحه‌ی «منو با چه رنگی دوست داری؟» (فقط یک‌بار؛ بعد از انتخاب یا بستن دیگر نمایش داده نمی‌شود) */
+const THEME_BOOT = new Promise(res => themeStoreGet(res)).then(o => {
+  if (o && o.set) { if (o.theme && THEMES.includes(o.theme)) S.theme = o.theme; S.pick = false; } else S.pick = true;
+});
 
 /* ---------------------------------------------------------------- API */
 function getInitData() {
@@ -371,7 +427,7 @@ const TONES = [['tint', 'accent'], ['gifttint', 'gifticon'], ['violettint', 'vio
 const avatarHtml = (size, isz, dot) => { const ph = D() && D().user.photo; return `<span style="position:relative;display:block;width:${size}px;height:${size}px;flex-shrink:0"><span class="round" style="position:absolute;top:0;right:0;bottom:0;left:0;border-radius:${size / 2}px;overflow:hidden;background:linear-gradient(140deg,#2832C8 0%,#A855F7 60%,#F5A524 100%);display:flex;align-items:center;justify-content:center;color:#FFFFFF;box-shadow:0 0 0 2px var(--edge),0 6px 18px rgba(40,50,200,0.35)">${ic(P.user, isz, 1.9)}${ph ? `<span style="position:absolute;top:0;right:0;bottom:0;left:0;background:url('${esc(ph)}') center/cover no-repeat"></span>` : ''}</span>${dot ? `<span class="round" aria-hidden="true" style="position:absolute;right:0;bottom:0;width:${dot}px;height:${dot}px;border-radius:50%;background:#22C55E;box-shadow:0 0 0 ${dot > 14 ? 3 : 2}px var(--bg),0 0 8px rgba(34,197,94,0.6)"></span>` : ''}</span>`; };
 const chAvatar = (photo, i) => { const t = TONES[i % 4]; return `<span class="round" style="position:relative;width:48px;height:48px;flex-shrink:0;border-radius:24px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:var(--${t[0]});color:var(--${t[1]})">${ic(P.mega)}<span style="position:absolute;top:0;right:0;bottom:0;left:0;background:url('${esc(photo)}') center/cover no-repeat"></span></span>`; };
 const note = (t) => `<div ${glass(36, '14px 18px', 'margin:12px 16px 0;display:flex;align-items:center;gap:12px;flex-shrink:0')}><span style="color:var(--muted);display:flex;flex-shrink:0">${ic(P.info, 20)}</span><span style="font-size:13px;line-height:1.7;font-weight:500">${t}</span></div>`;
-const primaryBtn = (act, label, icon = '', data = '', dis = false) => `<button class="round press" data-act="${act}" ${data} ${dis ? 'disabled' : ''} style="width:100%;height:56px;border:0;border-radius:28px;background:var(--primary);color:#FFFFFF;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;box-shadow:var(--pshadow);opacity:${dis ? .55 : 1};transition:opacity .3s ease">${icon}<span>${label}</span></button>`;
+const primaryBtn = (act, label, icon = '', data = '', dis = false) => `<button class="round press" data-act="${act}" ${data} ${dis ? 'disabled' : ''} style="width:100%;height:56px;border:0;border-radius:28px;background:var(--primary);color:var(--onp);font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;box-shadow:var(--pshadow);opacity:${dis ? .55 : 1};transition:opacity .3s ease">${icon}<span>${label}</span></button>`;
 const badge = (cls, text) => { const m = { bad: ['ared', 'aredt'], wait: ['gifticon', 'gifttint'], active: ['accent', 'tint'], done: ['mint', 'minttint'], gift: ['gifticon', 'gifttint'] }[cls]; return `<span style="font-size:12px;font-weight:700;border-radius:20px;padding:3px 12px;color:var(--${m[0]});background:var(--${m[1]})">${text}</span>`; };
 const bar = (pct, done) => `<div style="height:6px;border-radius:999px;background:var(--track);overflow:hidden"><div style="height:6px;border-radius:999px;width:${pct}%;background:var(--${done ? 'mintfill' : 'primary'});box-shadow:0 0 8px var(--${done ? 'mintfill' : 'primary'});transition:width .5s cubic-bezier(0.22,1,0.36,1)"></div></div>`;
 const slide = (n, i, pad, gap, bg, shadow, radius) => `position:absolute;top:${pad}px;bottom:${pad}px;right:${pad}px;width:calc((100% - ${2 * pad + (n - 1) * gap}px) / ${n});border-radius:${radius}px;background:${bg};box-shadow:${shadow};transform:translateX(calc(${-i * 100}% - ${i * gap}px));transition:transform .45s cubic-bezier(0.22,1,0.36,1),background-color .32s ease-out;pointer-events:none`;
@@ -414,13 +470,13 @@ ${topSection()}
 }
 
 function linkRow(link) {
-  return `<div style="display:flex;gap:8px"><div class="round" style="flex:1;min-width:0;height:48px;box-sizing:border-box;border-radius:24px;background:var(--field);padding:0 16px;display:flex;align-items:center;direction:ltr;font-size:13px;color:var(--muted)"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((link || '').replace('https://', ''))}</span></div><button class="round press" data-act="copy" style="height:48px;border:0;border-radius:24px;background:var(--primary);color:#FFFFFF;font-size:14px;font-weight:700;padding:0 20px;display:flex;align-items:center;gap:8px;cursor:pointer;box-shadow:var(--pshadow)">${ic(P.copy, 18)}<span>${S.copied ? 'کپی شد' : 'کپی لینک'}</span></button></div>`;
+  return `<div style="display:flex;gap:8px"><div class="round" style="flex:1;min-width:0;height:48px;box-sizing:border-box;border-radius:24px;background:var(--field);padding:0 16px;display:flex;align-items:center;direction:ltr;font-size:13px;color:var(--muted)"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((link || '').replace('https://', ''))}</span></div><button class="round press" data-act="copy" style="height:48px;border:0;border-radius:24px;background:var(--primary);color:var(--onp);font-size:14px;font-weight:700;padding:0 20px;display:flex;align-items:center;gap:8px;cursor:pointer;box-shadow:var(--pshadow)">${ic(P.copy, 18)}<span>${S.copied ? 'کپی شد' : 'کپی لینک'}</span></button></div>`;
 }
 
 function pageJoin() {
   const c = cfg(), list = S.list;
   const stat = (l, v, col) => `<div style="background:rgba(255,255,255,0.1);border-radius:36px;padding:14px 18px;display:flex;flex-direction:column;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.1)"><span style="font-size:11px;color:var(--hsub)">${lab(l, 14)}</span><span style="font-size:16px;font-weight:800;${col || ''}">${v}</span></div>`;
-  const row = (it, i) => { const op = !!S.opened[it.code]; return `<div ${glass(36, '14px 14px 14px 16px', 'display:flex;align-items:center;gap:12px')}>${chAvatar(it.photo, i)}<div style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:15px;font-weight:700;line-height:1.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><bdi>${esc(it.title || it.channel)}</bdi></span>${it.title ? `<span style="font-size:12px;color:var(--muted);line-height:1.5;direction:ltr;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.channel)}</span>` : ''}</div><button class="round press" data-act="joinRow" data-code="${esc(it.code)}" ${S.busy ? 'disabled' : ''} style="height:44px;border:0;border-radius:22px;font-size:13px;font-weight:700;padding:0 20px;flex-shrink:0;cursor:pointer;color:#FFFFFF;transition:background-color .3s ease,box-shadow .3s ease;background:var(${op ? '--agreenbtn' : '--primary'});box-shadow:${op ? '0 8px 24px color-mix(in srgb, var(--agreenbtn) 45%, transparent)' : 'var(--pshadow)'}">${op ? 'جوین شدم' : 'جوین'}</button></div>`; };
+  const row = (it, i) => { const op = !!S.opened[it.code]; return `<div ${glass(36, '14px 14px 14px 16px', 'display:flex;align-items:center;gap:12px')}>${chAvatar(it.photo, i)}<div style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:15px;font-weight:700;line-height:1.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><bdi>${esc(it.title || it.channel)}</bdi></span>${it.title ? `<span style="font-size:12px;color:var(--muted);line-height:1.5;direction:ltr;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.channel)}</span>` : ''}</div><button class="round press" data-act="joinRow" data-code="${esc(it.code)}" ${S.busy ? 'disabled' : ''} style="height:44px;border:0;border-radius:22px;font-size:13px;font-weight:700;padding:0 20px;flex-shrink:0;cursor:pointer;color:${op ? '#FFFFFF' : 'var(--onp)'};transition:background-color .3s ease,box-shadow .3s ease;background:var(${op ? '--agreenbtn' : '--primary'});box-shadow:${op ? '0 8px 24px color-mix(in srgb, var(--agreenbtn) 45%, transparent)' : 'var(--pshadow)'}">${op ? 'جوین شدم' : 'جوین'}</button></div>`; };
   const slot = dashed('gift', 'اینجا محل قرار گرفتن کانال شماست!', 32, 'جایگاه کانال', P.mega, 'plus').replace('margin:10px 16px 0', 'margin:0');
   let body;
   if (list === undefined) body = empty('در حال جستجوی کانال‌ها…');
@@ -484,7 +540,7 @@ function svcInfo() {
 function emojiPicker(sel = S.emoji, act = 'pickEmoji', title = 'نوع ری‌اکشن', first = null) {
   sel = sel === undefined ? S.emoji : sel;
   const r = D().reactions;
-  const chip = (label, val = label) => `<button class="round press" data-act="${act}" data-v="${esc(val)}" style="height:40px;border:0;border-radius:20px;padding:0 16px;font-size:13px;font-weight:600;cursor:pointer;transition:background-color .3s ease,color .3s ease,box-shadow .3s ease;${sel === val ? 'background:var(--primary);color:#FFFFFF;box-shadow:var(--pshadow)' : 'background:var(--field);color:var(--ink)'}">${label}</button>`;
+  const chip = (label, val = label) => `<button class="round press" data-act="${act}" data-v="${esc(val)}" style="height:40px;border:0;border-radius:20px;padding:0 16px;font-size:13px;font-weight:600;cursor:pointer;transition:background-color .3s ease,color .3s ease,box-shadow .3s ease;${sel === val ? 'background:var(--primary);color:var(--onp);box-shadow:var(--pshadow)' : 'background:var(--field);color:var(--ink)'}">${label}</button>`;
   return `<div ${glass(36, '14px', 'margin:12px 16px 0;display:flex;flex-direction:column;gap:10px;flex-shrink:0')}><span style="font-size:14px;font-weight:700">${title}</span><div style="display:flex;gap:8px;flex-wrap:wrap">${first ? chip(first, '') : ''}${r.combos.map(x => chip(x)).join('')}</div><div class="scroller" style="max-height:208px;overflow-y:auto;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">${r.emojis.map(e => `<button class="round press" data-act="${act}" data-v="${esc(e)}" style="height:40px;border:0;border-radius:20px;font-size:20px;cursor:pointer;transition:background-color .3s ease,box-shadow .3s ease;background:${sel === e ? 'var(--tint)' : 'transparent'};box-shadow:${sel === e ? 'inset 0 0 0 2px var(--primary)' : 'inset 0 0 0 0 transparent'}">${e}</button>`).join('')}</div></div>`;
 }
 const RICH = {
@@ -562,12 +618,12 @@ function doneBox(code) {
 function pageNewRequest() {
   const d = D(), c = cfg(), cnt = S.reqCount, cost = cnt * c.tokensPerMember, bal = d.balance;
   const afford = cost <= bal, rem = Math.round((bal - cost) * 100) / 100;
-  const chip = v => `<button class="round press" aria-pressed="${cnt === v}" data-act="setCount" data-v="${v}" style="height:40px;border:0;border-radius:20px;padding:0;font-size:13px;font-weight:600;cursor:pointer;transition:background-color .3s ease,color .3s ease,box-shadow .3s ease;${cnt === v ? 'background:var(--primary);color:#FFFFFF;box-shadow:var(--pshadow)' : 'background:var(--field);color:var(--ink);box-shadow:0 0 0 0 transparent'}">${fa(v)}</button>`;
+  const chip = v => `<button class="round press" aria-pressed="${cnt === v}" data-act="setCount" data-v="${v}" style="height:40px;border:0;border-radius:20px;padding:0;font-size:13px;font-weight:600;cursor:pointer;transition:background-color .3s ease,color .3s ease,box-shadow .3s ease;${cnt === v ? 'background:var(--primary);color:var(--onp);box-shadow:var(--pshadow)' : 'background:var(--field);color:var(--ink);box-shadow:0 0 0 0 transparent'}">${fa(v)}</button>`;
   return `${titleBlock('درخواست JFJ جدید', 'هر عضو ' + fa(c.tokensPerMember) + ' شاهی هزینه دارد.', true)}
 ${tips(c, ['bot', 'leave'])}
 ${inputBox('reqLink', 'کانال یا گروه', '@channel_username', S.reqLink, `آیدی کانال را با @ وارد کن و ربات (@${esc(c.botUsername)}) را ادمین کانال کن.`)}
 <div ${glass(36, '16px', 'margin:12px 16px 0;display:flex;flex-direction:column;gap:14px;flex-shrink:0')}><span style="font-size:14px;font-weight:700">تعداد عضو</span>
-<div style="display:flex;align-items:center;justify-content:space-between"><button class="round press" aria-label="کم کردن" data-act="decCount" style="width:48px;height:48px;border:0;border-radius:24px;background:var(--field);color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer">${ic(P.minus, 20, 2)}</button><span style="font-size:36px;font-weight:800;line-height:1.2">${fa(cnt)}</span><button class="round press" aria-label="زیاد کردن" data-act="incCount" style="width:48px;height:48px;border:0;border-radius:24px;background:var(--primary);color:#FFFFFF;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--pshadow)">${ic(P.plusSign, 20, 2)}</button></div>
+<div style="display:flex;align-items:center;justify-content:space-between"><button class="round press" aria-label="کم کردن" data-act="decCount" style="width:48px;height:48px;border:0;border-radius:24px;background:var(--field);color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer">${ic(P.minus, 20, 2)}</button><span style="font-size:36px;font-weight:800;line-height:1.2">${fa(cnt)}</span><button class="round press" aria-label="زیاد کردن" data-act="incCount" style="width:48px;height:48px;border:0;border-radius:24px;background:var(--primary);color:var(--onp);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--pshadow)">${ic(P.plusSign, 20, 2)}</button></div>
 <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">${[3, 5, 10, 15, 30, 50, 100].map(chip).join('')}</div></div>
 ${summary([['هزینه', num(cost) + ' شاهی'], ['دارایی شما', num(bal) + ' شاهی'], [afford ? 'باقی‌مانده' : 'کمبود', num(Math.abs(rem)) + ' شاهی', 'color:var(--' + (afford ? 'ink' : 'rose') + ')']])}
 ${S.requested ? doneBox(S.requested) : afford ? `<div style="margin:16px 16px 0;flex-shrink:0">${primaryBtn('submitReq', 'ثبت درخواست', '', '', S.busy)}</div>` : `${dashed('rose', 'موجودی کافی نیست. برای این درخواست ' + num(Math.round(-rem * 100) / 100) + ' شاهی دیگر نیاز داری.')}<div style="margin:12px 16px 0">${primaryBtn('goBuyTokenFromReq', 'خرید شاهی', ic(P.coins))}</div>`}`;
@@ -665,10 +721,50 @@ function navTab() {
 }
 
 const THEME_LIST = [
-  ['تم روز', [['light', 'نارنجی (پیش‌فرض)', '#E26F00', '#FFF7EA'], ['light2', 'یاسی', '#7C6BAE', '#CFC8F8'], ['light3', 'قهوه‌ای', '#8C7562', '#D8C5AD'], ['light4', 'سلطنتی', '#8B0000', '#D4AF37']]],
-  ['تم دارک', [['dark', 'آبی (پیش‌فرض)', '#3440D6', '#080B1F'], ['dark2', 'سایبرپانک', '#FF2E97', '#27F1FF'], ['dark3', 'سلطنتی', '#8B0000', '#D4AF37']]],
+  ['تم روز', [['light', 'نارنجی (پیش‌فرض)', '#E26F00', '#FFF7EA'], ['light5', 'صورتی باربی', '#E8308A', '#FFF0F7'], ['light6', 'لیموی اسیدی', '#A8EE2E', '#F5FBE6'], ['light2', 'یاسی', '#7C6BAE', '#CFC8F8'], ['light3', 'قهوه‌ای', '#8C7562', '#D8C5AD'], ['light4', 'سلطنتی', '#8B0000', '#D4AF37']]],
+  ['تم دارک', [['dark', 'آبی (پیش‌فرض)', '#3440D6', '#080B1F'], ['dark4', 'صورتی باربی', '#FF4D9F', '#1A0B1A'], ['dark5', 'لیموی اسیدی', '#B6FF42', '#0D0F0A'], ['dark2', 'سایبرپانک', '#FF2E97', '#27F1FF'], ['dark3', 'سلطنتی', '#8B0000', '#D4AF37']]],
   ['', [['system', 'خودکار (مطابق گوشی)', '#F59E0B', '#3440D6']]]
 ];
+
+/* ---------------------------------------------------------------- اولین ورود: انتخاب رنگ منو */
+const TH_PV = {   /* [پس‌زمینه، سطح، رنگ اصلی، رنگ تأکید، متن] برای پیش‌نمایش کارت‌ها */
+  dark: ['#080B1F', '#181B36', '#3440D6', '#A9B1FF', '#ECEEFF'], dark2: ['#0B0614', '#220E3C', '#D81B7F', '#27F1FF', '#F6EAFF'],
+  dark3: ['#1A1A1A', '#2E241E', '#8B0000', '#D4AF37', '#F7F0DC'], dark4: ['#1A0B1A', '#3B183D', '#FF4D9F', '#FF9ECF', '#FFFFFF'],
+  dark5: ['#0D0F0A', '#24321B', '#B6FF42', '#DDFDB8', '#FFFFFF'], light: ['#FFF7EA', '#FFFFFF', '#E26F00', '#B45309', '#33200A'],
+  light2: ['#F1FEFF', '#FFFFFF', '#7C6BAE', '#5B4A94', '#2B2540'], light3: ['#F8EFE3', '#FFFFFF', '#8C7562', '#6B5442', '#332821'],
+  light4: ['#FFFDF7', '#FFFFFF', '#8B0000', '#D4AF37', '#2A1414'], light5: ['#FFF0F7', '#FFFFFF', '#E8308A', '#B3125F', '#3A0F26'],
+  light6: ['#F5FBE6', '#FFFFFF', '#A8EE2E', '#44720A', '#1B2A0A']
+};
+function pvCard(k, name) {
+  const t = TH_PV[k], on = S.theme === k;
+  const bar = (w, c, h = 6, o = 1) => `<i style="display:block;width:${w};height:${h}px;border-radius:${h}px;background:${c};opacity:${o}"></i>`;
+  const sw = k === 'system' ? 'linear-gradient(135deg,#FFF7EA 50%,#080B1F 50%)' : `linear-gradient(150deg,${t[0]},${t[0]} 55%,color-mix(in srgb,${t[2]} 22%,${t[0]}))`;
+  const body = k === 'system'
+    ? `<div style="display:flex;flex:1;align-items:center;justify-content:center;gap:10px"><span style="width:42px;height:42px;border-radius:21px;background:#FFF7EA;box-shadow:0 0 0 2px #E26F00"></span><span style="width:42px;height:42px;border-radius:21px;background:#080B1F;box-shadow:0 0 0 2px #3440D6"></span></div>`
+    : `<div class="pk-r"><i style="display:flex;align-items:center;width:34px;height:15px;border-radius:8px;background:${t[1]};padding:0 3px;box-sizing:border-box"><i style="width:9px;height:9px;border-radius:5px;background:${t[2]}"></i></i>${bar('44px', t[4], 7, .85)}</div>
+      ${bar('100%', t[1], 15)}
+      <div class="pk-r" style="gap:7px"><span style="flex:1;height:34px;border-radius:11px;background:${t[1]};padding:9px 8px;box-sizing:border-box">${bar('70%', t[4], 5, .8)}</span><span style="flex:1;height:34px;border-radius:11px;background:${t[1]};padding:9px 8px;box-sizing:border-box">${bar('70%', t[2], 5)}</span></div>
+      <div style="display:flex;justify-content:center"><i style="display:flex;align-items:center;width:62%;height:17px;border-radius:9px;background:${t[1]};padding:0 3px;box-sizing:border-box"><i style="width:22px;height:9px;border-radius:5px;background:${t[2]}"></i></i></div>`;
+  return `<button class="pk-c ${on ? 'on' : ''}" data-act="pickSel" data-v="${k}" aria-pressed="${on}"><span class="pk-pv" style="background:${sw}">${body}</span><span class="pk-n"><b>${name}</b><span class="pk-ck">${ic(P.check, 14, 3)}</span></span></button>`;
+}
+function pickHtml() {
+  if (!S.pick) return '';
+  const grp = (title, keys) => `<div class="pk-g">${title}</div><div class="pk-grid">${keys.map(k => { const row = THEME_LIST.flatMap(g => g[1]).find(x => x[0] === k); return pvCard(k, row ? row[1].replace(' (پیش‌فرض)', '') : k); }).join('')}</div>`;
+  const sysOn = S.theme === 'system';
+  return `<div id="pickW" role="dialog" aria-label="انتخاب رنگ منو"><i class="pk-aur"></i><i class="pk-aur b"></i>
+    <div id="pickS">
+      <div style="display:flex;justify-content:flex-start"><button class="pk-x press" data-act="pickOk" aria-label="بستن"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div style="margin-top:6px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px">
+        <span class="round" style="width:76px;height:76px;border-radius:26px;background:linear-gradient(140deg,var(--primary),var(--accent));color:var(--onp);display:flex;align-items:center;justify-content:center;box-shadow:var(--pshadow);transition:background .4s ease;animation:spFloat 5s ease-in-out infinite">${ic(P.palette, 38, 1.8)}</span>
+        <h1 style="margin:8px 0 0;font-size:27px;line-height:1.5;font-weight:800">منو با چه رنگی دوست داری؟</h1>
+        <p style="margin:0;max-width:300px;font-size:14px;line-height:1.9;color:var(--muted)">یکی رو انتخاب کن، هر وقت دلت خواست از منوی بالا ← «تغییر تم» عوضش می‌کنی.</p>
+      </div>
+      ${grp('تم دارک', ['dark4', 'dark5', 'dark', 'dark2', 'dark3'])}
+      ${grp('تم روز', ['light5', 'light6', 'light', 'light2', 'light3', 'light4'])}
+      <div class="pk-g">خودکار</div><div class="pk-grid" style="grid-template-columns:1fr">${pvCard('system', 'مطابق گوشی')}</div>
+    </div>
+    <div class="pk-cta"><button class="pk-go press" data-act="pickOk">همینو می‌خوام</button></div></div>`;
+}
 function menuHtml() {
   const m = S.menu || S.menuLast;
   if (!m) return '';
@@ -703,7 +799,7 @@ function headHtml() {
   const base = 'position:absolute;top:0;left:0;transition:opacity .3s cubic-bezier(0.2,0,0,1),transform .3s cubic-bezier(0.2,0,0,1),filter .3s cubic-bezier(0.2,0,0,1);';
   const on = 'opacity:1;transform:scale(1);filter:blur(0px)', off = 'opacity:0;transform:scale(0.25);filter:blur(4px)';
   const ico = (k, p) => ic(p, 22, 1.75, `style="${base}color:${icol(p) || 'currentColor'};${th === k ? on : off}"`);
-  return `<div style="display:flex;align-items:center;justify-content:space-between;height:84px;padding:16px 28px 0;flex-shrink:0"><div style="display:flex;align-items:center;gap:12px"><button data-act="goAccount" aria-label="حساب من" class="press" style="border:0;background:transparent;padding:0;cursor:pointer;display:block;border-radius:24px">${avatarHtml(48, 24, 9)}</button><div style="display:flex;flex-direction:column;gap:2px"><span style="display:flex;align-items:center;gap:5px;height:22px"><span style="font-weight:800;font-size:17px;line-height:22px;white-space:nowrap">جفج شاهنشاهی</span>${TICK}</span><span style="font-size:13px;line-height:18px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:132px">سلام، <bdi>${esc(name || 'دوست من')}</bdi>!</span></div></div><div style="display:flex;align-items:center;gap:10px"><button class="glass round press" data-act="goNotices" aria-label="اعلان‌ها" style="position:relative;width:48px;height:48px;border-radius:24px;border:1px solid var(--edge);background:var(--surface);color:#F59E0B;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;cursor:pointer"><span style="display:flex;${unread ? 'animation:bellRing 4s ease-in-out infinite;transform-origin:50% 10%' : ''}">${ic(P.bell, 22)}</span>${unread ? `<span style="position:absolute;top:-3px;left:-3px;min-width:18px;height:18px;padding:0 4px;box-sizing:border-box;border-radius:9px;background:linear-gradient(145deg,#FF7A92,#D6153B);color:#fff;font-size:10px;font-weight:800;line-height:18px;text-align:center;box-shadow:0 0 0 2px var(--bg),0 3px 8px rgba(214,21,59,0.5)">${unread > 9 ? '٩+' : fa(unread)}</span>` : ''}</button><button class="glass round press" data-act="menu" aria-label="منو" aria-expanded="${S.menu ? 'true' : 'false'}" style="width:48px;height:48px;border-radius:24px;border:1px solid var(--edge);background:var(--surface);color:var(--accent);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;cursor:pointer"><svg class="hb ${S.menu ? 'open' : ''}" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true"><line class="l1" x1="4" y1="7" x2="20" y2="7"></line><line class="l2" x1="4" y1="12" x2="20" y2="12"></line><line class="l3" x1="4" y1="17" x2="20" y2="17"></line></svg></button></div></div>`;
+  return `<div style="display:flex;align-items:center;justify-content:space-between;height:84px;padding:16px 28px 0;flex-shrink:0"><div style="display:flex;align-items:center;gap:12px"><button data-act="goAccount" aria-label="حساب من" class="press" style="border:0;background:transparent;padding:0;cursor:pointer;display:block;border-radius:24px">${avatarHtml(48, 24, 9)}</button><div style="display:flex;flex-direction:column;gap:2px"><span style="display:flex;align-items:center;gap:5px;height:22px"><span style="font-weight:800;font-size:17px;line-height:22px;white-space:nowrap">جفج شاهنشاهی</span>${TICK}</span><span style="font-size:13px;line-height:18px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:132px">سلام، <bdi>${esc(name || 'دوست من')}</bdi>!</span></div></div><div style="display:flex;align-items:center;gap:10px"><button class="glass round press" data-act="goNotices" aria-label="اعلان‌ها" style="position:relative;width:48px;height:48px;border-radius:24px;border:1px solid var(--edge);background:var(--surface);color:#F59E0B;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;cursor:pointer"><span style="display:flex;${unread ? 'animation:bellRing 4s ease-in-out infinite;transform-origin:50% 10%' : ''}">${ic(P.bell, 22)}</span>${unread ? `<span style="position:absolute;top:-3px;left:-3px;min-width:18px;height:18px;padding:0 4px;box-sizing:border-box;border-radius:9px;background:linear-gradient(145deg,#FF7A92,#D6153B);color:#fff;font-size:10px;font-weight:800;line-height:18px;text-align:center;box-shadow:0 0 0 2px var(--bg),0 3px 8px rgba(214,21,59,0.5)">${unread > 9 ? '٩+' : fa(unread)}</span>` : ''}</button><button class="glass round press" data-act="menu" aria-label="منو" aria-expanded="${S.menu ? 'true' : 'false'}" style="width:48px;height:48px;border-radius:24px;border:1px solid var(--edge);background:var(--surface);color:var(--accent);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;cursor:pointer"><span class="hb ${S.menu ? 'open' : ''}" aria-hidden="true"><i></i><i></i><i></i></span></button></div></div>`;
 }
 
 function navHtml() {
@@ -739,6 +835,7 @@ function render(full) {
   patch($('head'), headHtml());
   $('menu').className = (!S.menu && S.menuLast) ? 'out' : '';
   patch($('menu'), menuHtml());
+  patch($('pick'), pickHtml());
   patch($('nav'), navHtml());
   const pg = $('page');
   let html;
@@ -877,7 +974,9 @@ const A = {
   menu: () => { if (S.menu) A.menuClose(); else { clearTimeout(A._mt); S.menuLast = null; S.menu = 'main'; render(); } },
   menuClose: () => { if (!S.menu) return; S.menuLast = S.menu; S.menu = null; render(); clearTimeout(A._mt); A._mt = setTimeout(() => { S.menuLast = null; render(); }, 260); },
   menuTheme: () => { S.menu = S.menu === 'theme' ? 'main' : 'theme'; render(); },
-  setTheme: (d) => { if (!THEMES.includes(d.v)) return; const rt = $('root'); rt.classList.add('tswitch'); clearTimeout(A._ts); A._ts = setTimeout(() => rt.classList.remove('tswitch'), 420); S.theme = d.v; try { localStorage.setItem('jfj_theme', S.theme); } catch (e) {} render(); },
+  setTheme: (d) => { if (!THEMES.includes(d.v)) return; const rt = $('root'); rt.classList.add('tswitch'); clearTimeout(A._ts); A._ts = setTimeout(() => rt.classList.remove('tswitch'), 420); S.theme = d.v; themeStoreSet(S.theme, false); render(); },
+  pickSel: (d) => { if (!THEMES.includes(d.v)) return; const rt = $('root'); rt.classList.add('tswitch'); clearTimeout(A._ts); A._ts = setTimeout(() => rt.classList.remove('tswitch'), 420); S.theme = d.v; render(); },
+  pickOk: () => { themeStoreSet(S.theme, true); S.pick = false; render(); },
   goRules: () => { S.menu = null; S.menuLast = null; go('rules', S.tab === 'rules' ? 'home' : S.tab); },
   goSupportM: () => { S.menu = null; S.menuLast = null; go('support', S.tab === 'support' ? 'home' : S.tab); },
   copy: () => { if (D() && D().refLink) copyText(D().refLink); },
@@ -983,6 +1082,7 @@ async function spFinish() {
   SP.p = 100; spPaint();
   await sleep(Math.max(250, 1500 - (Date.now() - SP.t0)));
   clearInterval(spTimer); clearInterval(SP.tagT);
+  try { await THEME_BOOT; render(); } catch (e) {}
   const sp = $('splash'); sp.classList.add('out');
   setTimeout(() => { sp.remove(); }, 700);
   SP.active = false;
@@ -992,7 +1092,7 @@ function spError(msg) {
   clearInterval(spTimer);
   $('spMsg').textContent = 'اتصال برقرار نشد';
   const e = $('spErr'); e.style.display = 'flex';
-  e.innerHTML = `<span style="font-size:13px;line-height:1.9;color:var(--rose)">${esc(msg)}</span><button class="round press" data-act="retry" style="height:46px;border:0;border-radius:23px;padding:0 28px;background:var(--primary);color:#FFFFFF;font-size:14px;font-weight:700;cursor:pointer;box-shadow:var(--pshadow)">تلاش دوباره</button>`;
+  e.innerHTML = `<span style="font-size:13px;line-height:1.9;color:var(--rose)">${esc(msg)}</span><button class="round press" data-act="retry" style="height:46px;border:0;border-radius:23px;padding:0 28px;background:var(--primary);color:var(--onp);font-size:14px;font-weight:700;cursor:pointer;box-shadow:var(--pshadow)">تلاش دوباره</button>`;
 }
 A.retry = () => location.reload();
 async function boot() {
@@ -1023,11 +1123,11 @@ function showFjGate(list) {
   S.fjList = list; SP.gate = true;
   const g = $('fjGate'); g.style.display = 'flex';
   g.innerHTML = `<div style="text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:6px">
-    <span class="round" style="width:64px;height:64px;border-radius:22px;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:var(--pshadow)">${ic(P.mega, 32)}</span>
+    <span class="round" style="width:64px;height:64px;border-radius:22px;background:linear-gradient(135deg,var(--primary),var(--accent));color:var(--onp);display:flex;align-items:center;justify-content:center;box-shadow:var(--pshadow)">${ic(P.mega, 32)}</span>
     <span style="font-size:18px;font-weight:800;line-height:1.7">اول عضو کانال‌های زیر شو</span>
     <span style="font-size:13px;color:var(--muted);line-height:1.9">بعد از عضویت، دکمه‌ی «عضو شدم» را بزن تا وارد شوی.</span></div>`
     + list.map((c, i) => `<div class="fjc"><span class="fjav">${esc((c.title || '؟').trim().charAt(0) || '؟')}</span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.title)}</div><div style="font-size:11.5px;color:var(--muted)">${c.sponsor ? 'اسپانسر' : 'کانال/گروه'}</div></div>${c.link ? `<button class="fjj press" data-act="fjOpen" data-i="${i}">عضویت</button>` : ''}</div>`).join('')
-    + `<button class="round press" data-act="fjCheck" style="height:54px;border:0;border-radius:27px;background:var(--primary);color:#fff;font:inherit;font-size:15px;font-weight:800;cursor:pointer;margin-top:6px;box-shadow:var(--pshadow)">✅ عضو شدم، ورود</button>
+    + `<button class="round press" data-act="fjCheck" style="height:54px;border:0;border-radius:27px;background:var(--primary);color:var(--onp);font:inherit;font-size:15px;font-weight:800;cursor:pointer;margin-top:6px;box-shadow:var(--pshadow)">✅ عضو شدم، ورود</button>
     <span id="fjMsg" style="min-height:20px;text-align:center;font-size:12.5px;color:var(--rose)"></span>`;
   $('spMsg').textContent = '';
 }
