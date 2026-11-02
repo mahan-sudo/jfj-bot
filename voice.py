@@ -475,7 +475,9 @@ def on_group_message(message):
         if not text or text.startswith("/") or not has_jfj(text):
             return
         if not _on():
+            logging.info("vc: جفج در گروه %s دیده شد ولی صدای جفج خاموش است", message["chat"]["id"])
             return
+        logging.info("vc: جفج در گروه %s از کاربر %s دیده شد", message["chat"]["id"], user.get("id"))
         chat_id = message["chat"]["id"]
         uid = user["id"]
         now = time.time()
@@ -497,8 +499,9 @@ def _work(message, user, text):
         chat_id = message["chat"]["id"]
         r, m, lvl, kb = reply_to(chat_id, user, message["message_id"], text, message.get("message_thread_id"))
         if not r.get("ok"):
-            logging.info("vc send failed: %s", _desc(r)[:160])
+            logging.warning("vc: ارسال پاسخ ناموفق بود (گروه %s): %s", chat_id, _desc(r)[:200])
             return
+        logging.info("vc: پاسخ ارسال شد (گروه %s، حالت %s)", chat_id, m)
         if m == "public":
             mid = (r.get("result") or {}).get("message_id")
             if mid:
