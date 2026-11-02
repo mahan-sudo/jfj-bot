@@ -2636,6 +2636,7 @@ def render_general():
         f"⏱ کرون ارسال اطلاعیه: <b>{_fmt_dur(cron_sec())}</b> بین هر دو نفر\n"
         f"📛 متن قوانین: {'✏️ سفارشی' if get_setting('rules_text') else '📄 پیش‌فرض'}\n"
         f"📣 گزارشات ربات: {'🟢 فعال' if rep_ready() else '🔴 تنظیم نشده'}\n"
+        f"🗣 صدای جفج: {'🟢 روشن (' + ('پیام مخفی' if get_setting('vc_mode', 'hide') != 'public' else 'پیام عمومی') + ')' if sbool('vc_on', '1') else '🔴 خاموش'}\n"
         "\n👇 <i>برای تغییر هر مورد، دکمه‌اش را بزنید.</i>"
     )
     kb = _kb(
@@ -2649,6 +2650,7 @@ def render_general():
         [_ab("📛 ویرایش قوانین", "adm_p:g:in:rules", SUCCESS), _ab("♻️ قوانین پیش‌فرض", "adm_p:g:rr", DANGER)],
         [_ab("👁 پیش‌نمایش قوانین", "adm_p:g:rv")],
         [_ab("📣 گزارشات ربات", "adm_p:x:rep", SUCCESS if rep_ready() else DANGER)],
+        [_ab("🗣 صدای جفج", "adm_p:x:vc", SUCCESS if sbool("vc_on", "1") else DANGER)],
         [_ab("♻️ بازیابی بکاپ", "adm_p:x:rs", SUCCESS)],
     )
     return text, kb
@@ -5739,7 +5741,38 @@ def render_games():
     return text, _kb(*rows)
 
 
-XPAGES = {"gm": render_games, "mc": render_mass_charge, "bk": render_block_list, "us": render_users, "cb": render_chan_bc, "sec": render_sections, "cron": render_cron, "fj": render_fj, "pay": render_pay, "bon": render_bonus, "disc": render_disc}
+def render_voice():
+    on = sbool("vc_on", "1")
+    pub = get_setting("vc_mode", "hide") == "public"
+    fb = sbool("vc_fb", "1")
+    n_lines = VOICE._total_lines() if VOICE else 0
+    try:
+        safe = VOICE.levels_count() if VOICE else 0
+    except Exception:
+        safe = 0
+    text = (
+        "🗣 <b>صدای جفج</b>\n" + LINE + "\n"
+        "هر پیام گروهی که کلمه‌ی «جفج» داشته باشد (حتی سانسورشده: ج.ف.ج ، جف-ج ، ج ف ج ، جج ، JFJ …) ربات با یک پاسخ گرم و صمیمی جواب می‌دهد.\n\n"
+        f"🔘 وضعیت: <b>{'🟢 روشن' if on else '🔴 خاموش'}</b>\n"
+        f"📨 نوع ارسال: <b>{'🌍 PUBLIC (ریپلای روی پیام کاربر؛ همه می‌بینند)' if pub else '🙈 HIDE (پیام موقت؛ فقط خود کاربر می‌بیند)'}</b>\n"
+        f"🛟 پشتیبان HIDE: <b>{'روشن (اگر پیام مخفی ممکن نبود، PUBLIC می‌فرستد)' if fb else 'خاموش (اگر ممکن نبود چیزی نمی‌فرستد)'}</b>\n"
+        f"💬 تعداد پاسخ‌های آماده: <b>{_n(n_lines)}</b>\n"
+        f"🛡 گروه‌هایی که پیام ربات در آن‌ها پاک شده و در حالت امن هستند: <b>{_n(safe)}</b>\n\n"
+        "ℹ️ HIDE فقط در گروه/سوپرگروه کار می‌کند و تلگرام ممکن است برای ربات‌هایی که ادمین نیستند اجازه ندهد.\n"
+        "ℹ️ اگر پیام ربات در گروهی پاک شود، ربات خودش اول بدون «/» و «@» و بعد بدون دکمه می‌فرستد (۱۲ ساعت بعد دوباره تست می‌کند)."
+    )
+    kb = _kb(
+        [_ab("🔴 خاموش کردن" if on else "🟢 روشن کردن", "adm_p:x:vc_tg", DANGER if on else SUCCESS)],
+        [_ab("🙈 HIDE (فقط خود کاربر)" + (" ✅" if not pub else ""), "adm_p:x:vc_m:hide", PRIMARY),
+         _ab("🌍 PUBLIC (ریپلای)" + (" ✅" if pub else ""), "adm_p:x:vc_m:public", PRIMARY)],
+        [_ab("🛟 پشتیبان HIDE: " + ("روشن" if fb else "خاموش"), "adm_p:x:vc_fb", SUCCESS if fb else DANGER)],
+        [_ab("👁 پیش‌نمایش نمونه", "adm_p:x:vc_pv", SUCCESS), _ab("♻️ ریست حالت امن گروه‌ها", "adm_p:x:vc_rs", DANGER)],
+        [_ab("🔙 تنظیمات عمومی", "adm_p:g:home")],
+    )
+    return text, kb
+
+
+XPAGES = {"vc": render_voice, "gm": render_games, "mc": render_mass_charge, "bk": render_block_list, "us": render_users, "cb": render_chan_bc, "sec": render_sections, "cron": render_cron, "fj": render_fj, "pay": render_pay, "bon": render_bonus, "disc": render_disc}
 
 
 # =====================================================================
@@ -6127,6 +6160,34 @@ def v2_admin_callback(cq):
                     set_setting("fj_list", json.dumps(lst, ensure_ascii=False))
                 ack("حذف شد.")
                 return page("fj") or True
+            if act == "vc_tg":
+                set_setting("vc_on", "0" if sbool("vc_on", "1") else "1")
+                ack("تغییر کرد.")
+                return page("vc") or True
+            if act == "vc_m":
+                set_setting("vc_mode", "public" if args and args[0] == "public" else "hide")
+                ack("ذخیره شد.")
+                return page("vc") or True
+            if act == "vc_fb":
+                set_setting("vc_fb", "0" if sbool("vc_fb", "1") else "1")
+                ack("تغییر کرد.")
+                return page("vc") or True
+            if act == "vc_rs":
+                try:
+                    VOICE.reset_levels()
+                except Exception:
+                    logging.exception("vc reset")
+                ack("حالت امن همه‌ی گروه‌ها ریست شد.")
+                return page("vc") or True
+            if act == "vc_pv":
+                ack()
+                try:
+                    cat = random.choice(("pv", "rip", "left", "member", "q", "gen"))
+                    sample = VOICE.render(cat, {"first_name": "علی"}, 0, 0)
+                    send(chat_id, "👁 نمونه پاسخ (دسته‌ی " + cat + "):\n\n" + sample, VOICE.keyboard(), markdown=False)
+                except Exception:
+                    logging.exception("vc preview")
+                return True
             if act == "ph":
                 set_setting("phone_verify", "0" if sbool("phone_verify") else "1")
                 ack("تغییر کرد.")
@@ -6500,6 +6561,7 @@ class _GlobalsProxy:
 
 
 GAMES = None  # ماژول games (اگر لود شود)
+VOICE = None  # ماژول voice (صدای جفج)
 
 
 def _games_dispatch(update_id, message=None, callback=None):
@@ -6561,6 +6623,8 @@ def handle_update(update):
 
     # گروه/سوپرگروه/کانال: فقط بخش بازی‌ها (کازینو شاهنشاهی)؛ بقیه‌ی پیام‌های گروه نادیده گرفته می‌شود
     if message and message["chat"].get("type") != "private":
+        if VOICE is not None:
+            VOICE.on_group_message(message)      # 🗣 صدای جفج (مستقل از بازی‌ها؛ هر خطایی مهار می‌شود)
         _games_dispatch(update_id, message=message)
         return
     if callback and (callback.get("message") or {}).get("chat", {}).get("type", "private") != "private":
@@ -8024,7 +8088,14 @@ def main():
     threading.Thread(target=request_sweeper, daemon=True).start()
     threading.Thread(target=rep_worker, daemon=True).start()
     threading.Thread(target=rep_scheduler, daemon=True).start()
-    global GAMES
+    global GAMES, VOICE
+    try:
+        import voice as _voice
+        _voice.init(_GlobalsProxy())
+        VOICE = _voice
+        logging.info("🗣 صدای جفج (voice.py) فعال شد")
+    except Exception:
+        logging.exception("voice.py لود نشد؛ ربات بدون صدای جفج ادامه می‌دهد")
     try:
         import games as _games
         _games.init(_GlobalsProxy())
