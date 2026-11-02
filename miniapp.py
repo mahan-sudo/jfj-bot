@@ -35,6 +35,11 @@ _schema_done = False
 def _mini_tables():
     """جدول‌های مینی‌اپ (داخل قفل اسکیما صدا زده می‌شود)"""
     with bot.get_db() as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS mini_emoji (
+            name TEXT PRIMARY KEY,
+            ctype TEXT NOT NULL,
+            data BYTEA NOT NULL
+        )""")
         c.execute("""CREATE TABLE IF NOT EXISTS mini_seen (
             user_id INTEGER NOT NULL,
             code TEXT NOT NULL,
@@ -65,6 +70,10 @@ def ensure_ready():
                     _mini_tables()
                 bot.seed_products()
                 _schema_done = True
+                try:
+                    prewarm_emoji()
+                except Exception:
+                    traceback.print_exc()
     if not bot.BOT_USERNAME or not bot.BOT_ID:
         with bot.get_db() as c:
             rows = dict(c.execute("SELECT k, v FROM mini_meta WHERE k IN ('bot_username','bot_id')").fetchall())
@@ -281,6 +290,58 @@ _EMOJI_BASES = ("https://cdn.jsdelivr.net/npm/emoji-datasource-apple@15.1.2/img/
 _EMOJI_DIR = os.path.join(os.environ.get("TMPDIR") or "/tmp", "jfj_emoji_webp")
 
 
+def _emoji_db_get(name):
+    try:
+        with bot.get_db() as c:
+            r = c.execute("SELECT ctype, data FROM mini_emoji WHERE name=?", (name,)).fetchone()
+        return (r[0], bytes(r[1])) if r else None
+    except Exception:
+        return None
+
+
+def _emoji_db_put(name, res):
+    try:
+        with bot.get_db() as c:
+            c.execute("INSERT INTO mini_emoji (name, ctype, data) VALUES (?,?,?) ON CONFLICT (name) DO NOTHING",
+                      (name, res[0], res[1]))
+    except Exception:
+        pass
+
+
+_prewarm_started = False
+
+
+def prewarm_emoji():
+    """ایموجی‌های پرکاربرد را پیش از اولین درخواست کاربر (هم‌زمان) آماده می‌کند تا اولین نمایش کند نباشد"""
+    global _prewarm_started
+    if _prewarm_started:
+        return
+    _prewarm_started = True
+
+    def run():
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+            chars = set()
+            texts = list(getattr(bot, "REACTION_EMOJIS", []) or [])
+            try:
+                with open(_index_path(), encoding="utf-8") as f:
+                    texts.append(f.read())
+            except OSError:
+                pass
+            for t in texts:
+                for ch in str(t):
+                    cp = ord(ch)
+                    if cp >= 0x1F000 or 0x2600 <= cp <= 0x27BF or cp in (0x2B50, 0x2B06, 0x2705, 0x274C, 0x2764):
+                        chars.add(cp)
+            names = sorted({format(cp, "x") for cp in chars} | {format(cp, "x") + "-fe0f" for cp in chars if cp < 0x1F000})
+            names = [n for n in names if len(n) <= 12][:400]
+            with ThreadPoolExecutor(max_workers=6) as ex:
+                list(ex.map(lambda n: emoji_webp(n + ".webp"), names))
+        except Exception:
+            traceback.print_exc()
+    threading.Thread(target=run, daemon=True).start()
+
+
 def emoji_webp(fname):
     """ایموجی آیفونی به‌صورت webp (حدود ۱ تا ۲ کیلوبایت) از سرور خودمان؛ بار اول از CDN گرفته و روی دیسک/حافظه کش می‌شود"""
     import re as _re
@@ -299,10 +360,14 @@ def emoji_webp(fname):
             return res
     except OSError:
         pass
+    hit = _emoji_db_get(name)           # بین دیپلوی‌ها می‌ماند (دیسک Railway موقتی است)
+    if hit:
+        _EMOJI_MEM[name] = hit
+        return hit
     res = None
     for base in _EMOJI_BASES:
         try:
-            with urllib.request.urlopen(base + name + ".png", timeout=8) as resp:
+            with urllib.request.urlopen(base + name + ".png", timeout=5) as resp:
                 png = resp.read(400_000)
             w = to_webp(png, 64, 80)
             res = ("image/webp", w) if w else ("image/png", png)
@@ -310,6 +375,7 @@ def emoji_webp(fname):
         except Exception:
             continue
     if res and res[0] == "image/webp":
+        _emoji_db_put(name, res)
         try:
             os.makedirs(_EMOJI_DIR, exist_ok=True)
             with open(path, "wb") as f:
