@@ -17,6 +17,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import bot_test as bot  # noqa: E402
+import webadmin  # noqa: E402
+webadmin.init(bot)
 
 mimetypes.add_type("font/woff2", ".woff2")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1163,6 +1165,11 @@ def application(environ, start_response):
     path = environ.get("PATH_INFO", "")
     method = environ.get("REQUEST_METHOD", "GET")
     try:
+        if path == "/admin" or path.startswith("/admin/"):
+            ensure_ready()
+            r = webadmin.handle(environ, start_response)
+            if r is not None:
+                return r
         if path in ("/", "/app") and method == "GET":
             return serve_file(start_response, "index.html")
         if path.startswith("/static/") and method == "GET":

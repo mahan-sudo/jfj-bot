@@ -2701,6 +2701,7 @@ ADMIN_SECTION_BTNS = {
     "🧾 سفارشات تکمیل نشده": "o",
     "🃏 بازی‌های گروهی": "gm",
     "🖌 تنظیمات متون": "tx",
+    "🌐 پنل تحت وب": "web",
 }
 _SEC_BY_KEY = {v: k for k, v in ADMIN_SECTION_BTNS.items()}
 
@@ -2710,6 +2711,7 @@ def admin_panel_menu():
     return {
         "keyboard": [
             [btn(BTN_ADMIN_STATS)],
+            [btn(b[11])],
             [btn(BTN_ADMIN_PRODUCTS), btn(b[0])],
             [btn(b[1]), btn(b[10])],
             [btn(b[2]), btn(b[3])],
@@ -3013,7 +3015,37 @@ def _send_section(chat_id, sec):
     _hsend(chat_id, text, kb)
 
 
+def web_panel_url():
+    u = (os.environ.get("MINIAPP_URL") or "").strip()
+    if u.startswith("https://"):
+        return u.rsplit("/", 1)[0] + "/admin" if u.rstrip("/").endswith("/app") else u.rstrip("/") + "/admin"
+    d = (os.environ.get("RAILWAY_PUBLIC_DOMAIN") or "").strip()
+    return f"https://{d}/admin" if d else ""
+
+
+def web_panel_send(chat_id, admin_id):
+    """رمز تصادفیِ تازه برای همین ادمین می‌سازد (رمز قبلی باطل می‌شود) و برایش می‌فرستد؛ بعد از ۵ دقیقه پیام پاک می‌شود"""
+    import webadmin as _wa
+    pw = _wa.set_password(admin_id)
+    url = web_panel_url() or "(آدرس عمومی سرویس) /admin"
+    r = _hsend(chat_id, "🌐 <b>پنل مدیریت تحت وب</b>\n" + LINE + "\n"
+               f"🔗 آدرس: {_h(url)}\n"
+               f"🆔 نام کاربری: <code>{admin_id}</code>\n"
+               f"🔑 رمز: <code>{pw}</code>\n\n"
+               "⚠️ رمز مخصوص خودت است و فقط همین الان نمایش داده می‌شود؛ این پیام ۵ دقیقه‌ی دیگر پاک می‌شود. "
+               "هر بار این دکمه را بزنی رمز جدید ساخته و رمز قبلی باطل می‌شود.\n"
+               "🔒 بعد از ۵ بار رمز اشتباه، ورود ۱۰ دقیقه قفل می‌شود.")
+    if r.get("ok"):
+        mid = r["result"]["message_id"]
+        _tm = threading.Timer(300, lambda: tg("deleteMessage", chat_id=chat_id, message_id=mid, _notx=True))
+        _tm.daemon = True
+        _tm.start()
+
+
 def admin_open_section(chat_id, admin_id, sec):
+    if sec == "web":
+        web_panel_send(chat_id, admin_id)
+        return
     if sec == "tx":
         if TEXTS is None:
             _hsend(chat_id, "❗️ ماژول تنظیمات متون در دسترس نیست (texts.py).")
