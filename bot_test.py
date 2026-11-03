@@ -290,6 +290,13 @@ def install_schema():
             joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             left_at TEXT,
             PRIMARY KEY (user_id, tracking_code))""")
+        c.execute("""CREATE TABLE IF NOT EXISTS betrayers (
+            user_id BIGINT PRIMARY KEY,
+            flagged_at TEXT NOT NULL,
+            last_run TEXT,
+            runs INTEGER NOT NULL DEFAULT 0,
+            kicked INTEGER NOT NULL DEFAULT 0,
+            orders INTEGER NOT NULL DEFAULT 0)""")
         c.execute("""CREATE TABLE IF NOT EXISTS invoices (
             code TEXT PRIMARY KEY,
             buyer_id INTEGER NOT NULL,
@@ -710,6 +717,119 @@ def handle_member_left(chat_numeric_id, user_id):
             f"⛔️ *به دلیل لفت دادن شما*\n*از لینک ({link}) تعداد 💎{JOIN_REWARD} شاهی از شما کم شد!*",
         )
         rep_ev_leave(user_id, owner_id, tracking_code, link, JOIN_REWARD, LEAVE_REFUND_TO_OWNER)
+    try:
+        betrayal_check(user_id)
+    except Exception:
+        logging.exception("betrayal_check")
+
+
+# ===================== 🛡 امنیت: خیانت در JFJ =====================
+# کاربری که خودش درخواست JFJ ثبت کرده و ممبر گرفته، ولی بعد از همه‌ی جفج‌هایی که رفته لفت داده است،
+# ممبرهای «جذب‌شده توسط ربات» از کانال/گروه خودش اخراج می‌شوند (اعضای ارگانیک و ادمین‌ها دست نمی‌خورند).
+BETRAY_MIN_JOINS = 3          # حداقل تعداد جفجی که رفته بوده تا «خیانت» حساب شود
+BETRAY_RETRY_SEC = 900        # ربات اگر دسترسی نداشت/خطا خورد، هر ۱۵ دقیقه دوباره تلاش می‌کند
+BETRAY_RETRY_DAYS = 7
+_betray_lock = threading.Lock()
+
+
+def betrayal_check(user_id):
+    with get_db() as c:
+        orders = c.execute("SELECT COUNT(*) FROM requests WHERE user_id=?", (user_id,)).fetchone()[0]
+        tot, active = c.execute("SELECT COUNT(*), COALESCE(SUM(CASE WHEN left_at IS NULL THEN 1 ELSE 0 END),0) "
+                                "FROM joins WHERE user_id=?", (user_id,)).fetchone()
+    if orders < 1 or tot < BETRAY_MIN_JOINS or active > 0:
+        return False
+    with get_db() as c:
+        cur = c.execute("INSERT INTO betrayers (user_id, flagged_at) VALUES (?,?) ON CONFLICT (user_id) DO NOTHING",
+                        (user_id, now_local().isoformat()))
+        new = cur.rowcount == 1
+    if new:
+        threading.Thread(target=betray_run, args=(user_id, True), daemon=True).start()
+    return new
+
+
+def betray_run(user_id, first=False):
+    """اخراج ممبرهای جذب‌شده توسط ربات از چت‌های کاربر خائن. خروجی: (اخراج‌شده، چت بدون دسترسی، خطا)"""
+    with _betray_lock:
+        with get_db() as c:
+            reqs = c.execute("SELECT tracking_code, link, chat_id FROM requests WHERE user_id=?", (user_id,)).fetchall()
+        chats = {}
+        for code, link, cid in reqs:
+            chats.setdefault(chan_key(cid, link), {"ident": resolve_chat_ident(cid, link), "link": link, "codes": []})["codes"].append(code)
+        kicked = fail = 0
+        norights = []
+        for key, ch in chats.items():
+            ident = ch["ident"]
+            if not ident or bot_admin_state(ident) is not True:
+                norights.append(ch["link"])
+                continue
+            with get_db() as c:
+                ph = ",".join("?" * len(ch["codes"]))
+                rows = c.execute(f"SELECT DISTINCT user_id FROM joins WHERE tracking_code IN ({ph}) AND left_at IS NULL",
+                                 tuple(ch["codes"])).fetchall()
+            stop = False
+            for (jid,) in rows:
+                if stop:
+                    break
+                with get_db() as c:   # قبل از اخراج علامت می‌زنیم تا رویداد لفت، جریمه/بازگشت شاهی راه نیندازد
+                    c.execute(f"UPDATE joins SET left_at=? WHERE user_id=? AND tracking_code IN ({ph}) AND left_at IS NULL",
+                              (now_local().isoformat(), jid, *ch["codes"]))
+                r = tg("banChatMember", chat_id=ident, user_id=jid, _timeout=15)
+                if r.get("ok"):
+                    tg("unbanChatMember", chat_id=ident, user_id=jid, only_if_banned=True, _timeout=15)
+                    kicked += 1
+                else:
+                    d = str(r.get("description") or "").lower()
+                    if "not enough rights" in d or "chat_admin_required" in d or "need to be an administrator" in d:
+                        with get_db() as c:   # دسترسی نیست؛ برای تلاش بعدی برگردان
+                            c.execute(f"UPDATE joins SET left_at=NULL WHERE user_id=? AND tracking_code IN ({ph})", (jid, *ch["codes"]))
+                        norights.append(ch["link"])
+                        stop = True
+                    elif r.get("error_code") == 429:
+                        time.sleep(float((r.get("parameters") or {}).get("retry_after", 3)))
+                        with get_db() as c:
+                            c.execute(f"UPDATE joins SET left_at=NULL WHERE user_id=? AND tracking_code IN ({ph})", (jid, *ch["codes"]))
+                        fail += 1
+                    else:
+                        fail += 1   # مثلاً ادمین بودن؛ علامت می‌ماند تا تکرار نشود
+                time.sleep(0.06)
+        with get_db() as c:
+            c.execute("UPDATE betrayers SET last_run=?, runs=runs+1, kicked=kicked+?, orders=? WHERE user_id=?",
+                      (now_local().isoformat(), kicked, len(reqs), user_id))
+            tot = c.execute("SELECT kicked FROM betrayers WHERE user_id=?", (user_id,)).fetchone()[0]
+        if first or kicked:
+            rep_ev_betray(user_id, len(reqs), len(chats), kicked, tot, norights, fail, first)
+        return kicked, norights, fail
+
+
+def rep_ev_betray(user_id, orders, chats, kicked, total, norights, fail, first):
+    def bld():
+        t = _rp_head("jfj", "🚨 خیانت در JFJ" if first else "🚨 ادامه‌ی برخورد با خائن JFJ") + _rp_user(user_id, "😈 خائن")
+        t += (f"\n📋 سفارش‌های ثبت‌شده‌ی او: <b>{orders}</b> (در <b>{chats}</b> کانال/گروه)\n"
+              "🚪 از همه‌ی جفج‌هایی که رفته بود لفت داد.\n"
+              f"🥾 ممبرِ اخراج‌شده در این نوبت: <b>{kicked}</b> • مجموع: <b>{total}</b>\n")
+        if fail:
+            t += f"⚠️ اخراج‌های ناموفق: <b>{fail}</b>\n"
+        if norights:
+            t += ("🔒 ربات دسترسی اخراج/ادمینی نداشت در: " + "، ".join(_h(str(x)) for x in norights[:5])
+                  + f"\n🔁 ربات تا {BETRAY_RETRY_DAYS} روز هر ۱۵ دقیقه دوباره تست می‌کند.\n")
+        return t + _rp_time("زمان")
+    report("jfj", bld)
+    rep_count("betrayers") if first else None
+
+
+def betray_worker():
+    time.sleep(120)
+    while True:
+        try:
+            lim = (now_local() - timedelta(days=BETRAY_RETRY_DAYS)).isoformat()
+            with get_db() as c:
+                ids = [r[0] for r in c.execute("SELECT user_id FROM betrayers WHERE flagged_at >= ?", (lim,)).fetchall()]
+            for uid in ids:
+                betray_run(uid, False)
+        except Exception:
+            logging.exception("betray_worker")
+        time.sleep(BETRAY_RETRY_SEC)
 
 
 # ===================== فاکتورها (مشترک: شاهی و اسپانسری) =====================
@@ -8145,6 +8265,7 @@ def main():
     threading.Thread(target=invoice_watcher, daemon=True).start()
     threading.Thread(target=bc_worker, daemon=True).start()
     threading.Thread(target=request_sweeper, daemon=True).start()
+    threading.Thread(target=betray_worker, daemon=True).start()
     threading.Thread(target=rep_worker, daemon=True).start()
     threading.Thread(target=rep_scheduler, daemon=True).start()
     global GAMES, VOICE, TEXTS
