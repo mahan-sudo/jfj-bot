@@ -312,6 +312,10 @@ def install_schema():
         c.execute("""CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS text_overrides (
+            key TEXT PRIMARY KEY,
+            html TEXT NOT NULL,
+            updated_at BIGINT NOT NULL DEFAULT 0)""")
         c.execute("""CREATE TABLE IF NOT EXISTS transfers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             sender_id INTEGER NOT NULL,
@@ -877,9 +881,20 @@ def _boldify(method, params):
 
 
 _tg_warn = {}
+TEXTS = None   # ماژول texts.py (🖌 تنظیمات متون) — در main مقداردهی می‌شود
 
 
 def tg(method, _timeout=45, **params):
+    if params.pop("_notx", False) is False and TEXTS is not None:
+        try:
+            tx = TEXTS.apply(method, params)
+        except Exception:
+            logging.exception("texts.apply")
+            tx = None
+        if tx is not None:
+            r = _tg_raw(method, _timeout, **tx)
+            if r.get("ok") or "parse entities" not in str(r.get("description", r.get("error_description", ""))):
+                return r
     q = _boldify(method, params)
     if q is not None:
         r = _tg_raw(method, _timeout, **q)
@@ -2565,6 +2580,7 @@ ADMIN_SECTION_BTNS = {
     "🧰 تنظیمات درخواست JFJ": "q",
     "🧾 سفارشات تکمیل نشده": "o",
     "🃏 بازی‌های گروهی": "gm",
+    "🖌 تنظیمات متون": "tx",
 }
 _SEC_BY_KEY = {v: k for k, v in ADMIN_SECTION_BTNS.items()}
 
@@ -2575,7 +2591,7 @@ def admin_panel_menu():
         "keyboard": [
             [btn(BTN_ADMIN_STATS)],
             [btn(BTN_ADMIN_PRODUCTS), btn(b[0])],
-            [btn(b[1])],
+            [btn(b[1]), btn(b[10])],
             [btn(b[2]), btn(b[3])],
             [btn(b[4]), btn(b[5])],
             [btn(b[6]), btn(b[7])],
@@ -2878,6 +2894,12 @@ def _send_section(chat_id, sec):
 
 
 def admin_open_section(chat_id, admin_id, sec):
+    if sec == "tx":
+        if TEXTS is None:
+            _hsend(chat_id, "❗️ ماژول تنظیمات متون در دسترس نیست (texts.py).")
+        else:
+            TEXTS.open_root(chat_id, admin_id)
+        return
     set_state(admin_id, "admin_panel")
     _send_section(chat_id, sec)
 
@@ -4028,13 +4050,18 @@ def handle_message(message):
         rs_receive(message)
         return
 
+    if is_admin(user["id"]) and state in ("tx", "tx_edit") and message["chat"].get("type") == "private" \
+            and text not in ADMIN_SECTION_BTNS and TEXTS is not None:
+        if TEXTS.handle(message, state, data):
+            return
+
     if is_admin(user["id"]) and state == "adm_in" and data.get("name") == "rich" and data.get("kind") \
             and text not in ADMIN_SECTION_BTNS and text != BACK_BTN:
         rich_receive(message, data)
         return
 
     if (message.get("photo") or message.get("document") or (text and not text.startswith("/"))) \
-            and state not in ("sps", "dc_wait", "adm_in") and handle_receipt(message):
+            and state not in ("sps", "dc_wait", "adm_in", "tx", "tx_edit") and handle_receipt(message):
         return
 
     if state == "sps" and text and text != BACK_BTN:
@@ -7210,14 +7237,20 @@ def render_report_delete_list():
 BACKUP_FORMAT = "jfj-pg-backup"
 
 
+BACKUP_SKIP_TABLES = {"mini_emoji"}
+
+
 def backup_dump():
     """همه‌ی جدول‌های دیتابیس → dict قابل JSON (ستون‌ها + ردیف‌ها)"""
     tables = {}
     with get_db() as c:
         c.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")      # تصویر یکپارچه از یک لحظه
         for nm in _db.all_tables(c):
+            if nm in BACKUP_SKIP_TABLES:
+                continue                      # کش قابل‌بازسازی (دودویی)؛ داخل بکاپ JSON نمی‌آید
             cur = c.execute(f'SELECT * FROM "{nm}"')
-            tables[nm] = {"columns": [d[0] for d in cur.description], "rows": [list(r) for r in cur.fetchall()]}
+            tables[nm] = {"columns": [d[0] for d in cur.description],
+                          "rows": [[(None if v is None else (v.hex() if isinstance(v, (bytes, bytearray, memoryview)) else v)) for v in r] for r in cur.fetchall()]}
     return {"format": BACKUP_FORMAT, "version": 1, "created": _utcnow_str(), "tables": tables}
 
 
@@ -8114,8 +8147,15 @@ def main():
     threading.Thread(target=request_sweeper, daemon=True).start()
     threading.Thread(target=rep_worker, daemon=True).start()
     threading.Thread(target=rep_scheduler, daemon=True).start()
-    global GAMES, VOICE
+    global GAMES, VOICE, TEXTS
     setup_bot_commands()
+    try:
+        import texts as _texts
+        _texts.init(_GlobalsProxy())
+        TEXTS = _texts
+        logging.info("🖌 تنظیمات متون (texts.py) فعال شد: %d مورد ویرایش‌شده", _texts.overrides_count())
+    except Exception:
+        logging.exception("texts.py لود نشد؛ ربات بدون تنظیمات متون ادامه می‌دهد")
     try:
         import voice as _voice
         _voice.init(_GlobalsProxy())
