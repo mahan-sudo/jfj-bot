@@ -2,7 +2,7 @@
 import os, subprocess, sys
 here = os.path.dirname(os.path.abspath(__file__))
 bad = 0
-for f in ("t_g", "t_g2", "t_x", "t_c", "t_a", "t_t", "t_r", "t_n", "t_v", "t_w", "t_y", "t_m", "t_z", "t_q", "t_pg", "t_mig", "sqlcheck", "t_e2e"):
+for f in ("t_g", "t_g2", "t_x", "t_c", "t_a", "t_t", "t_r", "t_n", "t_v", "t_w", "t_y", "t_m", "t_z", "t_q", "t_rps", "t_vc", "t_tx", "t_bt", "t_wa","t_wb", "t_pg", "t_mig", "sqlcheck", "t_e2e"):
     r = subprocess.run([sys.executable, f + ".py"], cwd=here, capture_output=True, text=True, timeout=300)
     p = sum(1 for l in r.stdout.splitlines() if l.startswith("PASS"))
     fl = [l for l in r.stdout.splitlines() if l.startswith("FAIL")]

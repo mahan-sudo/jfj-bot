@@ -26,6 +26,16 @@ _flock = threading.Lock()
 _ready = [False]
 
 
+EXT = {}       # (method, name, act) -> fn(uid, arg, body, qs)
+
+
+def api(method, name, act=None):
+    def deco(fn):
+        EXT[(method, name, act)] = fn
+        return fn
+    return deco
+
+
 class WebErr(Exception):
     def __init__(self, msg, status=400):
         self.msg, self.status = msg, status
@@ -585,10 +595,16 @@ def handle(environ, start_response):
             elif a == "betrayer" and arg and act == "rerun":
                 R = betrayer_rerun(uid, int(arg), body)
         if R is None:
-            raise WebErr("not found", 404)
+            fn = EXT.get((method, a, act)) or EXT.get((method, a, None))
+            if fn is None:
+                raise WebErr("not found", 404)
+            R = fn(uid, arg, body, qs)
         return _json(start_response, "200 OK", R)
     except WebErr as e:
         return _json(start_response, "%d Error" % e.status, {"ok": False, "error": e.msg})
     except Exception:
         traceback.print_exc()
         return _json(start_response, "500 Internal Server Error", {"ok": False, "error": "خطای سرور"})
+
+
+import webadmin_ext  # noqa: E402,F401  (مسیرهای بیشتر: مالی، محصولات، بازی‌ها، …)
