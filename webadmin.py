@@ -426,7 +426,7 @@ def text_reset(uid, key, body):
 def broadcast(uid, body):
     text = str(body.get("text", "")).strip()
     aud = body.get("aud")
-    if aud not in ("all", "active", "new"):
+    if aud not in ("all", "active", "new", "chan"):
         raise WebErr("مخاطب نامعتبر است.")
     if not text:
         raise WebErr("متن خالی است.")

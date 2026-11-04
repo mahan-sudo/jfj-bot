@@ -61,3 +61,10 @@ g=G("games");
 if g["games"]: P("games",{"op":"toggle","key":"s"}); 
 if g["cfg"]: P("games",{"op":"cfg","name":g["cfg"][0]["name"],"value":g["cfg"][0]["value"]})
 P("usercard/201",{}); P("reqdel/NOPE",{},False)
+
+for p in ("userx/201","referral","generalx","monster","gamerep?days=7","sponsors?user=201"): G(p)
+P("userx/201",{"op":"zero"}); ok(b.get_balance(201)==0,"صفر کردن موجودی")
+P("userx/201",{"op":"phone"}); P("userx/201",{"op":"refreset"})
+k=list(b.PRODUCT_DEFS)[0]; P("userx/201",{"op":"product","key":k}); ok(b.user_has_product(201,k),"افزودن محصول به کاربر"); P("userx/201",{"op":"product","key":k}); ok(not b.user_has_product(201,k),"برداشتن محصول")
+P("referral",{"op":"act_toggle"}); P("generalx",{"op":"phone_verify"}); P("generalx",{"op":"rules_reset"}); P("generalx",{"op":"support_reset"})
+P("monster",{"op":"toggle"}); P("monster",{"op":"reset"})

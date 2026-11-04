@@ -435,7 +435,9 @@ def req_delete(uid, code, body, qs):
 @api("GET", "sponsors")
 def sponsors_list(uid, arg, body, qs):
     b = _b()
-    rows = W._q("SELECT id, user_id, invoice_code, hours, status, started_at, ends_at, chat_ref FROM sponsor_subs ORDER BY id DESC LIMIT 60")
+    only = (qs.get("user") or [""])[0]
+    where, args = ("WHERE user_id=?", (int(only),)) if only.isdigit() else ("", ())
+    rows = W._q(f"SELECT id, user_id, invoice_code, hours, status, started_at, ends_at, chat_ref FROM sponsor_subs {where} ORDER BY id DESC LIMIT 60", args)
     return {"subs": [{"id": r[0], "user": r[1], "inv": r[2] or "", "hours": W._num(r[3]), "status": b.sub_state(r[4], r[6]), "start": str(r[5] or "")[:16], "end": str(r[6] or "")[:16], "ref": r[7] or ""} for r in rows]}
 
 
@@ -559,3 +561,134 @@ def user_orders(uid, target, body, qs):
     so = W._q("SELECT tracking_code, service, quantity, status, created_at FROM service_orders WHERE user_id=? ORDER BY created_at DESC LIMIT 20", (t,))
     return {"requests": [{"code": r[0], "n": r[1], "status": r[2], "link": r[3] or "", "created": str(r[4])[:16]} for r in rq],
             "orders": [{"code": r[0], "service": r[1], "qty": W._num(r[2]), "status": r[3], "created": str(r[4])[:16]} for r in so]}
+
+
+# ============ تکمیل‌ها: کاربر، زیرمجموعه، احراز شماره، هیولا، همگانی کانال‌ها ============
+@api("GET", "userx")
+def userx_get(uid, target, body, qs):
+    b = _b()
+    t = int(target)
+    row = W._q("SELECT phone, phone_req, card_blocked, referred_by FROM users WHERE id=?", (t,))
+    if not row:
+        raise WebErr("کاربر پیدا نشد.", 404)
+    phone, preq, cblk, ref = row[0]
+    own = {r[0] for r in W._q("SELECT key FROM user_products WHERE user_id=?", (t,))}
+    return {"phone": phone or "", "phone_req": bool(preq), "card_blocked": bool(cblk), "referred_by": ref,
+            "subs_count": W._q1("SELECT COUNT(*) FROM users WHERE referred_by=?", (t,)),
+            "products": [{"key": k, "title": d.get("title") or k, "on": k in own} for k, d in b.PRODUCT_DEFS.items()]}
+
+
+@api("POST", "userx")
+def userx_set(uid, target, body, qs):
+    b = _b()
+    t = int(target)
+    if not W._q("SELECT 1 FROM users WHERE id=?", (t,)):
+        raise WebErr("کاربر پیدا نشد.", 404)
+    op = body.get("op")
+    if op == "zero":
+        with b.get_db() as c:
+            c.execute("UPDATE users SET tokens=0 WHERE id=?", (t,))
+    elif op == "phone":
+        phone, req = b.user_phone(t)
+        with b.get_db() as c:
+            if req:
+                c.execute("UPDATE users SET phone_req=0 WHERE id=?", (t,))
+            else:
+                c.execute("UPDATE users SET phone_req=1, phone=NULL WHERE id=?", (t,))
+    elif op == "refreset":
+        with b.get_db() as c:
+            c.execute("UPDATE users SET referred_by=NULL WHERE referred_by=?", (t,))
+    elif op == "product":
+        key = body.get("key")
+        if key not in b.PRODUCT_DEFS:
+            raise WebErr("محصول ناشناخته.")
+        with b.get_db() as c:
+            if b.user_has_product(t, key):
+                c.execute("DELETE FROM user_products WHERE user_id=? AND key=?", (t, key))
+            else:
+                c.execute("INSERT INTO user_products (user_id, key) VALUES (?,?) ON CONFLICT DO NOTHING", (t, key))
+                b.send(t, f"🎁 *محصول «{b.PRODUCT_DEFS[key]['title']}» برای شما فعال شد.*")
+    else:
+        raise WebErr("عملیات ناشناخته.")
+    return {"ok": True}
+
+
+@api("GET", "referral")
+def referral_get(uid, arg, body, qs):
+    b = _b()
+    rows = W._q("SELECT referred_by, COUNT(*), COALESCE(SUM(referral_rewarded),0) FROM users WHERE referred_by IS NOT NULL GROUP BY referred_by ORDER BY COUNT(*) DESC LIMIT 15")
+    return {"act_on": b.ref_act_on(), "reward": W._num(b._cfg_value("rr")), "threshold": W._num(b._cfg_value("rt")),
+            "top": [{"user": r[0], "n": r[1], "rewarded": W._num(r[2])} for r in rows]}
+
+
+@api("POST", "referral")
+def referral_set(uid, arg, body, qs):
+    b = _b()
+    if body.get("op") == "act_toggle":
+        b.set_setting("ref_act_on", "0" if b.ref_act_on() else "1")
+        return {"ok": True}
+    raise WebErr("عملیات ناشناخته.")
+
+
+@api("POST", "generalx")
+def generalx_set(uid, arg, body, qs):
+    b = _b()
+    op = body.get("op")
+    if op == "phone_verify":
+        _tog("phone_verify")
+    elif op == "rules_reset":
+        with b.get_db() as c:
+            c.execute("DELETE FROM settings WHERE key='rules_text'")
+    elif op == "support_reset":
+        with b.get_db() as c:
+            c.execute("DELETE FROM settings WHERE key='support_text'")
+    else:
+        raise WebErr("عملیات ناشناخته.")
+    return {"ok": True}
+
+
+@api("GET", "generalx")
+def generalx_get(uid, arg, body, qs):
+    b = _b()
+    return {"phone_verify": _flag("phone_verify"), "channels": len(b.admin_channels(force=True)),
+            "invalid_minutes": W._num(b._cfg_value("inv"))}
+
+
+@api("GET", "monster")
+def monster_get(uid, arg, body, qs):
+    g = _games()
+    rows = []
+    for name, label, unit, kind, lo, hi, ico in g._MCFG:
+        rows.append({"name": name, "label": label, "unit": unit, "lo": lo, "hi": hi, "value": W._num(g.cv(name)), "default": W._num(float(getattr(g, g._CFGK[name][1])))})
+    return {"auto_on": bool(g.mon_auto_on()), "cfg": rows}
+
+
+@api("POST", "monster")
+def monster_set(uid, arg, body, qs):
+    g = _games()
+    b = _b()
+    op = body.get("op")
+    if op == "toggle":
+        now_on = not g.mon_auto_on()
+        b.set_setting("g_m_on", "1" if now_on else "0")
+        try:
+            g._AG[0] = 0.0
+        except Exception:
+            pass
+    elif op == "reset":
+        for name in g._MCFG_BY:
+            b.set_setting(g._CFGK[name][0], "")
+    else:
+        raise WebErr("عملیات ناشناخته.")
+    return {"ok": True}
+
+
+@api("GET", "gamerep")
+def gamerep_get(uid, arg, body, qs):
+    _games()
+    d = int((qs.get("days") or ["1"])[0])
+    d = d if d in (1, 7, 30) else 1
+    since = time.time() - d * 86400
+    out = [{"game": r[0], "n": r[1], "stake": W._num(r[2]), "payout": W._num(r[3])} for r in
+           W._q("SELECT game, COUNT(*), COALESCE(SUM(stake_total),0), COALESCE(SUM(payout_total),0) FROM g_log WHERE ts >= ? GROUP BY game ORDER BY 2 DESC", (since,))]
+    return {"days": d, "games": out}
