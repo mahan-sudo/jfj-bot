@@ -68,3 +68,45 @@ P("userx/201",{"op":"phone"}); P("userx/201",{"op":"refreset"})
 k=list(b.PRODUCT_DEFS)[0]; P("userx/201",{"op":"product","key":k}); ok(b.user_has_product(201,k),"افزودن محصول به کاربر"); P("userx/201",{"op":"product","key":k}); ok(not b.user_has_product(201,k),"برداشتن محصول")
 P("referral",{"op":"act_toggle"}); P("generalx",{"op":"phone_verify"}); P("generalx",{"op":"rules_reset"}); P("generalx",{"op":"support_reset"})
 P("monster",{"op":"toggle"}); P("monster",{"op":"reset"})
+
+# ===== v7: ناحیه‌ی جدید =====
+print("--- v7 ---")
+j=G("orders?status=all"); ok(any(o["code"]=="SO1" and "name" in o and "extra" in o for o in j["orders"]),"orders enriched")
+j=G("userfull/201"); ok(j["id"]==201 and "betray" in j and isinstance(j["requests"],list),"userfull")
+G("userfull/201?x=1")
+st,_,_=call("GET","/admin/api/userfull/99999999",cookie=ck); ok(st.startswith("404"),"userfull 404")
+with b.get_db() as c:
+    c.execute("INSERT INTO requests (tracking_code,user_id,link,member_count,initial_member_count,token_cost,status) VALUES ('RQ7',201,'https://t.me/abc',5,10,2,'in_progress')")
+    c.execute("INSERT INTO joins (user_id,tracking_code) VALUES (%s,'RQ7')"%ADM)
+j=G("reqinfo/RQ7"); ok(j["code"]=="RQ7" and j["done"]==1 and len(j["joiners"])==1,"reqinfo")
+G("reqinfo/RQ7?live=1")
+P("reqblock/RQ7",{"block":True}); j=G("reqinfo/RQ7"); ok(j["blocked"],"reqblock on")
+P("reqblock/RQ7",{"block":False}); j=G("reqinfo/RQ7"); ok(not j["blocked"],"reqblock off")
+j=G("requests?status=in_progress&q=RQ7"); ok(len(j.get("requests",[]))>=1,"requests search")
+j=G("gamerep?days=7"); ok("games" in j and "mon" in j and "active" in j,"gamerep new")
+P("gametable",{"all":True})
+P("broadcastmedia",{"aud":"all","mid":5}); P("broadcastmedia",{"aud":"zzz","mid":5},False); P("broadcastmedia",{"aud":"all"},False)
+# upload
+def up(kind,data,name="a.jpg"):
+    env={"REQUEST_METHOD":"POST","PATH_INFO":"/admin/api/upload","QUERY_STRING":"kind=%s&name=%s"%(kind,name),"wsgi.input":io.BytesIO(data),"CONTENT_LENGTH":str(len(data)),"REMOTE_ADDR":"1.1.1.1","wsgi.url_scheme":"https","HTTP_COOKIE":"jfj_admin="+ck,"HTTP_X_REQUESTED_WITH":"jfj"}
+    o={}
+    def sr(s,h): o["st"]=s
+    bb=b"".join(m.application(env,sr)); return o["st"],bb[:150]
+st,bb=up("bad",b"x"); ok(st.startswith("400") or st.startswith("4"),"upload bad kind "+st)
+st,bb=up("photo",b""); ok(st.startswith("4"),"upload empty "+st)
+st,bb=up("photo",b"x"*(11*1024*1024)); ok(st.startswith("4"),"upload too big "+st)
+print("--- v7b ---")
+j=G("audit"); ok(len(j["items"])>5 and "action" in j["items"][0],"audit has entries")
+ok(not any("password" in (i["detail"] or "") and "…" not in i["detail"] for i in j["items"]),"audit no secrets")
+j=G("search?q=SO1"); ok(len(j["orders"])==1,"search order")
+j=G("search?q=RQ7"); ok(len(j["requests"])==1,"search req")
+j=G("search?q=201"); ok(len(j["users"])>=1,"search user")
+j=G("search?q=a"); ok(j["users"]==[],"search short")
+j=G("users?sort=neg"); ok("total" in j and "more" in j,"users neg")
+G("users?sort=banned&q=u"); G("users?sort=betray"); G("users?sort=phone&page=1")
+j=G("admins"); ok(j["can_manage"] and j["admins"][0]["main"],"admins list")
+P("admins",{"id":999999},False); P("admins",{"id":"x"},False)
+with b.get_db() as c: c.execute("INSERT INTO betrayers (user_id) VALUES (201)") if False else None
+P("betrayer/201/unflag",{},False)
+if len(b.ADMIN_IDS)>1:
+    r=P("admins",{"id":b.ADMIN_IDS[1]}); ok(len(r.get("password",""))>=16,"admin pw reset by main")

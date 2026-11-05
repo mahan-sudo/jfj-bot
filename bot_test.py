@@ -732,13 +732,38 @@ BETRAY_RETRY_DAYS = 7
 _betray_lock = threading.Lock()
 
 
-def betrayal_check(user_id):
+def betrayal_stats(user_id):
+    """آمار تشخیص خیانت یک کاربر + حکم و دلیل (برای پنل وب و تشخیص خطا)"""
     with get_db() as c:
         orders = c.execute("SELECT COUNT(*) FROM requests WHERE user_id=?", (user_id,)).fetchone()[0]
         tot, active = c.execute("SELECT COUNT(*), COALESCE(SUM(CASE WHEN left_at IS NULL THEN 1 ELSE 0 END),0) "
                                 "FROM joins WHERE user_id=?", (user_id,)).fetchone()
-    if orders < 1 or tot < BETRAY_MIN_JOINS or active > 0:
+        row = c.execute("SELECT tokens FROM users WHERE id=?", (user_id,)).fetchone()
+        flagged = c.execute("SELECT 1 FROM betrayers WHERE user_id=?", (user_id,)).fetchone() is not None
+    active = int(active or 0)
+    left = tot - active
+    tokens = float(row[0]) if row else 0.0
+    why = None
+    if orders < 1:
+        why = "هیچ درخواست JFJ ثبت نکرده؛ چیزی برای اخراج ندارد"
+    elif left < BETRAY_MIN_JOINS:
+        why = f"فقط {left} جوین را لفت داده (حداقل {BETRAY_MIN_JOINS} لازم است)"
+    elif active > 0 and tokens >= 0 and left < 0.6 * tot:
+        why = f"هنوز {active} جوین فعال دارد و موجودی‌اش منفی نیست"
+    verdict = why is None
+    return {"orders": orders, "joins": tot, "left": left, "active": active, "tokens": tokens,
+            "flagged": flagged, "verdict": verdict, "reason": why or "شرایط خیانت برقرار است"}
+
+
+def betrayal_check(user_id):
+    """خائن = دست‌کم یک درخواست ثبت کرده + دست‌کم BETRAY_MIN_JOINS جوین را لفت داده و
+    (همه‌ی جوین‌هایش لفت است، یا موجودی‌اش منفی شده، یا ≥۶۰٪ جوین‌هایش لفت است)"""
+    if not betrayal_stats(user_id)["verdict"]:
         return False
+    return betrayal_flag(user_id)
+
+
+def betrayal_flag(user_id):
     with get_db() as c:
         cur = c.execute("INSERT INTO betrayers (user_id, flagged_at) VALUES (?,?) ON CONFLICT (user_id) DO NOTHING",
                         (user_id, now_local().isoformat()))
@@ -746,6 +771,20 @@ def betrayal_check(user_id):
     if new:
         threading.Thread(target=betray_run, args=(user_id, True), daemon=True).start()
     return new
+
+
+def betrayal_scan():
+    """بررسی همه‌ی کاربرانی که قبلاً لفت داده‌اند (خائن‌هایی که پیش از این قاعده ثبت نشده بودند)"""
+    with get_db() as c:
+        ids = [r[0] for r in c.execute(
+            "SELECT j.user_id FROM joins j WHERE j.left_at IS NOT NULL AND j.user_id IN (SELECT user_id FROM requests) "
+            "AND j.user_id NOT IN (SELECT user_id FROM betrayers) GROUP BY j.user_id HAVING COUNT(*) >= ?",
+            (BETRAY_MIN_JOINS,)).fetchall()]
+    n = 0
+    for uid in ids:
+        if betrayal_check(uid):
+            n += 1
+    return n
 
 
 def betray_run(user_id, first=False):
@@ -819,7 +858,7 @@ def rep_ev_betray(user_id, orders, chats, kicked, total, norights, fail, first):
 
 
 def betray_worker():
-    time.sleep(120)
+    time.sleep(20)
     while True:
         try:
             lim = (now_local() - timedelta(days=BETRAY_RETRY_DAYS)).isoformat()
@@ -827,6 +866,7 @@ def betray_worker():
                 ids = [r[0] for r in c.execute("SELECT user_id FROM betrayers WHERE flagged_at >= ?", (lim,)).fetchall()]
             for uid in ids:
                 betray_run(uid, False)
+            betrayal_scan()
         except Exception:
             logging.exception("betray_worker")
         time.sleep(BETRAY_RETRY_SEC)

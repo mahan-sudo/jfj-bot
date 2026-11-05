@@ -151,6 +151,38 @@ textarea.in{min-height:92.5px;resize:vertical;line-height:1.8}
 .hide{display:none!important}
 img.em{width:1.15em;height:1.15em;vertical-align:-.2em;display:inline-block;margin:0 .05em}
 .ltr{direction:ltr;text-align:left;unicode-bidi:plaintext}
+/* ---- v7: انیمیشن و اجزای جدید ---- */
+.sw{transition:background .22s ease}
+.sw::after{transition:transform .26s cubic-bezier(.3,1.5,.5,1),width .15s ease,background .2s;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.sw:active::after{width:19px}.sw.on:active::after{transform:translateX(-19px)}
+.sw.busy{opacity:.65}
+.pgf{animation:pgf .26s cubic-bezier(.2,.75,.25,1)}.pgb{animation:pgb .26s cubic-bezier(.2,.75,.25,1)}
+@keyframes pgf{from{opacity:0;transform:translateX(-18px)}}
+@keyframes pgb{from{opacity:0;transform:translateX(18px)}}
+.sheet-w{animation:fd .18s ease}@keyframes fd{from{opacity:0}}
+.sheet{animation:up .26s cubic-bezier(.2,.8,.25,1)}
+.row.tap,.tx.tap,.btn,.ib,.tabs button{transition:background .15s,transform .12s,opacity .15s}
+.row.tap:active,.tx.tap:active{transform:scale(.985)}.btn:active,.ib:active{transform:scale(.95)}
+.tabs button{transition:background .2s,color .2s}
+.toast{animation:up .24s cubic-bezier(.2,.8,.25,1)}
+.kvs{background:var(--card3);border:1px solid var(--line);border-radius:var(--r-in);padding:2px 10px;margin-bottom:8px}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line);font-size:10.5px}
+.kv:last-child{border:0}.kv span{color:var(--tx3);flex:none}.kv b{font-weight:500;text-align:end;word-break:break-all}
+.lk{display:flex;align-items:center;gap:6px;background:var(--card3);border:1px solid var(--line);border-radius:var(--r-in);padding:6px 8px;margin-bottom:8px}
+.lk .u{flex:1;min-width:0;font-size:10px;color:var(--sky);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+a.btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+.bar{height:6px;border-radius:9px;background:var(--inner);overflow:hidden;margin:6px 0 2px}.bar i{display:block;height:100%;background:var(--blue-g);border-radius:9px;transition:width .6s cubic-bezier(.2,.8,.25,1)}
+.tb{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}.tb button{padding:3px 9px;border-radius:8px;background:var(--inner);color:var(--tx2);font-size:10px;border:1px solid var(--line)}
+.tb button:active{background:var(--blue-g);color:#fff}
+.vr{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 6px}.vr button{padding:2px 8px;border-radius:83px;background:var(--blue-d);color:var(--sky);font-size:9.5px;border:1px solid #243457;direction:ltr}
+.pvw{background:var(--card3);border:1px solid var(--line);border-radius:var(--r-in);padding:8px 10px;font-size:11px;line-height:1.9;white-space:pre-wrap;word-break:break-word}
+.pvw code,.pvw pre{background:var(--inner);padding:0 4px;border-radius:5px;font-family:monospace;direction:ltr}.pvw a{color:var(--sky)}
+details.hp{background:var(--blue-d);border:1px solid #243457;border-radius:var(--r-in);margin-bottom:8px;font-size:10px;color:var(--steel)}
+details.hp summary{padding:7px 10px;cursor:pointer;list-style:none;display:flex;gap:6px;align-items:center}details.hp summary::-webkit-details-marker{display:none}
+details.hp div{padding:0 10px 9px;line-height:1.9}details.hp code{direction:ltr;display:inline-block;background:var(--inner);padding:0 5px;border-radius:5px}
+.dz{display:flex;flex-direction:column;align-items:center;gap:4px;border:1.5px dashed var(--line);border-radius:var(--r-in);padding:16px 10px;color:var(--tx3);font-size:10.5px;cursor:pointer;margin-bottom:8px;text-align:center}
+.dz.has{border-color:var(--blue);color:var(--tx)}.dz svg{width:22px;height:22px}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
@@ -158,7 +190,9 @@ img.em{width:1.15em;height:1.15em;vertical-align:-.2em;display:inline-block;marg
 <script>
 "use strict";
 const $=s=>document.querySelector(s);
-function h(t,a,...k){const e=document.createElement(t);if(a)for(const x in a){const v=a[x];if(v==null||v===false)continue;if(x==="class")e.className=v;else if(x==="html")e.innerHTML=v;else if(x.startsWith("on"))e.addEventListener(x.slice(2),v);else if(x==="value")e.value=v;else e.setAttribute(x,v===true?"":v)}for(const c of k.flat(9))if(c!=null&&c!==false)e.append(c.nodeType?c:document.createTextNode(c));return e}
+const DT_RE=/(\d{4})-(\d{2})-(\d{2})([ T])(\d{2}):(\d{2})/g;
+function jdt(t){return t.replace(DT_RE,(m,y,mo,d,sp,hh,mm)=>{try{const dt=new Date(Date.UTC(+y,+mo-1,+d,+hh,+mm)-(sp==="T"?12600000:0));const p=new Intl.DateTimeFormat("en-u-ca-persian-nu-latn",{timeZone:"Asia/Tehran",year:"numeric",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(dt);const g=k=>p.find(x=>x.type===k).value;const yy=(p.find(x=>x.type==="relatedYear")||p.find(x=>x.type==="year")).value;return fa(`${yy}/${g("month").padStart(2,"0")}/${g("day").padStart(2,"0")} ${g("hour")}:${g("minute")}`)}catch(e){return m}})}
+function h(t,a,...k){const e=document.createElement(t);if(a)for(const x in a){const v=a[x];if(v==null||v===false)continue;if(x==="class")e.className=v;else if(x==="html")e.innerHTML=v;else if(x.startsWith("on"))e.addEventListener(x.slice(2),v);else if(x==="value")e.value=v;else e.setAttribute(x,v===true?"":v)}for(const c of k.flat(9))if(c!=null&&c!==false)e.append(c.nodeType?c:document.createTextNode(typeof c==="string"?jdt(c):c));return e}
 const PD="۰۱۲۳۴۵۶۷۸۹";
 const fa=v=>String(v).replace(/\d/g,d=>PD[d]);
 const nf=v=>{const n=Number(v);if(!isFinite(n))return String(v);return fa(n.toLocaleString("en-US",{maximumFractionDigits:2}))};
@@ -168,7 +202,7 @@ const MON=["فروردین","اردیبهشت","خرداد","تیر","مرداد
 const WD=["یکشنبه","دوشنبه","سه‌شنبه","چهارشنبه","پنجشنبه","جمعه","شنبه"];
 const jfull=d=>{const[y,m,x]=jal(d);return`${WD[d.getDay()]} ${fa(x)} ${MON[m-1]} ${fa(y)}`};
 const jshort=d=>{const[,m,x]=jal(d);return`${fa(x)} ${MON[m-1]}`};
-const ST={pending:["در انتظار","y"],review:["در حال بررسی","y"],paid:["پرداخت‌شده","g"],rejected:["ردشده","r"],expired:["منقضی","r"],completed:["انجام‌شده","g"],cancelled:["لغو","r"],in_progress:["در جریان","b"],done:["کامل","g"],removed:["حذف‌شده","r"],deleted:["حذف‌شده","r"],active:["فعال","g"],ended:["پایان‌یافته","r"]};
+const ST={pending:["در انتظار","y"],review:["در حال بررسی","y"],paid:["پرداخت‌شده","g"],rejected:["ردشده","r"],expired:["منقضی","r"],completed:["تکمیل‌شده","g"],relinked:["تغییر لینک","y"],cancelled:["لغو","r"],in_progress:["در جریان","b"],done:["کامل","g"],removed:["حذف‌شده","r"],deleted:["حذف‌شده","r"],active:["فعال","g"],ended:["پایان‌یافته","r"]};
 const pill=s=>{const[t,c]=ST[s]||[s,""];return h("span",{class:"pill "+c},t)};
 const IC={
  dash:'<path d="M4 4h7v9H4zM13 4h7v5h-7zM4 15h7v5H4zM13 11h7v9h-7z"/>',
@@ -228,7 +262,15 @@ function sheet(title,body,btns){const w=h("div",{class:"sheet-w",onclick:e=>{if(
 function confirmBox(msg,okLabel,fn,danger){const s=sheet("تأیید",h("p",{style:"color:var(--tx2);font-size:11px"},msg),[h("button",{class:"btn",onclick:()=>s.close()},"انصراف"),h("button",{class:"btn "+(danger?"red":"pri"),onclick:async()=>{s.close();await fn()}},okLabel||"تأیید")])}
 function editBox(title,cur,opts,fn){const inp=opts.area?h("textarea",{class:"in",value:cur}):h("input",{class:"in "+(opts.ltr?"ltr":""),value:cur,inputmode:opts.num?"decimal":"text"});
   const s=sheet(title,h("div",null,opts.hint&&h("p",{style:"color:var(--tx3);font-size:10px;margin-bottom:8px"},opts.hint),inp),[h("button",{class:"btn",onclick:()=>s.close()},"انصراف"),h("button",{class:"btn pri",onclick:async()=>{const r=await safe(()=>fn(inp.value.trim()),"ذخیره شد");if(r!==null){s.close();render()}}},"ذخیره")]);setTimeout(()=>inp.focus(),50)}
-const sw=(on,fn)=>{const e=h("button",{class:"sw"+(on?" on":""),"aria-pressed":on?"true":"false",onclick:async ev=>{ev.stopPropagation();e.disabled=true;const r=await safe(()=>fn(!on));if(r!==null)render();else e.disabled=false}});return e};
+const sw=(on,fn,soft)=>{const e=h("button",{class:"sw"+(on?" on":""),role:"switch","aria-checked":on?"true":"false",onclick:async ev=>{ev.stopPropagation();if(e.dataset.b)return;e.dataset.b="1";const nx=!e.classList.contains("on");
+  const set=v=>{e.classList.toggle("on",v);e.setAttribute("aria-checked",v?"true":"false")};set(nx);e.classList.add("busy");
+  const r=await safe(()=>fn(nx));e.classList.remove("busy");delete e.dataset.b;if(r===null)set(!nx);else if(soft)setTimeout(()=>render(true),420)}});return e};
+const kv=(k,v,o)=>v===""||v==null||v===false?null:h("div",{class:"kv"},h("span",null,k),h("b",{class:o&&o.ltr?"ltr":""},v));
+const cp=t=>{try{navigator.clipboard.writeText(String(t)).then(()=>toast("کپی شد"),()=>toast("کپی نشد",true))}catch(e){toast("کپی نشد",true)}};
+const lnk=l=>{l=(l||"").trim();if(/^https?:\/\//i.test(l))return l;if(/^(t|telegram)\.me\//i.test(l))return"https://"+l;if(/^@\w{3,}$/.test(l))return"https://t.me/"+l.slice(1);return null};
+const linkRow=l=>{const u=lnk(l);return h("div",{class:"lk"},ic("link"),h("span",{class:"u"},l),u&&h("a",{class:"btn sm",href:u,target:"_blank",rel:"noopener noreferrer"},"باز کردن"),h("button",{class:"btn sm",onclick:()=>cp(l)},"کپی"))};
+const uLabel=(n,un,id)=>(n||"")+(un?" @"+un:"")||String(id);
+const userRow=(id,n,un,close)=>h("div",{class:"row tap",onclick:()=>{close&&close();go("user",id)}},h("div",{class:"av"},ic("user")),h("div",{class:"m"},h("b",null,n||"بدون نام"),h("span",{class:"ltr"},(un?"@"+un+" · ":"")+id)),h("div",{class:"e"},ic("next")));
 const empty=(t,i)=>h("div",{class:"empty"},ic(i||"box"),t);
 const loading=()=>h("div",{class:"empty"},"در حال بارگذاری…");
 
@@ -237,9 +279,11 @@ const NAV=[
  ["فروش و مالی",[["fin","مالی و پرداخت","wallet"],["packs","بسته‌ها","coin"],["prod","محصولات","box"],["spons","اسپانسری‌ها","crown"]]],
  ["مدیریت",[["fj","جوین اجباری","link"],["blk","کانال‌های مسدود","block"],["sec","بخش‌های ربات","grid"],["ref","زیرمجموعه‌گیری","users"],["bt","خیانت در JFJ","shield","betrayers"]]],
  ["پیکربندی",[["set","تنظیمات","gear"],["txt","متن‌های ربات","text"],["gm","بازی‌ها","game"],["rp","گزارش‌ها","doc"],["gen","پشتیبانی و صدا","bolt"]]],
- ["ابزار",[["bc","پیام همگانی","send"],["tools","شارژ همگانی و بکاپ","save"]]]];
+ ["ابزار",[["srch","جستجوی سراسری","search"],["bc","پیام همگانی","send"],["tools","شارژ همگانی و بکاپ","save"]]],
+ ["امنیت",[["adm","ادمین‌ها و رمز","shield"],["aud","گزارش عملیات","pulse"]]]];
 let CUR="dash",ARG=null,BADGES={};const SHUT={},HIST=[];
-function go(v,a,noPush){if(!noPush&&!(CUR===v&&ARG===(a||null)))HIST.push([CUR,ARG]);CUR=v;ARG=a||null;closeMenu();location.hash=v+(a?"/"+a:"");render()}
+let DIR="f",RT=0,LASTK="";
+function go(v,a,noPush){DIR=noPush?"b":"f";if(!noPush&&!(CUR===v&&ARG===(a||null)))HIST.push([CUR,ARG]);CUR=v;ARG=a||null;closeMenu();location.hash=v+(a?"/"+a:"");render()}
 function back(){const p=HIST.pop()||["dash",null];go(p[0],p[1],true)}
 function closeMenu(){$(".side")?.classList.remove("open");$(".veil")?.classList.remove("on")}
 function shell(){
@@ -254,18 +298,19 @@ function shell(){
     h("button",{class:"ib menu",onclick:()=>{side.classList.add("open");veil.classList.add("on")},"aria-label":"منو"},ic("menu")),
     h("div",{class:"brand"},h("b",null,"پنل مدیریت جفج شاهنشاهی")),
     h("button",{class:"ib",id:"bell",onclick:()=>go(BADGES.pending_receipts?"inv":"ord"),"aria-label":"اعلان‌ها"},ic("bell")),
-    h("button",{class:"ib",onclick:()=>go("users"),"aria-label":"جستجوی کاربر"},ic("search")));
+    h("button",{class:"ib",onclick:()=>go("srch"),"aria-label":"جستجو"},ic("search")));
   return h("div",null,top,veil,side,h("div",{class:"shell"},h("main",{id:"view"})))}
 function phead(icon,title,sub,act){return h("div",{class:"ph"},CUR!=="dash"?h("button",{class:"ib bk","aria-label":"بازگشت",onclick:back},ic("back")):null,h("div",{class:"chip"},ic(icon)),h("div",null,h("h1",null,title),sub&&h("p",null,sub)),act&&h("div",{class:"act"},act))}
 function paintBadges(){
   document.querySelectorAll(".nv").forEach(n=>{n.classList.toggle("on",n.dataset.k===CUR);const it=NAV.flatMap(g=>g[1]).find(x=>x[0]===n.dataset.k);n.querySelector(".bd")?.remove();if(it&&it[3]&&BADGES[it[3]])n.append(h("span",{class:"bd"},fa(BADGES[it[3]])))});
   const b=$("#bell");if(b){b.querySelector(".dot")?.remove();const p=(BADGES.pending_receipts||0)+(BADGES.pending_orders||0);if(p)b.append(h("span",{class:"dot"},fa(p)))}}
-async function render(){
+async function render(soft){
   if(!ME)return;
   if(!$("#view"))$("#app").replaceChildren(shell());
   paintBadges();
-  const v=$("#view");v.replaceChildren(loading());
-  try{const el=await (VIEWS[CUR]||VIEWS.dash)(ARG);v.replaceChildren(el)}catch(e){v.replaceChildren(empty(e.message,"warn"))}
+  const v=$("#view"),tk=++RT,key=CUR+"/"+ARG,same=soft===true||key===LASTK;
+  if(!same){document.querySelectorAll(".sheet-w").forEach(e=>e.remove());v.replaceChildren(loading());scrollTo(0,0)}
+  try{const el=await (VIEWS[CUR]||VIEWS.dash)(ARG);if(tk!==RT)return;if(!same)el.classList.add(DIR==="b"?"pgb":"pgf");v.replaceChildren(el);LASTK=key}catch(e){if(tk!==RT)return;v.replaceChildren(empty(e.message,"warn"))}
   try{BADGES=await api("dashboard");paintBadges()}catch(e){}
 }
 
@@ -328,20 +373,27 @@ VIEWS.dash=async()=>{
           h("div",{class:"row"},h("div",{class:"av tone-r"},ic("shield")),h("div",{class:"m"},h("b",null,"خیانت‌کارها"),h("span",null,nf(d.betrayers)+" مورد ثبت‌شده")),h("div",{class:"e"},h("button",{class:"btn sm",onclick:()=>go("bt")},"مشاهده")))))))};
 
 VIEWS.users=async()=>{
-  let q="",sort="new";const list=h("div");
-  async function load(){list.replaceChildren(loading());const r=await safe(()=>api("users?q="+encodeURIComponent(q)+"&sort="+sort));if(!r)return;
-    list.replaceChildren(r.users.length?h("div",{class:"card"},r.users.map(u=>h("div",{class:"row tap",onclick:()=>go("user",u.id)},h("div",{class:"av"},ic("user")),h("div",{class:"m"},h("b",null,u.name||"بدون نام"),h("span",{class:"ltr"},(u.username?"@"+u.username+" · ":"")+u.id)),h("div",{class:"e"},u.banned&&h("span",{class:"pill r"},"مسدود"),h("span",{class:"pill y"},nf(u.tokens)+" شاهی"))))):empty("کاربری پیدا نشد.","users"))}
-  const inp=h("input",{class:"in",placeholder:"نام، @یوزرنیم یا آیدی عددی…",onkeydown:e=>{if(e.key==="Enter"){q=inp.value.trim();load()}}});
-  const st=h("div",{class:"tabs",style:"margin-bottom:12px"},[["new","جدیدترین"],["rich","بیشترین موجودی"],["banned","مسدودها"]].map(([k,t])=>h("button",{class:k===sort?"on":"",onclick:e=>{sort=k;[...st.children].forEach(x=>x.classList.remove("on"));e.currentTarget.classList.add("on");load()}},t)));
-  load();return h("div",null,phead("users","کاربران","جستجو، شارژ، مسدودسازی و پیام"),h("div",{style:"display:flex;gap:8px;margin-bottom:10px"},inp,h("button",{class:"btn pri",onclick:()=>{q=inp.value.trim();load()}},ic("search"))),st,list)};
+  let q="",sort=window._us||"new",page=0;const list=h("div"),more=h("div");
+  const row=u=>h("div",{class:"row tap",onclick:()=>go("user",u.id)},h("div",{class:"av"},ic("user")),h("div",{class:"m"},h("b",null,u.name||"بدون نام"),h("span",{class:"ltr"},(u.username?"@"+u.username+" · ":"")+u.id)),h("div",{class:"e"},u.banned&&h("span",{class:"pill r"},"مسدود"),h("span",{class:"pill "+(u.tokens<0?"r":"y")},nf(u.tokens)+" شاهی")));
+  const cnt=h("p",{class:"hint"});let card=null;
+  async function load(reset){if(reset){page=0;card=null;list.replaceChildren(loading())}
+    const r=await safe(()=>api("users?q="+encodeURIComponent(q)+"&sort="+sort+"&page="+page));if(!r)return;
+    if(!card){card=h("div",{class:"card"});list.replaceChildren(cnt,card)}
+    cnt.textContent=nf(r.total)+" کاربر";
+    if(!r.users.length&&!card.children.length)card.replaceWith(card=empty("کاربری پیدا نشد.","users"));
+    r.users.forEach(u=>card.append(row(u)));more.replaceChildren(r.more?h("button",{class:"btn blk",style:"margin-top:10px",onclick:()=>{page++;load()}},"نمایش بیشتر"):"")}
+  const inp=h("input",{class:"in",placeholder:"نام، @یوزرنیم یا آیدی عددی…",onkeydown:e=>{if(e.key==="Enter"){q=inp.value.trim();load(true)}}});
+  const T=[["new","جدیدترین"],["rich","پرموجودی"],["neg","موجودی منفی"],["banned","مسدودها"],["betray","خائن‌ها"],["phone","دارای شماره"]];
+  const st=h("div",{class:"tabs",style:"margin-bottom:12px"},T.map(([k,t])=>h("button",{class:k===sort?"on":"",onclick:e=>{sort=window._us=k;[...st.children].forEach(x=>x.classList.remove("on"));e.currentTarget.classList.add("on");load(true)}},t)));
+  load(true);return h("div",null,phead("users","کاربران","جستجو، فیلتر، شارژ، مسدودسازی و پیام"),h("div",{style:"display:flex;gap:8px;margin-bottom:10px"},inp,h("button",{class:"btn pri",onclick:()=>{q=inp.value.trim();load(true)}},ic("search"))),st,list,more)};
 VIEWS.user=async id=>{
-  const[u,o,x]=await Promise.all([api("user/"+id),api("userorders/"+id),api("userx/"+id)]);
+  const[u,x,f]=await Promise.all([api("user/"+id),api("userx/"+id),api("userfull/"+id)]);
   const amt=h("input",{class:"in",placeholder:"مقدار شاهی",inputmode:"decimal"}),dm=h("textarea",{class:"in",placeholder:"پیام به کاربر (HTML تلگرام مجاز است)…"});
   const tk=m=>safe(async()=>{await api("user/"+id+"/tokens",{mode:m,amount:amt.value});render()},"انجام شد");
   return h("div",null,phead("user",u.name||"کاربر",(u.username?"@"+u.username+" · ":"")+u.id),
     h("div",{class:"grid c3",style:"margin-bottom:12px"},stat("موجودی",nf(u.tokens),"tone-y","coin",null,"شاهی"),stat("جوین‌ها",nf(u.joins),"tone-g","users","لفت: "+nf(u.left)),stat("وضعیت",u.banned?"مسدود":"عادی",u.banned?"tone-r":"tone-b","shield",u.betrayer?"خیانت‌کار":(u.is_admin?"ادمین":""))),
     h("div",{class:"card"},h("h3",null,"موجودی"),amt,h("div",{style:"display:flex;gap:8px;margin-top:10px"},h("button",{class:"btn grn",style:"flex:1",onclick:()=>tk("add")},"افزودن"),h("button",{class:"btn red",style:"flex:1",onclick:()=>tk("sub")},"کسر"),h("button",{class:"btn",style:"flex:1",onclick:()=>tk("set")},"تنظیم"))),
-    h("div",{class:"card"},h("h3",null,"عملیات"),h("div",{class:"row"},h("div",{class:"av tone-r"},ic("block")),h("div",{class:"m"},h("b",null,"مسدودسازی کاربر"),h("span",null,"ادمین‌ها قابل مسدود شدن نیستند")),h("div",{class:"e"},sw(u.banned,()=>api("user/"+id+"/ban",{})))),
+    h("div",{class:"card"},h("h3",null,"عملیات"),h("div",{class:"row"},h("div",{class:"av tone-r"},ic("block")),h("div",{class:"m"},h("b",null,"مسدودسازی کاربر"),h("span",null,"ادمین‌ها قابل مسدود شدن نیستند")),h("div",{class:"e"},sw(u.banned,()=>api("user/"+id+"/ban",{}),1))),
       h("div",{class:"row"},h("div",{class:"av tone-o"},ic("wallet")),h("div",{class:"m"},h("b",null,"مسدودسازی کارت‌به‌کارت"),h("span",null,"تغییر وضعیت ممنوعیت رسید کارت")),h("div",{class:"e"},h("button",{class:"btn sm",onclick:()=>safe(()=>api("usercard/"+id,{}),"تغییر کرد")},"تغییر"))),
       h("div",{class:"row"},h("div",{class:"av tone-r"},ic("coin")),h("div",{class:"m"},h("b",null,"صفر کردن موجودی"),h("span",null,"موجودی کاربر برابر صفر می‌شود")),h("div",{class:"e"},h("button",{class:"btn sm red",onclick:()=>confirmBox("موجودی این کاربر صفر شود؟","صفر شود",()=>safe(()=>api("userx/"+id,{op:"zero"}),"صفر شد").then(render),true)},"صفر کن"))),
       h("div",{class:"row"},h("div",{class:"av tone-b"},ic("user")),h("div",{class:"m"},h("b",null,x.phone_req?"لغو الزام شماره":"درخواست دوباره‌ی شماره"),h("span",{class:"ltr"},x.phone||"شماره‌ای ثبت نشده")),h("div",{class:"e"},h("button",{class:"btn sm",onclick:()=>safe(()=>api("userx/"+id,{op:"phone"}),"تغییر کرد").then(render)},"تغییر"))),
@@ -350,9 +402,18 @@ VIEWS.user=async id=>{
       h("div",{class:"row tap",onclick:()=>{window._spu=id;go("spons")}},h("div",{class:"av tone-b"},ic("crown")),h("div",{class:"m"},h("b",null,"اشتراک‌های اسپانسری کاربر")),h("div",{class:"e"},ic("next"))),
       h("div",{class:"row tap",onclick:()=>codeSheet(id)},h("div",{class:"av tone-p"},ic("gift")),h("div",{class:"m"},h("b",null,"ساخت کد تخفیف اختصاصی"),h("span",null,"کد برای کاربر ارسال می‌شود")))),
     h("div",{class:"card"},h("h3",null,"پیام مستقیم"),dm,h("button",{class:"btn pri blk",style:"margin-top:10px",onclick:()=>safe(()=>api("user/"+id+"/dm",{text:dm.value,html:true}),"ارسال شد")},ic("send"),"ارسال")),
-    h("div",{class:"card"},h("h3",null,"درخواست‌های JFJ"),o.requests.length?o.requests.map(r=>h("div",{class:"row"},h("div",{class:"av"},ic("req")),h("div",{class:"m"},h("b",{class:"ltr"},r.code),h("span",{class:"ltr"},r.link)),h("div",{class:"e"},pill(r.status),h("span",{class:"pill"},nf(r.n))))):empty("درخواستی ندارد.")),
-    h("div",{class:"card"},h("h3",null,"سفارش‌های خدمات"),o.orders.length?o.orders.map(r=>h("div",{class:"row"},h("div",{class:"av"},ic("bag")),h("div",{class:"m"},h("b",null,r.service),h("span",null,r.created+" · "+r.code)),h("div",{class:"e"},pill(r.status),h("span",{class:"pill"},nf(r.qty))))):empty("سفارشی ندارد.")),
-    h("div",{class:"card"},h("h3",null,"فاکتورها"),u.invoices.length?u.invoices.map(r=>h("div",{class:"row"},h("div",{class:"av"},ic("receipt")),h("div",{class:"m"},h("b",null,r.product),h("span",null,r.created)),h("div",{class:"e"},pill(r.status),h("span",{class:"pill y"},nf(r.amount))))):empty("فاکتوری ندارد."))) };
+    h("div",{class:"grid c3",style:"margin-bottom:12px"},stat("درخواست JFJ",nf(f.req_total),"tone-b","req","فعال: "+nf(f.req_active)),stat("سفارش خدمات",nf(f.svc_total),"tone-p","bag"),stat("خرج‌شده",nf(f.spent),"tone-y","receipt",nf(f.paid_n)+" فاکتور","تومان")),
+    h("div",{class:"card"},h("h3",null,"اطلاعات کامل"),h("div",{class:"kvs"},kv("آیدی",String(f.id),{ltr:1}),kv("نام",f.name),kv("یوزرنیم",f.username&&"@"+f.username,{ltr:1}),kv("عضویت",f.created),kv("آخرین فعالیت",f.seen),kv("شماره",f.phone,{ltr:1}),kv("جوین فعال / لفت",nf(f.joins_active)+" / "+nf(f.joins_left)),kv("زیرمجموعه",nf(f.subs_count)),kv("پاداش معرفی",nf(f.ref_rewarded)),kv("شاهی فعالیت",nf(f.activity)),kv("VIP",f.vip&&"فعال"),kv("اسپانسری فعال",f.sponsor_active?nf(f.sponsor_active):null),kv("ممنوعیت کارت",f.card_blocked&&"بله"),kv("ادمین",f.is_admin&&"بله")),
+     f.referred_by&&h("div",{class:"row tap",onclick:()=>go("user",f.referred_by.id)},h("div",{class:"av tone-p"},ic("users")),h("div",{class:"m"},h("b",null,"معرف: "+(f.referred_by.name||f.referred_by.id)),h("span",{class:"ltr"},f.referred_by.id)),h("div",{class:"e"},ic("next")))),
+    betrayCard(id,f.betray),
+    f.subs.length>0&&h("div",{class:"card"},h("h3",null,"زیرمجموعه‌ها ("+nf(f.subs_count)+")"),f.subs.map(r=>h("div",{class:"row tap",onclick:()=>go("user",r.id)},h("div",{class:"av"},ic("user")),h("div",{class:"m"},h("b",null,r.name||r.id),h("span",null,r.created)),h("div",{class:"e"},r.rewarded?h("span",{class:"pill g"},"پاداش داده شده"):h("span",{class:"pill"},"بدون پاداش"))))),
+    h("div",{class:"card"},h("h3",null,"درخواست‌های JFJ"),f.requests.length?f.requests.map(r=>h("div",{class:"row tap",onclick:()=>go("reqd",r.code)},h("div",{class:"av"},ic("req")),h("div",{class:"m"},h("b",{class:"ltr"},r.link||r.code),h("span",null,r.created)),h("div",{class:"e"},pill(r.status),h("span",{class:"pill"},nf(r.done)+"/"+nf(r.n))))):empty("درخواستی ندارد.")),
+    h("div",{class:"card"},h("h3",null,"جوین‌های این کاربر"),f.joins.length?f.joins.map(r=>h("div",{class:"row tap",onclick:()=>go("reqd",r.code)},h("div",{class:"av"},ic("link")),h("div",{class:"m"},h("b",{class:"ltr"},r.link||r.code),h("span",null,"جوین: "+r.joined+(r.left?" · لفت: "+r.left:""))),h("div",{class:"e"},r.left?h("span",{class:"pill r"},"لفت"):h("span",{class:"pill g"},"فعال")))):empty("جوینی ندارد.")),
+    h("div",{class:"card"},h("h3",null,"سفارش‌های خدمات"),f.orders.length?f.orders.map(r=>h("div",{class:"row tap",onclick:()=>ordSheet({...r,user:id,name:u.name,username:u.username})},h("div",{class:"av"},ic("bag")),h("div",{class:"m"},h("b",null,r.service+" × "+nf(r.qty)),h("span",null,r.created+" · "+r.code)),h("div",{class:"e"},pill(r.status),h("span",{class:"pill y"},nf(r.cost))))):empty("سفارشی ندارد.")),
+    h("div",{class:"card"},h("h3",null,"فاکتورها"),f.invoices.length?f.invoices.map(r=>h("div",{class:"row"},h("div",{class:"av"},ic("receipt")),h("div",{class:"m"},h("b",null,r.product),h("span",null,r.created+(r.method?" · "+r.method:""))),h("div",{class:"e"},pill(r.status),h("span",{class:"pill y"},nf(r.amount))))):empty("فاکتوری ندارد."))) };
+function betrayCard(id,b){const ib=h("div",{class:"kvs"},kv("درخواست ثبت‌کرده",nf(b.orders)),kv("کل جوین‌ها",nf(b.joins)),kv("لفت‌داده",nf(b.left)),kv("جوین فعال",nf(b.active)),kv("موجودی",nf(b.tokens)+" شاهی"));
+  return h("div",{class:"card"},h("h3",null,"بررسی خیانت",b.flagged?h("span",{class:"pill r"},"ثبت‌شده"):b.verdict?h("span",{class:"pill y"},"مشمول"):h("span",{class:"pill g"},"سالم")),ib,h("p",{class:"hint"},b.reason),
+   !b.flagged&&b.verdict&&h("button",{class:"btn red blk",onclick:()=>confirmBox("کاربر خیانت‌کار ثبت و ممبرهایش حذف شود؟","ثبت",()=>safe(()=>api("betraycheck/"+id,{}),"ثبت شد").then(()=>render(true)),true)},ic("shield"),"ثبت به‌عنوان خیانت‌کار"))}
 function prodSheet(uid,list){const box=h("div");const paint=l=>box.replaceChildren(...l.map(p=>h("div",{class:"row"},h("div",{class:"m"},h("b",null,p.title)),h("div",{class:"e"},sw(p.on,async()=>{await api("userx/"+uid,{op:"product",key:p.key});p.on=!p.on;paint(list)})))));paint(list);sheet("محصولات اختصاصی",box,[h("button",{class:"btn",onclick:function(){this.closest(".sheet-w").remove();render()}},"بستن")])}
 function codeSheet(uid){let kind="pct";const v=h("input",{class:"in",placeholder:"مقدار",inputmode:"decimal"}),hr=h("input",{class:"in",placeholder:"اعتبار به ساعت (۰ = بدون انقضا)",inputmode:"numeric"});
   const kt=h("div",{class:"tabs"},[["pct","درصدی"],["amount","مبلغ ثابت"]].map(([k,t])=>h("button",{class:k===kind?"on":"",onclick:e=>{kind=k;[...kt.children].forEach(x=>x.classList.remove("on"));e.currentTarget.classList.add("on")}},t)));
@@ -362,12 +423,36 @@ const listTabs=(opts,cur,fn)=>h("div",{class:"tabs",style:"margin-bottom:12px"},
 VIEWS.inv=async()=>{const st=window._invst||"review";const r=await api("invoices?status="+st);
   return h("div",null,phead("receipt","رسیدها","بررسی و تأیید پرداخت‌های کاربران"),listTabs([["review","در بررسی"],["paid","تأییدشده"],["rejected","ردشده"],["all","همه"]],st,k=>{window._invst=k;render()}),
    h("div",{class:"card"},r.invoices.length?r.invoices.map(i=>h("div",{class:"row"},h("div",{class:"av tone-y"},ic("receipt")),h("div",{class:"m"},h("b",null,i.product+" · "+nf(i.amount)+" تومان"),h("span",{class:"ltr"},i.created+" · کاربر "+i.buyer+" · #"+i.code)),h("div",{class:"e"},i.status==="review"?[h("button",{class:"btn sm grn","aria-label":"تأیید",onclick:()=>confirmBox("رسید "+fa(i.code)+" تأیید شود؟","تأیید",()=>safe(()=>api("invoice/"+i.code,{ok:true}),"تأیید شد").then(render))},ic("check")),h("button",{class:"btn sm red","aria-label":"رد",onclick:()=>confirmBox("رسید رد شود؟","رد",()=>safe(()=>api("invoice/"+i.code,{ok:false}),"رد شد").then(render),true)},ic("close"))]:pill(i.status)))):empty("موردی نیست.","receipt")))};
-VIEWS.ord=async()=>{const st=window._ordst||"pending";const r=await api("orders?status="+st);
-  return h("div",null,phead("bag","سفارش خدمات","ویو، ری‌اکشن و سایر خدمات"),listTabs([["pending","در انتظار"],["completed","انجام‌شده"],["cancelled","لغو"],["all","همه"]],st,k=>{window._ordst=k;render()}),
-   h("div",{class:"card"},r.orders.length?r.orders.map(o=>h("div",{class:"row"},h("div",{class:"av tone-b"},ic("bag")),h("div",{class:"m"},h("b",null,o.service+" × "+nf(o.qty)),h("span",{class:"ltr"},o.link+" · "+o.created+" · کاربر "+o.user)),h("div",{class:"e"},o.status==="pending"?[h("button",{class:"btn sm grn","aria-label":"انجام شد",onclick:()=>confirmBox("سفارش انجام‌شده ثبت شود؟","انجام شد",()=>safe(()=>api("order/"+o.code,{ok:true}),"ثبت شد").then(render))},ic("check")),h("button",{class:"btn sm red","aria-label":"لغو",onclick:()=>confirmBox("سفارش لغو و "+nf(o.cost)+" شاهی برگردانده شود؟","لغو و بازگشت",()=>safe(()=>api("order/"+o.code,{ok:false}),"لغو شد").then(render),true)},ic("close"))]:pill(o.status)))):empty("سفارشی نیست.","bag")))};
-VIEWS.req=async()=>{const st=window._reqst||"in_progress";const r=await api("requests?status="+st);
-  return h("div",null,phead("req","درخواست‌های JFJ","پیگیری و حذف درخواست‌ها"),listTabs([["in_progress","در جریان"],["done","کامل"],["removed","حذف‌شده"],["all","همه"]],st,k=>{window._reqst=k;render()}),
-   h("div",{class:"card"},r.requests.length?r.requests.map(q=>h("div",{class:"row"},h("div",{class:"av tone-g"},ic("req")),h("div",{class:"m"},h("b",{class:"ltr"},q.link||q.code),h("span",null,q.created+" · کاربر "+q.user+" · "+nf(q.done)+" از "+nf(q.count))),h("div",{class:"e"},pill(q.status),q.status==="in_progress"&&h("button",{class:"btn sm red","aria-label":"حذف",onclick:()=>reqDel(q)},ic("trash"))))):empty("درخواستی نیست.","req")))};
+VIEWS.ord=async()=>{const st=window._ordst||"pending";const r=await api("orders?status="+st),c=r.counts||{};
+  const T=(k,l)=>[k,l+(k==="all"?"":" ("+fa(c[k]||0)+")")];
+  return h("div",null,phead("bag","سفارش خدمات","روی هر سفارش بزن تا جزئیات کامل و دکمه‌های انجام/لغو باز شود"),listTabs([T("pending","در انتظار"),T("completed","انجام‌شده"),T("cancelled","لغو"),["all","همه"]],st,k=>{window._ordst=k;render()}),
+   h("div",{class:"card"},r.orders.length?r.orders.map(o=>h("div",{class:"row tap",onclick:()=>ordSheet(o)},h("div",{class:"av tone-b"},ic("bag")),h("div",{class:"m"},h("b",null,o.service+" × "+nf(o.qty)),h("span",null,uLabel(o.name,o.username,o.user)+" · "+o.created)),h("div",{class:"e"},h("span",{class:"pill y"},nf(o.cost)),pill(o.status)))):empty("سفارشی نیست.","bag")))};
+function ordSheet(o){
+  const note=h("textarea",{class:"in",placeholder:"توضیح برای کاربر (اختیاری؛ پس از پیام اصلی برایش ارسال می‌شود)…"});
+  const fin=ok=>confirmBox(ok?"سفارش به‌عنوان انجام‌شده ثبت و به کاربر اطلاع داده شود؟":"سفارش لغو و "+nf(o.cost)+" شاهی به کاربر برگردانده شود؟",ok?"انجام شد":"لغو و بازگشت شاهی",async()=>{const r=await safe(()=>api("order/"+o.code,{ok,note:note.value.trim()}),ok?"ثبت شد":"لغو شد");if(r){s.close();render()}},!ok);
+  const s=sheet("سفارش "+fa(o.code),h("div",null,
+    h("div",{class:"kvs"},kv("وضعیت",pill(o.status)),kv("سرویس",o.service),kv("تعداد",nf(o.qty)),kv("ری‌اکشن / جزئیات",o.extra),kv("هزینه",nf(o.cost)+" شاهی"),kv("زمان ثبت",o.created),kv("کد پیگیری",o.code,{ltr:1})),
+    o.link&&linkRow(o.link),
+    userRow(o.user,o.name,o.username,()=>s.close()),
+    o.status==="pending"&&h("div",null,h("label",{class:"lbl"},"توضیح پشتیبانی"),note)),
+    [h("button",{class:"btn",onclick:()=>s.close()},"بستن"),o.status==="pending"&&h("button",{class:"btn red",onclick:()=>fin(false)},"لغو"),o.status==="pending"&&h("button",{class:"btn grn",onclick:()=>fin(true)},"انجام شد")])}
+VIEWS.req=async()=>{const st=window._reqst||"in_progress",q=window._reqq||"";const list=h("div");
+  async function load(){list.replaceChildren(loading());const r=await safe(()=>api("requests?status="+st+"&q="+encodeURIComponent(q)));if(!r)return;
+    list.replaceChildren(h("div",{class:"card"},r.requests.length?r.requests.map(x=>h("div",{class:"row tap",onclick:()=>go("reqd",x.code)},h("div",{class:"av tone-g"},ic("req")),h("div",{class:"m"},h("b",{class:"ltr"},x.link||x.code),h("span",null,uLabel(x.name,x.username,x.user)+" · "+x.created),h("div",{class:"bar"},h("i",{style:"width:"+Math.min(100,x.count?x.done/x.count*100:0)+"%"}))),h("div",{class:"e"},pill(x.status),h("span",{class:"pill"},nf(x.done)+"/"+nf(x.count))))):empty("درخواستی نیست.","req")))}
+  const inp=h("input",{class:"in",value:q,placeholder:"کد پیگیری، آیدی کاربر یا بخشی از لینک…",onkeydown:e=>{if(e.key==="Enter"){q=window._reqq=inp.value.trim();load()}}});
+  load();return h("div",null,phead("req","درخواست‌های JFJ","جزئیات، جوین‌ها، مسدودسازی و حذف"),h("div",{style:"display:flex;gap:8px;margin-bottom:10px"},inp,h("button",{class:"btn pri",onclick:()=>{q=window._reqq=inp.value.trim();load()}},ic("search"))),listTabs([["in_progress","در جریان"],["done","تکمیل‌شده"],["closed","حذف/لغو"],["all","همه"]],st,k=>{window._reqst=k;render()}),list)};
+VIEWS.reqd=async code=>{const q=await api("reqinfo/"+code),live=h("b",null,"—");
+  const pct=Math.min(100,q.count?q.done/q.count*100:0);
+  return h("div",null,phead("req","درخواست "+fa(q.code),uLabel(q.name,q.username,q.user)),
+   h("div",{class:"grid c3",style:"margin-bottom:12px"},stat("جوین فعال",nf(q.done),"tone-g","users"),stat("لفت‌داده",nf(q.left),"tone-r","out"),stat("درخواستی",nf(q.count),"tone-b","req")),
+   h("div",{class:"card"},h("div",{style:"display:flex;justify-content:space-between;font-size:10px;color:var(--tx2)"},h("span",null,"پیشرفت"),h("span",null,fa(Math.round(pct))+"٪")),h("div",{class:"bar"},h("i",{style:"width:"+pct+"%"}))),
+   q.link&&linkRow(q.link),
+   h("div",{class:"kvs"},kv("وضعیت",pill(q.status)),kv("هزینه",nf(q.cost)+" شاهی"),kv("تعداد اولیه‌ی ممبر",nf(q.initial)),kv("زمان ثبت",q.created),kv("آخرین درخواست",q.last),kv("آیدی چت",q.chat_id,{ltr:1}),kv("تعداد درخواست‌های صاحب",nf(q.owner_requests)),kv("خائن",q.betrayer&&"ثبت‌شده"),
+     h("div",{class:"kv"},h("span",null,"ممبر زنده‌ی کانال"),live,h("button",{class:"btn sm",onclick:async()=>{live.textContent="…";const r=await safe(()=>api("reqinfo/"+code+"?live=1"));live.textContent=r&&r.live!=null?nf(r.live):"نامشخص"}},"بررسی"))),
+   userRow(q.user,q.name,q.username),
+   h("div",{class:"card"},h("h3",null,"عملیات"),h("div",{class:"row"},h("div",{class:"av tone-r"},ic("block")),h("div",{class:"m"},h("b",null,"مسدود بودن این کانال از JFJ"),h("span",null,"درخواست جدید برای آن پذیرفته نمی‌شود")),h("div",{class:"e"},sw(q.blocked,v=>api("reqblock/"+code,{block:v})))),
+    q.status==="in_progress"&&h("button",{class:"btn red blk",style:"margin-top:10px",onclick:()=>reqDel(q)},ic("trash"),"حذف درخواست")),
+   h("div",{class:"card"},h("h3",null,"جوین‌کننده‌ها ("+nf(q.joiners.length)+")"),q.joiners.length?q.joiners.map(j=>h("div",{class:"row tap",onclick:()=>go("user",j.id)},h("div",{class:"av"},ic("user")),h("div",{class:"m"},h("b",null,j.name||"بدون نام"),h("span",null,"جوین: "+j.joined+(j.left?" · لفت: "+j.left:""))),h("div",{class:"e"},j.left?h("span",{class:"pill r"},"لفت"):h("span",{class:"pill g"},"فعال")))):empty("کسی هنوز جوین نشده.","users")))};
 function reqDel(q){const s=sheet("حذف درخواست",h("p",{style:"color:var(--tx2)"},"درخواست "+fa(q.code)+" حذف شود؟ می‌توانی سهم انجام‌نشده را به صاحبش برگردانی."),[h("button",{class:"btn",onclick:()=>s.close()},"انصراف"),h("button",{class:"btn red",onclick:async()=>{s.close();await safe(()=>api("reqdel/"+q.code,{refund:false}),"حذف شد");render()}},"فقط حذف"),h("button",{class:"btn pri",onclick:async()=>{s.close();await safe(()=>api("reqdel/"+q.code,{refund:true}),"حذف و بازگشت انجام شد");render()}},"حذف + بازگشت")])}
 
 VIEWS.prod=async()=>{const r=await api("products");
@@ -422,11 +507,37 @@ VIEWS.txt=async()=>{const r=await api("texts");let q="";const host=h("div");
 VIEWS.txtg=async gi=>{const r=await api("texts");const g=r.groups[+gi];if(!g)return empty("بخش پیدا نشد.","warn");
   return h("div",null,phead("text",g.group,nf(g.items.length)+" متن"),...g.items.map(txtCard))};
 function txtCard(i){return h("div",{class:"tx tap",onclick:()=>txtEdit(i)},h("div",{class:"txh"},i.edited?h("span",{class:"pill g"},"ویرایش‌شده"):h("span",{class:"pill"},"پیش‌فرض"),h("span",{class:"fn"},i.fns.join("، ")),ic("edit")),h("div",{class:"txb"},(i.edited?i.html.replace(/<[^>]+>/g,""):i.tpl).replace(/[*_`]/g,"").replace(/\n\s*\n+/g,"\n").trim()))}
-function txtEdit(i){const ta=h("textarea",{class:"in",value:i.edited?i.html:i.tpl});
-  const s=sheet("ویرایش متن",h("div",null,h("label",{class:"lbl"},"متن اصلی"),h("div",{class:"tpl"},i.tpl),i.ex&&h("div",null,h("label",{class:"lbl"},"نمونه"),h("div",{class:"tpl"},i.ex)),h("label",{class:"lbl"},"متن جدید"),ta),[h("button",{class:"btn",onclick:()=>s.close()},"بستن"),i.edited&&h("button",{class:"btn red",onclick:async()=>{const r=await safe(()=>api("text/"+i.key+"/reset",{}),"به حالت اولیه برگشت");if(r){s.close();render()}}},"بازگردانی"),h("button",{class:"btn pri",onclick:async()=>{const r=await safe(()=>api("text/"+i.key+"/set",{html:ta.value}),"ذخیره شد");if(r){s.close();render()}}},"ذخیره")])}
+const TGH=t=>{const e=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");return e.replace(/&lt;(\/?)(b|strong|i|em|u|ins|s|strike|del|code|pre)&gt;/gi,"<$1$2>").replace(/&lt;a href=(?:&quot;|")?(https?:\/\/[^\s"&<>]+)(?:&quot;|")?&gt;/gi,'<a href="$1" target="_blank" rel="noopener noreferrer">').replace(/&lt;\/a&gt;/gi,"</a>")};
+function txtEdit(i){const cur=i.edited?i.html:i.tpl;const ta=h("textarea",{class:"in",value:cur,style:"min-height:130px"}),pv=h("div",{class:"pvw"});
+  const ex={};(i.vars||[]).forEach(v=>ex[v.n]=v.ex||"…");
+  const upd=()=>{pv.innerHTML=TGH(ta.value.replace(/\*([^*\n]+)\*/g,"<b>$1</b>")).replace(/\{(\w+)\}/g,(m,n)=>ex[n]!=null?"<code>"+String(ex[n]).replace(/[<&]/g,"")+"</code>":m)};
+  const ins=(t,txt)=>{const a=ta.selectionStart,b=ta.selectionEnd;ta.setRangeText(t[0]+(txt??ta.value.slice(a,b))+t[1],a,b,"end");ta.focus();upd()};
+  const need=(i.vars||[]).map(v=>"{"+v.n+"}");
+  const chk=()=>{const miss=need.filter(v=>!ta.value.includes(v));return miss};
+  const tools=h("div",{class:"tb"},[["درشت",["<b>","</b>"]],["کج",["<i>","</i>"]],["زیرخط",["<u>","</u>"]],["خط‌خورده",["<s>","</s>"]],["کد",["<code>","</code>"]]].map(([l,t])=>h("button",{onclick:()=>ins(t)},l)),h("button",{onclick:()=>{const u=prompt("آدرس لینک (https://…)");if(u&&/^https?:\/\//i.test(u))ins(['<a href="'+u+'">',"</a>"])}},"لینک"));
+  const help=h("details",{class:"hp"},h("summary",null,ic("bolt"),"راهنمای ویرایش (بخوان)"),h("div",null,
+    "• این متن را ربات در جای مشخص‌شده‌ی زیر به کاربران نشان می‌دهد؛ تغییرش فوری اعمال می‌شود.",h("br"),
+    "• می‌توانی از قالب‌بندی تلگرام استفاده کنی: ",h("code",null,"<b>درشت</b>")," ",h("code",null,"<i>کج</i>")," ",h("code",null,"<code>کد</code>")," ",h("code",null,'<a href="https://…">لینک</a>'),h("br"),
+    "• عبارت‌هایی مثل ",h("code",null,"{1}")," یا ",h("code",null,"{name}")," جای مقدارهای واقعی‌اند (نام، عدد، لینک…). حذفشان نکن؛ برای جابه‌جایی، دکمه‌ی آن‌ها را بزن تا در جای نشانگر درج شود.",h("br"),
+    "• اگر متن را خراب کردی، «بازگردانی» نسخه‌ی اصلی را برمی‌گرداند.",h("br"),"• پیش‌نمایش زیر با مقدارهای نمونه نشان داده می‌شود."));
+  const vr=need.length?h("div",null,h("label",{class:"lbl"},"متغیرها (بزن تا درج شود)"),h("div",{class:"vr"},(i.vars||[]).map(v=>h("button",{title:v.ex,onclick:()=>ins(["{"+v.n+"}",""],"")},"{"+v.n+"}"+(v.ex?" = "+v.ex.slice(0,18):""))))):null;
+  const warn=h("p",{class:"hint",style:"color:var(--rose);display:none"});
+  ta.addEventListener("input",()=>{upd();const m=chk();warn.style.display=m.length?"":"none";warn.textContent=m.length?"این متغیرها در متن نیستند: "+m.join(" "):""});
+  const s=sheet("ویرایش متن",h("div",null,i.where&&h("div",{class:"note"},h("b",null,"محل نمایش: "),i.where),help,h("label",{class:"lbl"},"متن اصلی"),h("div",{class:"tpl"},i.tpl),i.ex&&i.ex.length&&h("div",null,h("label",{class:"lbl"},"نمونه"),h("div",{class:"tpl"},Array.isArray(i.ex)?i.ex.join(" | "):i.ex)),h("label",{class:"lbl"},"متن جدید"),tools,vr,ta,warn,h("label",{class:"lbl"},"پیش‌نمایش"),pv),
+   [h("button",{class:"btn",onclick:()=>s.close()},"بستن"),i.edited&&h("button",{class:"btn red",onclick:async()=>{const r=await safe(()=>api("text/"+i.key+"/reset",{}),"به حالت اولیه برگشت");if(r){s.close();render()}}},"بازگردانی"),h("button",{class:"btn pri",onclick:async()=>{const r=await safe(()=>api("text/"+i.key+"/set",{html:ta.value}),"ذخیره شد");if(r){s.close();render()}}},"ذخیره")]);upd()}
+function gameReport(gr){const t=gr.total,m=gr.mon;
+  return h("div",null,h("div",{class:"card"},h("h3",null,"گزارش بازی‌ها"),listTabs([[1,"امروز"],[7,"۷ روز"],[30,"۳۰ روز"]],gr.days,k=>{window._gd=k;render(true)}),
+   h("div",{class:"grid c3",style:"margin-bottom:10px"},stat("دست‌ها",nf(t.n),"tone-p","game","بازیکن: "+nf(gr.players)),stat("کل شرط",nf(t.stake),"tone-b","coin",null,"شاهی"),stat("سود ربات",nf(t.profit),t.profit>=0?"tone-g":"tone-r","pulse","پرداختی: "+nf(t.payout))),
+   gr.games.length?gr.games.map(x=>h("div",{class:"row"},h("div",{class:"av tone-p"},ic("game")),h("div",{class:"m"},h("b",null,x.name),h("span",null,nf(x.n)+" دست · شرط "+nf(x.stake)+" · پرداخت "+nf(x.payout))),h("div",{class:"e"},h("span",{class:"pill "+(x.profit>=0?"g":"r")},(x.profit>=0?"+":"")+nf(x.profit))))):empty("در این بازه بازی‌ای ثبت نشده.","game"),
+   gr.closed>0&&h("p",{class:"hint",style:"margin-top:8px"},nf(gr.closed)+" میز لغو یا توسط مدیریت بسته شده است.")),
+  h("div",{class:"card"},h("h3",null,"میزهای در جریان",gr.active.length>0&&h("span",{class:"sub"},h("button",{class:"btn sm red",onclick:()=>confirmBox("همه‌ی میزهای باز بسته و شرط‌ها برگردانده شود؟","بستن همه",()=>safe(()=>api("gametable",{all:true}),"بسته شد").then(()=>render(true)),true)},"بستن همه"))),
+   gr.active.length?gr.active.map(x=>h("div",{class:"row"},h("div",{class:"av tone-b"},ic("game")),h("div",{class:"m"},h("b",null,x.game+" · "+x.state),h("span",null,"سازنده: "+(x.owner||x.owner_id)+" · شرط "+nf(x.stake)+" · "+nf(x.players)+(x.max?"/"+nf(x.max):"")+" نفر")),h("div",{class:"e"},h("button",{class:"btn sm red","aria-label":"بستن میز",onclick:()=>confirmBox("این میز بسته شود؟","بستن",()=>safe(()=>api("gametable",{id:x.id}),"بسته شد").then(()=>render(true)),true)},ic("close"))))):empty("میز بازی در جریان نیست.","game")),
+  h("div",{class:"card"},h("h3",null,"گزارش هیولا"),h("div",{class:"grid c3",style:"margin-bottom:8px"},stat("ارسال‌شده",nf(m.sent),"tone-r","bolt","کشته‌شده: "+nf(m.done)),stat("ضربه‌ها",nf(m.hits),"tone-b","pulse","موفق: "+nf(m.hit_ok)),stat("بازیکن",nf(m.players),"tone-g","users","خسارت: "+nf(m.dmg))),
+   h("div",{class:"kvs"},kv("فرار/ناموفق",nf(m.fail)),kv("بی‌حرکت",nf(m.idle)),kv("زنده",nf(m.live)),kv("شرط هیولا",nf(m.stake)+" شاهی"),kv("پرداخت هیولا",nf(m.payout)+" شاهی")),
+   m.top.length>0&&h("div",null,h("label",{class:"lbl"},"برترین قاتل‌ها"),m.top.map((x,n)=>h("div",{class:"row tap",onclick:()=>go("user",x.id)},h("div",{class:"av tone-y"},fa(n+1)),h("div",{class:"m"},h("b",null,x.name||x.id)),h("div",{class:"e"},h("span",{class:"pill y"},nf(x.n)+" کشتن")))))))}
 VIEWS.gm=async()=>{const[g,mo,gr]=await Promise.all([api("games"),api("monster"),api("gamerep?days="+(window._gd||1))]);const monNames=new Set(mo.cfg.map(c=>c.name));g.cfg=g.cfg.filter(c=>!monNames.has(c.name));
   return h("div",null,phead("game","بازی‌ها","روشن/خاموش و تنظیمات عددی"),h("div",{class:"card"},h("h3",null,"بازی‌ها"),g.games.map(x=>h("div",{class:"row"},h("div",{class:"av tone-p"},ic("game")),h("div",{class:"m"},h("b",null,x.name)),h("div",{class:"e"},sw(x.on,()=>api("games",{op:"toggle",key:x.k})))))),
-   h("div",{class:"card"},h("h3",null,"گزارش بازی‌ها"),listTabs([[1,"امروز"],[7,"هفته"],[30,"ماه"]],gr.days,k=>{window._gd=k;render()}),gr.games.length?gr.games.map(x=>h("div",{class:"row"},h("div",{class:"av tone-p"},ic("game")),h("div",{class:"m"},h("b",null,x.game),h("span",null,nf(x.n)+" دست · شرط "+nf(x.stake)+" · پرداخت "+nf(x.payout))))):empty("در این بازه بازی‌ای ثبت نشده.","game")),
+   gameReport(gr),
    h("div",{class:"card"},h("h3",null,"هیولا"),h("div",{class:"row"},h("div",{class:"av tone-r"},ic("bolt")),h("div",{class:"m"},h("b",null,"ارسال خودکار هیولا")),h("div",{class:"e"},sw(mo.auto_on,()=>api("monster",{op:"toggle"})))),mo.cfg.map(c=>h("div",{class:"row tap",onclick:()=>editBox(c.label,c.value,{num:1,hint:"بازه: "+nf(c.lo)+" تا "+nf(c.hi)+" "+c.unit+" · پیش‌فرض "+nf(c.default)},v=>api("games",{op:"cfg",name:c.name,value:v}))},h("div",{class:"m"},h("b",{style:"white-space:normal"},c.label)),h("div",{class:"e"},h("span",{class:"pill y"},nf(c.value)+" "+c.unit),ic("edit")))),h("button",{class:"btn red blk",style:"margin-top:10px",onclick:()=>confirmBox("تنظیمات هیولا به پیش‌فرض برگردد؟","بازگردانی",()=>safe(()=>api("monster",{op:"reset"}),"انجام شد").then(render),true)},"بازگردانی هیولا")),
    h("div",{class:"card"},h("h3",null,"تنظیمات بازی‌ها",h("span",{class:"sub"},h("button",{class:"btn sm red",onclick:()=>confirmBox("همه‌ی مقدارها به پیش‌فرض برگردد؟","بازگردانی",()=>safe(()=>api("games",{op:"reset"}),"انجام شد").then(render),true)},"پیش‌فرض"))),g.cfg.map(c=>h("div",{class:"row tap",onclick:()=>editBox(c.label,c.value,{num:1,hint:"بازه: "+nf(c.lo)+" تا "+nf(c.hi)+" "+c.unit+" · پیش‌فرض "+nf(c.default)},v=>api("games",{op:"cfg",name:c.name,value:v}))},h("div",{class:"m"},h("b",{style:"white-space:normal"},c.label)),h("div",{class:"e"},h("span",{class:"pill y"},nf(c.value)+" "+c.unit),ic("edit"))))))};
 VIEWS.rp=async()=>{const r=await api("reports");
@@ -442,11 +553,46 @@ VIEWS.gen=async()=>{const[g,gx]=await Promise.all([api("general"),api("generalx"
    h("div",{class:"card"},h("h3",null,"زمان‌بندی"),E("cron","فاصله‌ی کارهای خودکار (ثانیه)",String(g.cron),{num:1})))};
 VIEWS.bt=async()=>{const r=await api("betrayers");
   return h("div",null,phead("shield","خیانت در JFJ","کسانی که پس از ثبت درخواست همه‌ی JFJ‌ها را ترک کرده‌اند"),h("div",{class:"note"},"شرط ثبت: دست‌کم "+fa(r.min_joins)+" جوین و ترک همه‌ی آن‌ها. ربات فقط ممبرهایی را حذف می‌کند که خودش برای او آورده بود."),
-   h("div",{class:"card"},r.betrayers.length?r.betrayers.map(b=>h("div",{class:"row"},h("div",{class:"av tone-r"},ic("shield")),h("div",{class:"m tap",onclick:()=>go("user",b.id)},h("b",null,b.name||b.id),h("span",null,b.flagged+" · "+nf(b.orders)+" درخواست · "+nf(b.kicked)+" حذف")),h("div",{class:"e"},h("button",{class:"btn sm",onclick:()=>safe(()=>api("betrayer/"+b.id+"/rerun",{}),"اجرا شد").then(render)},"اجرای دوباره")))):empty("خیانت‌کاری ثبت نشده.","shield")))};
-VIEWS.bc=async()=>{let aud="all";const ta=h("textarea",{class:"in",placeholder:"متن پیام (HTML تلگرام مجاز است)…"}),pin=h("input",{type:"checkbox"});
+   h("div",{class:"card"},r.betrayers.length?r.betrayers.map(b=>h("div",{class:"row"},h("div",{class:"av tone-r"},ic("shield")),h("div",{class:"m tap",onclick:()=>go("user",b.id)},h("b",null,b.name||b.id),h("span",null,b.flagged+" · "+nf(b.orders)+" درخواست · "+nf(b.kicked)+" حذف")),h("div",{class:"e"},h("button",{class:"btn sm",onclick:()=>safe(()=>api("betrayer/"+b.id+"/rerun",{}),"اجرا شد").then(render)},"اجرای دوباره"),h("button",{class:"btn sm red",onclick:()=>confirmBox("کاربر از فهرست خیانت‌کارها خارج شود؟ (ممبرهای حذف‌شده برنمی‌گردند)","خارج کن",()=>safe(()=>api("betrayer/"+b.id+"/unflag",{}),"خارج شد").then(()=>render(true)),true)},"خروج")))):empty("خیانت‌کاری ثبت نشده.","shield")))};
+VIEWS.bc=async()=>{let aud="all",kind="text",file=null;const ta=h("textarea",{class:"in",placeholder:"متن پیام (HTML تلگرام مجاز است)…"}),pin=h("input",{type:"checkbox"});
+  const KINDS=[["text","متن"],["photo","عکس"],["video","ویدیو"],["animation","گیف"],["voice","ویس"],["audio","آهنگ"],["document","فایل"],["sticker","استیکر"]],ACC={photo:"image/*",video:"video/*",animation:"image/gif,video/mp4",voice:"audio/ogg,audio/*",audio:"audio/*",sticker:"image/webp,.webp",document:"*/*"},LIM={photo:10,video:48,animation:48,voice:48,audio:48,document:48,sticker:5};
+  const prog=h("div",{class:"bar",style:"display:none"},h("i",{style:"width:0"}));
+  const dz=h("div",{class:"dz",onclick:()=>fi.click()});const fi=h("input",{type:"file",style:"display:none",onchange:()=>{file=fi.files[0]||null;paintDz()}});
+  function paintDz(){dz.classList.toggle("has",!!file);dz.replaceChildren(ic("plus"),file?file.name+" · "+fa((file.size/1048576).toFixed(1))+" مگابایت":"انتخاب فایل (حداکثر "+fa(LIM[kind])+" مگابایت)")}
+  const mbox=h("div");
+  function paintKind(){fi.accept=ACC[kind]||"";file=null;fi.value="";mbox.replaceChildren(...(kind==="text"?[]:[dz]));paintDz();ta.placeholder=kind==="text"?"متن پیام (HTML تلگرام مجاز است)…":"کپشن (اختیاری؛ HTML مجاز، حداکثر ۷۰۰ نویسه)";ta.style.display=kind==="sticker"?"none":"";ta.maxLength=kind==="text"?4000:700}
+  const kt=h("div",{class:"tabs",style:"margin-bottom:10px"},KINDS.map(([k,t])=>h("button",{class:k===kind?"on":"",onclick:e=>{kind=k;[...kt.children].forEach(x=>x.classList.remove("on"));e.currentTarget.classList.add("on");paintKind()}},t)));
   const at=h("div",{class:"tabs",style:"margin-bottom:10px"},[["all","همه"],["active","فعال‌ها"],["new","جدیدها"],["chan","کانال‌ها"]].map(([k,t])=>h("button",{class:k===aud?"on":"",onclick:e=>{aud=k;[...at.children].forEach(x=>x.classList.remove("on"));e.currentTarget.classList.add("on")}},t)));
-  return h("div",null,phead("send","پیام همگانی","متن ابتدا برای خودت ارسال و پیش‌نمایش می‌شود"),h("div",{class:"card"},at,ta,h("label",{class:"row",style:"border:0;cursor:pointer"},pin,"سنجاق کردن پیام"),h("button",{class:"btn pri blk",onclick:()=>confirmBox("پیام برای مخاطبان انتخاب‌شده ارسال شود؟","ارسال",async()=>{const r=await safe(()=>api("broadcast",{aud,text:ta.value,pin:pin.checked}));if(r&&r.targets!=null)toast("صف ارسال برای "+nf(r.targets)+" نفر ساخته شد")})},ic("send"),"ارسال")),
-   h("div",{class:"note"},"ارسال رسانه (عکس/ویدیو) فعلاً فقط از داخل ربات ممکن است."))};
+  const upload=()=>new Promise((res,rej)=>{const x=new XMLHttpRequest();x.open("POST","/admin/api/upload?kind="+kind+"&name="+encodeURIComponent(file.name)+"&caption="+encodeURIComponent(ta.value.trim()));x.setRequestHeader("X-Requested-With","jfj");x.withCredentials=true;
+    prog.style.display="";x.upload.onprogress=e=>{if(e.lengthComputable)prog.firstChild.style.width=(e.loaded/e.total*100)+"%"};
+    x.onload=()=>{let j={};try{j=JSON.parse(x.responseText)}catch(e){}x.status===200?res(j):rej(new Error(j.error||"خطا در بارگذاری ("+x.status+")"))};x.onerror=()=>rej(new Error("اتصال برقرار نشد."));x.send(file)});
+  async function go_(){
+    if(kind==="text"){if(!ta.value.trim())return toast("متن خالی است.",true);const r=await safe(()=>api("broadcast",{aud,text:ta.value,pin:pin.checked}));if(r&&r.targets!=null)toast("صف ارسال برای "+nf(r.targets)+" نفر ساخته شد");return}
+    if(!file)return toast("ابتدا فایل را انتخاب کن.",true);
+    if(file.size>LIM[kind]*1048576)return toast("حجم فایل بیشتر از حد مجاز است.",true);
+    btn.disabled=true;const r=await safe(async()=>{const u=await upload();return api("broadcastmedia",{aud,mid:u.mid,pin:pin.checked})});btn.disabled=false;prog.style.display="none";
+    if(r&&r.targets!=null){toast("صف ارسال برای "+nf(r.targets)+" نفر ساخته شد");file=null;fi.value="";paintDz()}}
+  const btn=h("button",{class:"btn pri blk",onclick:()=>confirmBox("پیام برای مخاطبان انتخاب‌شده ارسال شود؟","ارسال",go_)},ic("send"),"ارسال");
+  paintKind();
+  return h("div",null,phead("send","پیام همگانی","متن، عکس، ویدیو، گیف، ویس، آهنگ، فایل یا استیکر"),h("div",{class:"card"},h("label",{class:"lbl"},"نوع پیام"),kt,h("label",{class:"lbl"},"مخاطبان"),at,mbox,ta,prog,h("label",{class:"row",style:"border:0;cursor:pointer"},pin,"سنجاق کردن پیام"),btn),
+   h("div",{class:"note"},"رسانه ابتدا برای خودت در ربات ارسال می‌شود (پیش‌نمایش) و همان پیام برای مخاطبان کپی می‌شود."))};
+VIEWS.srch=async()=>{const host=h("div"),inp=h("input",{class:"in",placeholder:"آیدی، نام، @یوزرنیم، کد سفارش/درخواست/فاکتور یا لینک…"});let tm;
+  async function run(){const q=inp.value.trim();if(q.length<2){host.replaceChildren(h("p",{class:"hint"},"حداقل ۲ نویسه بنویس."));return}
+    const r=await safe(()=>api("search?q="+encodeURIComponent(q)));if(!r)return;const C=(t,items,fn)=>items.length?h("div",{class:"card"},h("h3",null,t),items.map(fn)):null;
+    const all=[C("کاربران",r.users,u=>userRow(u.id,u.name,u.username)),C("سفارش‌های خدمات",r.orders,o=>h("div",{class:"row tap",onclick:()=>go("ord")},h("div",{class:"av"},ic("bag")),h("div",{class:"m"},h("b",null,o.service+" × "+nf(o.qty)),h("span",{class:"ltr"},o.code+" · کاربر "+o.user)),h("div",{class:"e"},pill(o.status)))),
+      C("درخواست‌های JFJ",r.requests,x=>h("div",{class:"row tap",onclick:()=>go("reqd",x.code)},h("div",{class:"av"},ic("req")),h("div",{class:"m"},h("b",{class:"ltr"},x.link||x.code),h("span",{class:"ltr"},x.code+" · کاربر "+x.user)),h("div",{class:"e"},pill(x.status)))),
+      C("فاکتورها",r.invoices,i=>h("div",{class:"row tap",onclick:()=>go("inv")},h("div",{class:"av"},ic("receipt")),h("div",{class:"m"},h("b",null,i.product),h("span",{class:"ltr"},i.code+" · کاربر "+i.user)),h("div",{class:"e"},pill(i.status))))].filter(Boolean);
+    host.replaceChildren(...(all.length?all:[empty("نتیجه‌ای پیدا نشد.","search")]))}
+  inp.addEventListener("input",()=>{clearTimeout(tm);tm=setTimeout(run,350)});setTimeout(()=>inp.focus(),60);
+  return h("div",null,phead("search","جستجوی سراسری","کاربر، سفارش، درخواست و فاکتور را یک‌جا پیدا کن"),inp,h("div",{class:"sp"}),host)};
+VIEWS.adm=async()=>{const r=await api("admins");
+  const reset=a=>confirmBox(a.me?"رمز جدید برای خودت ساخته شود؟ بعد از ساخت، باید دوباره وارد شوی.":"رمز جدید برای این ادمین ساخته شود؟ رمز قبلی او باطل می‌شود.","ساخت رمز",async()=>{const x=await safe(()=>api("admins",{id:a.id}));if(!x)return;
+    const s=sheet("رمز جدید",h("div",null,h("p",{class:"hint"},"این رمز فقط همین یک بار نمایش داده می‌شود؛ همین حالا ذخیره‌اش کن."),h("div",{class:"lk"},h("span",{class:"u",style:"direction:ltr;color:var(--tx);font-size:12px"},x.password),h("button",{class:"btn sm",onclick:()=>cp(x.password)},"کپی"))),[h("button",{class:"btn pri",onclick:()=>{s.close();a.me?(ME=null,boot()):render(true)}},"ذخیره کردم")])});
+  return h("div",null,phead("shield","ادمین‌ها و رمز","هر ادمین با آیدی عددی و رمز اختصاصی خودش وارد می‌شود"),r.can_manage?null:h("div",{class:"note"},"فقط ادمین اصلی می‌تواند رمز دیگران را عوض کند؛ تو فقط رمز خودت را می‌توانی بسازی."),
+   h("div",{class:"card"},r.admins.map(a=>h("div",{class:"row"},h("div",{class:"av tone-b"},ic("user")),h("div",{class:"m"},h("b",null,(a.name||a.id)+(a.main?" · ادمین اصلی":"")+(a.me?" · تو":"")),h("span",{class:"ltr"},a.id+(a.last?" · آخرین ورود "+a.last:a.has_pw?"":" · هنوز رمز ندارد"))),h("div",{class:"e"},(a.me||r.can_manage)&&h("button",{class:"btn sm",onclick:()=>reset(a)},a.has_pw?"رمز جدید":"ساخت رمز"))))))};
+VIEWS.aud=async()=>{const r=await api("audit");
+  return h("div",null,phead("pulse","گزارش عملیات","آخرین ۱۰۰ تغییری که ادمین‌ها از پنل وب انجام داده‌اند"),
+   h("div",{class:"card"},r.items.length?r.items.map(i=>h("div",{class:"row"},h("div",{class:"av tone-b"},ic("pulse")),h("div",{class:"m"},h("b",{class:"ltr"},i.action),h("span",{class:"ltr",style:"white-space:normal"},i.detail),h("span",null,(i.name||i.admin)+" · "+i.ts)))):empty("هنوز عملیاتی ثبت نشده.","pulse")))};
 VIEWS.tools=async()=>{const amt=h("input",{class:"in",inputmode:"decimal",placeholder:"مقدار شاهی برای هر کاربر"});
   const run=mode=>confirmBox((mode==="add"?"افزودن ":"کسر ")+"این مقدار شاهی برای «همه‌ی کاربران»؟ برگشت‌پذیر نیست.","اجرا",async()=>{const r=await safe(()=>api("masscharge",{mode,amount:amt.value,confirm:true}));if(r&&r.users!=null)toast(nf(r.users)+" کاربر به‌روزرسانی شد")},mode==="sub");
   return h("div",null,phead("save","شارژ همگانی و بکاپ"),h("div",{class:"card"},h("h3",null,"شارژ همگانی"),amt,h("div",{style:"display:flex;gap:8px;margin-top:10px"},h("button",{class:"btn grn",style:"flex:1",onclick:()=>run("add")},"افزودن به همه"),h("button",{class:"btn red",style:"flex:1",onclick:()=>run("sub")},"کسر از همه"))),

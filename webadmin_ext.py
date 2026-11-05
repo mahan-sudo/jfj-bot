@@ -72,9 +72,13 @@ def orders_list(uid, arg, body, qs):
     st = (qs.get("status") or ["pending"])[0]
     where, args = ("", ())
     if st != "all":
-        where, args = "WHERE status=?", (st,)
-    rows = W._q(f"SELECT tracking_code, user_id, service, quantity, token_cost, status, created_at, link FROM service_orders {where} ORDER BY created_at DESC LIMIT 60", args)
-    return {"orders": [{"code": r[0], "user": r[1], "service": r[2], "qty": W._num(r[3]), "cost": W._num(r[4]), "status": r[5], "created": str(r[6])[:16], "link": r[7] or ""} for r in rows]}
+        where, args = "WHERE o.status=?", (st,)
+    rows = W._q("SELECT o.tracking_code, o.user_id, o.service, o.quantity, o.extra, o.token_cost, o.status, o.created_at, o.link, u.first_name, u.username "
+                f"FROM service_orders o LEFT JOIN users u ON u.id=o.user_id {where} ORDER BY o.created_at {'ASC' if st == 'pending' else 'DESC'} LIMIT 60", args)
+    cnt = {r[0]: r[1] for r in W._q("SELECT status, COUNT(*) FROM service_orders GROUP BY status")}
+    return {"counts": cnt,
+            "orders": [{"code": r[0], "user": r[1], "service": r[2], "qty": W._num(r[3]), "extra": r[4] or "", "cost": W._num(r[5]), "status": r[6],
+                        "created": str(r[7])[:16], "link": r[8] or "", "name": r[9] or "", "username": r[10] or ""} for r in rows]}
 
 
 @api("POST", "order")
@@ -97,10 +101,13 @@ def order_review(uid, code, body, qs):
     except Exception:
         traceback.print_exc()
     user_id, service, cost = row
+    note = str(body.get("note") or "").strip()[:500]
     if ok:
         b.send(user_id, f"✅ *سفارش {service} شما به کد پیگیری {code} تکمیل شد.*\n{b.stamp('زمان تکمیل')}")
     else:
         b.send(user_id, f"❌ *سفارش {service} شما به کد پیگیری {code} لغو شد.*\n{b.stamp('زمان لغو')}\n\n🪙 *{b.fmt_tokens(cost)} شاهی به حساب شما برگشت.*")
+    if note:
+        b.send(user_id, "📝 *توضیح پشتیبانی:*\n" + note, markdown=False)
     return {"ok": True}
 
 
@@ -683,12 +690,306 @@ def monster_set(uid, arg, body, qs):
     return {"ok": True}
 
 
+@api("GET", "betraycheck")
+def betraycheck_get(uid, target, body, qs):
+    return _b().betrayal_stats(int(target))
+
+
+@api("POST", "betraycheck")
+def betraycheck_post(uid, target, body, qs):
+    b = _b()
+    t = int(target)
+    if not W._q("SELECT 1 FROM users WHERE id=?", (t,)):
+        raise WebErr("کاربر پیدا نشد.", 404)
+    if t in b.ADMIN_IDS:
+        raise WebErr("ادمین قابل ثبت به‌عنوان خائن نیست.")
+    new = b.betrayal_flag(t)
+    return {"ok": True, "new": bool(new)}
+
+
+# ============ اطلاعات کامل کاربر ============
+def _lab(first, username):
+    return (first or "").strip() or ("@" + username if username else "")
+
+
+@api("GET", "userfull")
+def userfull(uid, target, body, qs):
+    b = _b()
+    t = int(target)
+    r = W._q("SELECT first_name, username, tokens, referred_by, created_at, banned, card_blocked, phone, phone_req, updated_at, "
+             "referral_rewarded, activity_tokens, vip FROM users WHERE id=?", (t,))
+    if not r:
+        raise WebErr("کاربر پیدا نشد.", 404)
+    f = r[0]
+    q1 = W._q1
+    act_ph = ",".join("?" * len(W._REQ_DONE))
+    ref = None
+    if f[3]:
+        rr = W._q("SELECT first_name, username FROM users WHERE id=?", (f[3],))
+        ref = {"id": f[3], "name": _lab(*rr[0]) if rr else ""}
+    now = b._utcnow_str()
+    return {
+        "id": t, "name": f[0] or "", "username": f[1] or "", "tokens": W._num(f[2]), "referred_by": ref, "created": str(f[4] or "")[:16],
+        "banned": bool(f[5]), "card_blocked": bool(f[6]), "phone": f[7] or "", "phone_req": bool(f[8]), "seen": str(f[9] or "")[:16],
+        "ref_rewarded": W._num(f[10]), "activity": W._num(f[11]), "vip": bool(f[12]), "is_admin": t in b.ADMIN_IDS,
+        "req_total": q1("SELECT COUNT(*) FROM requests WHERE user_id=?", (t,)),
+        "req_active": q1(f"SELECT COUNT(*) FROM requests WHERE user_id=? AND status NOT IN ({act_ph})", (t, *W._REQ_DONE)),
+        "joins_active": q1("SELECT COUNT(*) FROM joins WHERE user_id=? AND left_at IS NULL", (t,)),
+        "joins_left": q1("SELECT COUNT(*) FROM joins WHERE user_id=? AND left_at IS NOT NULL", (t,)),
+        "svc_total": q1("SELECT COUNT(*) FROM service_orders WHERE user_id=?", (t,)),
+        "spent": W._num(q1("SELECT COALESCE(SUM(final_amount),0) FROM invoices WHERE buyer_id=? AND status='paid'", (t,))),
+        "paid_n": q1("SELECT COUNT(*) FROM invoices WHERE buyer_id=? AND status='paid'", (t,)),
+        "sponsor_active": q1("SELECT COUNT(*) FROM sponsor_subs WHERE user_id=? AND status='active' AND ends_at > ?", (t, now)),
+        "subs_count": q1("SELECT COUNT(*) FROM users WHERE referred_by=?", (t,)),
+        "subs": [{"id": x[0], "name": _lab(x[1], x[2]), "created": str(x[3])[:16], "rewarded": bool(x[4])} for x in
+                 W._q("SELECT id, first_name, username, created_at, referral_rewarded FROM users WHERE referred_by=? ORDER BY created_at DESC LIMIT 15", (t,))],
+        "requests": [{"code": x[0], "n": x[1], "status": x[2], "link": x[3] or "", "created": str(x[4])[:16], "done": x[5]} for x in
+                     W._q("SELECT r.tracking_code, r.member_count, r.status, r.link, r.created_at, "
+                          "(SELECT COUNT(*) FROM joins j WHERE j.tracking_code=r.tracking_code AND j.left_at IS NULL) "
+                          "FROM requests r WHERE r.user_id=? ORDER BY r.created_at DESC LIMIT 15", (t,))],
+        "joins": [{"code": x[0], "link": x[1] or "", "joined": str(x[2])[:16], "left": str(x[3] or "")[:16]} for x in
+                  W._q("SELECT j.tracking_code, r.link, j.joined_at, j.left_at FROM joins j LEFT JOIN requests r ON r.tracking_code=j.tracking_code "
+                       "WHERE j.user_id=? ORDER BY j.joined_at DESC LIMIT 15", (t,))],
+        "orders": [{"code": x[0], "service": x[1], "qty": W._num(x[2]), "extra": x[3] or "", "cost": W._num(x[4]), "status": x[5], "link": x[6] or "", "created": str(x[7])[:16]} for x in
+                   W._q("SELECT tracking_code, service, quantity, extra, token_cost, status, link, created_at FROM service_orders WHERE user_id=? ORDER BY created_at DESC LIMIT 15", (t,))],
+        "invoices": [{"code": x[0], "product": x[1], "amount": W._num(x[2]), "status": x[3], "method": x[4] or "", "created": str(x[5])[:16]} for x in
+                     W._q("SELECT code, product_name, final_amount, status, method, created_at FROM invoices WHERE buyer_id=? ORDER BY created_at DESC LIMIT 15", (t,))],
+        "betray": b.betrayal_stats(t),
+    }
+
+
+# ============ جزئیات درخواست JFJ ============
+@api("GET", "reqinfo")
+def reqinfo(uid, code, body, qs):
+    b = _b()
+    r = W._q("SELECT r.tracking_code, r.user_id, r.member_count, r.initial_member_count, r.token_cost, r.link, r.chat_id, r.status, r.created_at, "
+             "r.last_requested_at, u.first_name, u.username FROM requests r LEFT JOIN users u ON u.id=r.user_id WHERE r.tracking_code=?", (code,))
+    if not r:
+        raise WebErr("درخواست پیدا نشد.", 404)
+    x = r[0]
+    q1 = W._q1
+    joiners = W._q("SELECT j.user_id, u.first_name, u.username, j.joined_at, j.left_at FROM joins j LEFT JOIN users u ON u.id=j.user_id "
+                   "WHERE j.tracking_code=? ORDER BY j.joined_at DESC LIMIT 100", (code,))
+    out = {"code": x[0], "user": x[1], "count": x[2], "initial": x[3], "cost": W._num(x[4]), "link": x[5] or "", "chat_id": x[6], "status": x[7],
+           "created": str(x[8])[:16], "last": str(x[9] or "")[:16], "name": x[10] or "", "username": x[11] or "",
+           "done": q1("SELECT COUNT(*) FROM joins WHERE tracking_code=? AND left_at IS NULL", (code,)),
+           "left": q1("SELECT COUNT(*) FROM joins WHERE tracking_code=? AND left_at IS NOT NULL", (code,)),
+           "owner_requests": q1("SELECT COUNT(*) FROM requests WHERE user_id=?", (x[1],)),
+           "betrayer": bool(q1("SELECT COUNT(*) FROM betrayers WHERE user_id=?", (x[1],))),
+           "blocked": (b.chan_key(x[6], x[5]) in b._block_keys()) if hasattr(b, "chan_key") else False,
+           "joiners": [{"id": j[0], "name": _lab(j[1], j[2]), "username": j[2] or "", "joined": str(j[3])[:16], "left": str(j[4] or "")[:16]} for j in joiners],
+           "live": None}
+    if (qs.get("live") or [""])[0] == "1":
+        try:
+            ident = b.resolve_chat_ident(x[6], x[5])
+            rs = b.tg("getChatMemberCount", chat_id=ident, _timeout=8) if ident else {}
+            out["live"] = rs.get("result") if rs.get("ok") else None
+        except Exception:
+            out["live"] = None
+    return out
+
+
+@api("POST", "reqblock")
+def reqblock(uid, code, body, qs):
+    b = _b()
+    r = W._q("SELECT chat_id, link FROM requests WHERE tracking_code=?", (code,))
+    if not r:
+        raise WebErr("درخواست پیدا نشد.", 404)
+    key = b.chan_key(r[0][0], r[0][1])
+    if body.get("block"):
+        b.block_chan([key])
+    else:
+        b.unblock_chan(key)
+    return {"ok": True}
+
+
+# ============ بارگذاری رسانه برای پیام همگانی ============
+_KIND_FIELD = {"photo": ("sendPhoto", "photo", 10), "video": ("sendVideo", "video", 48), "animation": ("sendAnimation", "animation", 48),
+               "voice": ("sendVoice", "voice", 48), "audio": ("sendAudio", "audio", 48), "document": ("sendDocument", "document", 48),
+               "sticker": ("sendSticker", "sticker", 5)}
+
+
+def upload(uid, environ, qs):
+    """فایل خام را می‌گیرد و برای خودِ ادمین در چت ربات می‌فرستد (پیش‌نمایش)؛ message_id برای ارسال همگانی برمی‌گردد."""
+    import hashlib
+    import os
+    import urllib.error
+    import urllib.request
+    from urllib.parse import unquote
+    b = _b()
+    kind = (qs.get("kind") or [""])[0]
+    if kind not in _KIND_FIELD:
+        raise WebErr("نوع رسانه نامعتبر است.")
+    method, field, mb = _KIND_FIELD[kind]
+    try:
+        size = int(environ.get("CONTENT_LENGTH") or 0)
+    except ValueError:
+        size = 0
+    if size <= 0:
+        raise WebErr("فایلی دریافت نشد.")
+    if size > mb * 1024 * 1024:
+        raise WebErr(f"حجم فایل برای این نوع بیشتر از {mb} مگابایت است.")
+    inp, chunks, got = environ["wsgi.input"], [], 0
+    while got < size:
+        part = inp.read(min(1 << 20, size - got))
+        if not part:
+            break
+        chunks.append(part)
+        got += len(part)
+    data = b"".join(chunks)
+    if len(data) != size:
+        raise WebErr("دریافت فایل ناقص بود؛ دوباره امتحان کن.")
+    name = re.sub(r"[^\w.\-]", "_", unquote((qs.get("name") or ["file"])[0]))[:60] or "file"
+    caption = unquote((qs.get("caption") or [""])[0])[:1000]
+    boundary = "----jfjweb" + hashlib.md5(os.urandom(8)).hexdigest()
+    fields = {"chat_id": str(uid)}
+    if caption and kind != "sticker":
+        fields["caption"] = caption
+        fields["parse_mode"] = "HTML"
+    body = b""
+    for k, v in fields.items():
+        body += f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode("utf-8")
+    body += (f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"; filename="{name}"\r\n'
+             f'Content-Type: application/octet-stream\r\n\r\n').encode() + data + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(f"https://api.telegram.org/bot{b.BOT_TOKEN}/{method}", data=body,
+                                 headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            res = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        try:
+            res = json.loads(e.read() or b"{}")
+        except Exception:
+            res = {"ok": False, "description": str(e)}
+    except Exception as e:
+        res = {"ok": False, "description": str(e)}
+    if not res.get("ok"):
+        raise WebErr("تلگرام فایل را نپذیرفت: " + str(res.get("description", ""))[:150])
+    return {"ok": True, "mid": res["result"]["message_id"], "kind": kind}
+
+
+@api("POST", "broadcastmedia")
+def broadcast_media(uid, arg, body, qs):
+    b = _b()
+    aud = body.get("aud")
+    if aud not in ("all", "active", "new", "chan"):
+        raise WebErr("مخاطب نامعتبر است.")
+    try:
+        mid = int(body.get("mid"))
+    except (TypeError, ValueError):
+        raise WebErr("ابتدا فایل را بارگذاری کن.")
+    jid = b.bc_create(uid, uid, uid, mid, aud, pin=1 if body.get("pin") else 0)
+    return {"ok": True, "job": jid, "targets": len(b.bc_targets(aud))}
+
+
+# ============ گزارش بازی‌ها (همان گزارش ربات) ============
 @api("GET", "gamerep")
 def gamerep_get(uid, arg, body, qs):
-    _games()
+    g = _games()
+    b = _b()
+    from datetime import timedelta
     d = int((qs.get("days") or ["1"])[0])
     d = d if d in (1, 7, 30) else 1
-    since = time.time() - d * 86400
-    out = [{"game": r[0], "n": r[1], "stake": W._num(r[2]), "payout": W._num(r[3])} for r in
-           W._q("SELECT game, COUNT(*), COALESCE(SUM(stake_total),0), COALESCE(SUM(payout_total),0) FROM g_log WHERE ts >= ? GROUP BY game ORDER BY 2 DESC", (since,))]
-    return {"days": d, "games": out}
+    midnight = b.now_local().replace(hour=0, minute=0, second=0, microsecond=0)
+    start = midnight.timestamp() if d == 1 else (midnight - timedelta(days=d - 1)).timestamp()
+    rows = g._rows("SELECT game, kind, stake_total, payout_total, detail FROM g_log WHERE ts>=?", (start,))
+    agg, players, closed = {}, set(), 0
+    for r in rows:
+        if r["kind"] in ("cancel", "admin"):
+            closed += 1
+            continue
+        a = agg.setdefault(r["game"], [0, 0.0, 0.0])
+        a[0] += 1
+        a[1] += r["stake_total"] or 0
+        a[2] += r["payout_total"] or 0
+        try:
+            for e in json.loads(r["detail"] or "[]"):
+                players.add(e[0])
+        except Exception:
+            pass
+    names = {"s": "گردونه شانس", "d": "تاس", "x": "دوز", "r": "سنگ کاغذ قیچی", "m": "هیولا"}
+    games = [{"k": k, "name": names[k], "n": agg[k][0], "stake": W._num(agg[k][1]), "payout": W._num(agg[k][2]), "profit": W._num(round(agg[k][1] - agg[k][2], 2))}
+             for k in names if k in agg]
+    ts, tp = sum(x["stake"] for x in games), sum(x["payout"] for x in games)
+    tables = g._rows("SELECT * FROM g_tables WHERE state IN ('join','send','play') ORDER BY id DESC LIMIT 20")
+    st_fa = {"join": "جذب بازیکن", "send": "مرحله ارسال", "play": "در حال بازی"}
+    act = []
+    for t in tables:
+        ps = g._players(t["id"])
+        act.append({"id": t["id"], "game": names.get(t["game"], t["game"]), "state": st_fa.get(t["state"], t["state"]), "owner": t.get("owner_name") or "",
+                    "owner_id": t["owner"], "stake": W._num(t["stake"]), "players": len(ps), "max": t["maxp"], "chat": t["chat_id"]})
+    ms = g._rows("SELECT id, state FROM g_mon WHERE created>=?", (start,))
+    cnt = {}
+    for m_ in ms:
+        cnt[m_["state"]] = cnt.get(m_["state"], 0) + 1
+    hits = g._row("SELECT COUNT(*) n, COALESCE(SUM(hit),0) h, COALESCE(SUM(dmg),0) d, COUNT(DISTINCT user_id) u FROM g_mon_hits WHERE mon_id IN (SELECT id FROM g_mon WHERE created>=?)", (start,))
+    fin = g._row("SELECT COALESCE(SUM(stake_total),0) s, COALESCE(SUM(payout_total),0) p FROM g_log WHERE game='m' AND ts>=?", (start,))
+    top = g._rows("SELECT h.user_id, MAX(h.name) AS name, COUNT(*) n FROM g_mon m JOIN g_mon_hits h ON h.mon_id=m.id AND h.user_id=m.winner "
+                  "WHERE m.state='done' AND m.created>=? GROUP BY h.user_id ORDER BY n DESC LIMIT 5", (start,))
+    return {"days": d, "games": games, "total": {"n": sum(x["n"] for x in games), "stake": W._num(ts), "payout": W._num(tp), "profit": W._num(round(ts - tp, 2))},
+            "players": len(players), "closed": closed, "active": act,
+            "mon": {"sent": len(ms), "done": cnt.get("done", 0), "fail": cnt.get("fail", 0), "idle": cnt.get("idle", 0), "live": cnt.get("live", 0),
+                    "hits": hits["n"], "hit_ok": W._num(hits["h"]), "dmg": W._num(hits["d"]), "players": hits["u"],
+                    "stake": W._num(fin["s"]), "payout": W._num(fin["p"]), "top": [{"id": x["user_id"], "name": x["name"] or "", "n": x["n"]} for x in top]}}
+
+
+@api("POST", "gametable")
+def gametable(uid, arg, body, qs):
+    g = _games()
+    if body.get("all"):
+        n = sum(1 for t in g._rows("SELECT id FROM g_tables WHERE state IN ('join','send','play')") if g.admin_close_table(t["id"]))
+        return {"ok": True, "closed": n}
+    return {"ok": bool(g.admin_close_table(int(body.get("id"))))}
+
+
+# ============ لاگ عملیات، جستجوی سراسری، مدیریت ادمین‌ها ============
+@api("GET", "audit")
+def audit_get(uid, arg, body, qs):
+    W._tables()
+    who = (qs.get("admin") or [""])[0]
+    where, args = ("WHERE admin_id=?", (int(who),)) if who.isdigit() else ("", ())
+    rows = W._q(f"SELECT a.id, a.admin_id, a.action, a.detail, a.ts, u.first_name FROM web_audit a LEFT JOIN users u ON u.id=a.admin_id {where} ORDER BY a.id DESC LIMIT 100", args)
+    return {"items": [{"id": r[0], "admin": r[1], "name": r[5] or "", "action": r[2], "detail": r[3] or "", "ts": str(r[4])[:16]} for r in rows]}
+
+
+@api("GET", "search")
+def search(uid, arg, body, qs):
+    q = (qs.get("q") or [""])[0].strip().lstrip("@")
+    if len(q) < 2:
+        return {"users": [], "orders": [], "requests": [], "invoices": []}
+    like = "%" + q.lower() + "%"
+    users = W._q("SELECT id, first_name, username, tokens FROM users WHERE CAST(id AS TEXT)=? OR LOWER(COALESCE(username,'')) LIKE ? OR LOWER(COALESCE(first_name,'')) LIKE ? LIMIT 8", (q, like, like))
+    orders = W._q("SELECT tracking_code, user_id, service, quantity, status FROM service_orders WHERE LOWER(tracking_code) LIKE ? OR LOWER(link) LIKE ? ORDER BY created_at DESC LIMIT 8", (like, like))
+    reqs = W._q("SELECT tracking_code, user_id, link, status FROM requests WHERE LOWER(tracking_code) LIKE ? OR LOWER(link) LIKE ? ORDER BY created_at DESC LIMIT 8", (like, like))
+    invs = W._q("SELECT code, buyer_id, product_name, status FROM invoices WHERE LOWER(code) LIKE ? ORDER BY created_at DESC LIMIT 8", (like,))
+    return {"users": [{"id": r[0], "name": r[1] or "", "username": r[2] or "", "tokens": W._num(r[3])} for r in users],
+            "orders": [{"code": r[0], "user": r[1], "service": r[2], "qty": W._num(r[3]), "status": r[4]} for r in orders],
+            "requests": [{"code": r[0], "user": r[1], "link": r[2] or "", "status": r[3]} for r in reqs],
+            "invoices": [{"code": r[0], "user": r[1], "product": r[2], "status": r[3]} for r in invs]}
+
+
+@api("GET", "admins")
+def admins_get(uid, arg, body, qs):
+    b = _b()
+    W._tables()
+    have = {r[0]: str(r[1] or "")[:16] for r in W._q("SELECT user_id, last_login FROM web_admins")}
+    out = []
+    for a in b.ADMIN_IDS:
+        r = W._q("SELECT first_name, username FROM users WHERE id=?", (a,))
+        out.append({"id": a, "name": _lab(*r[0]) if r else "", "has_pw": a in have, "last": have.get(a, ""), "main": a == b.ADMIN_IDS[0], "me": a == uid})
+    return {"admins": out, "can_manage": uid == b.ADMIN_IDS[0]}
+
+
+@api("POST", "admins")
+def admins_post(uid, arg, body, qs):
+    b = _b()
+    try:
+        t = int(body.get("id"))
+    except (TypeError, ValueError):
+        raise WebErr("آیدی نامعتبر است.")
+    if t not in b.ADMIN_IDS:
+        raise WebErr("این آیدی ادمین ربات نیست.")
+    if t != uid and uid != b.ADMIN_IDS[0]:
+        raise WebErr("فقط ادمین اصلی می‌تواند رمز دیگران را تغییر دهد.", 403)
+    pw = W.set_password(t)
+    return {"ok": True, "password": pw}

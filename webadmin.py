@@ -56,6 +56,12 @@ def _tables():
             pw_hash TEXT NOT NULL,
             created_at TEXT NOT NULL,
             last_login TEXT)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS web_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id BIGINT NOT NULL,
+            action TEXT NOT NULL,
+            detail TEXT,
+            ts TEXT NOT NULL)""")
     _ready[0] = True
 
 
@@ -193,7 +199,7 @@ def dashboard(uid):
         "sales_all": _num(_q1("SELECT COALESCE(SUM(final_amount),0) FROM invoices WHERE status='paid'")),
         "pending_receipts": _q1("SELECT COUNT(*) FROM invoices WHERE status='review'"),
         "pending_orders": _q1("SELECT COUNT(*) FROM service_orders WHERE status='pending'"),
-        "active_requests": _q1("SELECT COUNT(*) FROM requests WHERE status='in_progress'"),
+        "active_requests": _q1("SELECT COUNT(*) FROM requests WHERE status NOT IN ('completed','cancelled','removed','deleted','relinked')"),
         "tokens_total": _num(_q1("SELECT COALESCE(SUM(tokens),0) FROM users")),
         "betrayers": _q1("SELECT COUNT(*) FROM betrayers"),
         "overrides": (bot.TEXTS.overrides_count() if getattr(bot, "TEXTS", None) else 0),
@@ -219,14 +225,20 @@ def users_list(uid, qs):
     q = (qs.get("q") or [""])[0].strip().lstrip("@")
     page = max(0, int((qs.get("page") or ["0"])[0] or 0))
     sort = (qs.get("sort") or ["new"])[0]
-    order = {"new": "created_at DESC", "rich": "tokens DESC", "banned": "banned DESC, created_at DESC"}.get(sort, "created_at DESC")
+    order = {"new": "created_at DESC", "rich": "tokens DESC", "neg": "tokens ASC"}.get(sort, "created_at DESC")
+    flt = {"neg": "tokens<0", "banned": "banned=1", "betray": "id IN (SELECT user_id FROM betrayers)",
+           "phone": "COALESCE(phone,'')<>''"}.get(sort)
+    conds, args = [], []
+    if flt:
+        conds.append(flt)
     if q:
         like = "%" + q.lower() + "%"
-        rows = _q(f"SELECT {_UCOLS} FROM users WHERE CAST(id AS TEXT)=? OR LOWER(COALESCE(username,'')) LIKE ? "
-                  f"OR LOWER(COALESCE(first_name,'')) LIKE ? ORDER BY {order} LIMIT 30 OFFSET ?", (q, like, like, page * 30))
-    else:
-        rows = _q(f"SELECT {_UCOLS} FROM users ORDER BY {order} LIMIT 30 OFFSET ?", (page * 30,))
-    return {"users": [_user_dict(r) for r in rows], "page": page}
+        conds.append("(CAST(id AS TEXT)=? OR LOWER(COALESCE(username,'')) LIKE ? OR LOWER(COALESCE(first_name,'')) LIKE ?)")
+        args += [q, like, like]
+    wh = ("WHERE " + " AND ".join(conds)) if conds else ""
+    rows = _q(f"SELECT {_UCOLS} FROM users {wh} ORDER BY {order} LIMIT 31 OFFSET ?", tuple(args) + (page * 30,))
+    total = _q1(f"SELECT COUNT(*) FROM users {wh}", tuple(args))
+    return {"users": [_user_dict(r) for r in rows[:30]], "page": page, "more": len(rows) > 30, "total": total}
 
 
 def user_detail(uid, target):
@@ -324,16 +336,27 @@ def invoice_review(uid, code, body):
     return {"ok": True}
 
 
+_REQ_DONE = ("completed", "cancelled", "removed", "deleted", "relinked")
+
+
 def requests_list(uid, qs):
+    """in_progress = «در جریان» (هر وضعیتی جز پایانی‌ها، مثل ربات)، done = تکمیل‌شده، closed = حذف/لغو/تغییر لینک"""
     st = (qs.get("status") or ["in_progress"])[0]
-    where, args = ("", ())
-    if st != "all":
-        where, args = "WHERE status=?", (st,)
-    rows = _q(f"SELECT tracking_code, user_id, member_count, token_cost, link, status, created_at FROM requests {where} ORDER BY created_at DESC LIMIT 60", args)
+    q = (qs.get("q") or [""])[0].strip().lstrip("@")
+    ph = ",".join("?" * len(_REQ_DONE))
+    where, args = {"in_progress": (f"WHERE r.status NOT IN ({ph})", _REQ_DONE), "done": ("WHERE r.status='completed'", ()),
+                   "closed": ("WHERE r.status IN ('cancelled','removed','deleted','relinked')", ())}.get(st, ("", ()))
+    if q:
+        where += (" AND " if where else "WHERE ") + "(r.tracking_code=? OR CAST(r.user_id AS TEXT)=? OR LOWER(r.link) LIKE ?)"
+        args = args + (q, q, "%" + q.lower() + "%")
+    rows = _q("SELECT r.tracking_code, r.user_id, r.member_count, r.token_cost, r.link, r.status, r.created_at, u.first_name, u.username, "
+              "(SELECT COUNT(*) FROM joins j WHERE j.tracking_code=r.tracking_code AND j.left_at IS NULL), "
+              "(SELECT COUNT(*) FROM joins j WHERE j.tracking_code=r.tracking_code AND j.left_at IS NOT NULL) "
+              f"FROM requests r LEFT JOIN users u ON u.id=r.user_id {where} ORDER BY r.created_at DESC LIMIT 60", args)
     out = []
     for r in rows:
         out.append({"code": r[0], "user": r[1], "count": r[2], "cost": _num(r[3]), "link": r[4] or "", "status": r[5], "created": str(r[6])[:16],
-                    "done": bot.get_join_count(r[0])})
+                    "name": r[7] or "", "username": r[8] or "", "done": r[9], "left": r[10]})
     return {"requests": out}
 
 
@@ -390,13 +413,26 @@ def _texts():
     return T
 
 
+def _tvars(it):
+    """جاهای متغیر یک متن: [{n:'1', ex:'نمونه/عبارت'}]"""
+    out, seen = [], set()
+    for m in re.finditer(r"\{(\w+)\}", it["tpl"]):
+        nm = m.group(1)
+        if nm in seen:
+            continue
+        seen.add(nm)
+        ex = it["ex"][int(nm) - 1][:50] if nm.isdigit() and int(nm) - 1 < len(it["ex"]) else ""
+        out.append({"n": nm, "ex": ex})
+    return out
+
+
 def texts_list(uid, qs):
     T = _texts()
     cat = T.catalog()
     out = []
     for g, keys in T.groups().items():
         out.append({"group": g, "items": [{"key": k, "n": cat[k]["n"], "tpl": cat[k]["tpl"], "fns": cat[k]["fns"][:2], "ex": cat[k]["ex"],
-                                            "edited": k in T._ov, "html": T._ov.get(k, "")} for k in keys]})
+                                            "edited": k in T._ov, "html": T._ov.get(k, ""), "vars": _tvars(cat[k]), "where": T._where(cat[k]), "prev": T._preview_html(cat[k]["tpl"])} for k in keys]})
     return {"groups": out, "edited": T.overrides_count()}
 
 
@@ -452,9 +488,39 @@ def betrayer_rerun(uid, target, body):
     return {"ok": True}
 
 
+def betrayer_unflag(uid, target, body):
+    with bot.get_db() as c:
+        cur = c.execute("DELETE FROM betrayers WHERE user_id=?", (target,))
+    if not cur.rowcount:
+        raise WebErr("این کاربر در فهرست نیست.", 404)
+    return {"ok": True}
+
+
 def backup_bytes():
     data = bot.backup_dump()
     return json.dumps(data, ensure_ascii=False).encode("utf-8")
+
+
+_NOAUDIT = ("login", "logout", "upload")
+
+
+def audit(uid, sub, body):
+    """ثبت هر عملیات تغییردهنده‌ی ادمین‌های وب (بدون متن‌های بلند و رمزها)"""
+    try:
+        _tables()
+        keep = {}
+        for k, v in (body or {}).items():
+            if k in ("password", "text", "html"):
+                keep[k] = "…"
+            elif isinstance(v, (int, float, bool)) or v is None:
+                keep[k] = v
+            else:
+                keep[k] = str(v)[:40]
+        with bot.get_db() as c:
+            c.execute("INSERT INTO web_audit (admin_id, action, detail, ts) VALUES (?,?,?,?)",
+                      (uid, sub[:80], json.dumps(keep, ensure_ascii=False)[:300], bot.now_local().isoformat()))
+    except Exception:
+        traceback.print_exc()
 
 
 # ---------------- مسیریابی ----------------
@@ -519,6 +585,15 @@ def handle(environ, start_response):
         sub = path[len("/admin/api/"):]
         qs = parse_qs(environ.get("QUERY_STRING", ""))
         body = {}
+        if method == "POST" and sub == "upload":
+            if environ.get("HTTP_X_REQUESTED_WITH") != "jfj":
+                raise WebErr("درخواست نامعتبر.", 403)
+            uid = read_session(_cookie(environ))
+            if not uid:
+                return _json(start_response, "401 Unauthorized", {"error": "auth", "login": True})
+            R = webadmin_ext.upload(uid, environ, qs)
+            audit(uid, "upload", {"kind": (qs.get("kind") or [""])[0]})
+            return _json(start_response, "200 OK", R)
         if method == "POST":
             if environ.get("HTTP_X_REQUESTED_WITH") != "jfj":
                 raise WebErr("درخواست نامعتبر.", 403)
@@ -594,11 +669,15 @@ def handle(environ, start_response):
                 R = broadcast(uid, body)
             elif a == "betrayer" and arg and act == "rerun":
                 R = betrayer_rerun(uid, int(arg), body)
+            elif a == "betrayer" and arg and act == "unflag":
+                R = betrayer_unflag(uid, int(arg), body)
         if R is None:
             fn = EXT.get((method, a, act)) or EXT.get((method, a, None))
             if fn is None:
                 raise WebErr("not found", 404)
             R = fn(uid, arg, body, qs)
+        if method == "POST":
+            audit(uid, sub, body)
         return _json(start_response, "200 OK", R)
     except WebErr as e:
         return _json(start_response, "%d Error" % e.status, {"ok": False, "error": e.msg})
