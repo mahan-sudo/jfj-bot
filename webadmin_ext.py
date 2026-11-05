@@ -958,10 +958,15 @@ def search(uid, arg, body, qs):
     if len(q) < 2:
         return {"users": [], "orders": [], "requests": [], "invoices": []}
     like = "%" + q.lower() + "%"
-    users = W._q("SELECT id, first_name, username, tokens FROM users WHERE CAST(id AS TEXT)=? OR LOWER(COALESCE(username,'')) LIKE ? OR LOWER(COALESCE(first_name,'')) LIKE ? LIMIT 8", (q, like, like))
-    orders = W._q("SELECT tracking_code, user_id, service, quantity, status FROM service_orders WHERE LOWER(tracking_code) LIKE ? OR LOWER(link) LIKE ? ORDER BY created_at DESC LIMIT 8", (like, like))
-    reqs = W._q("SELECT tracking_code, user_id, link, status FROM requests WHERE LOWER(tracking_code) LIKE ? OR LOWER(link) LIKE ? ORDER BY created_at DESC LIMIT 8", (like, like))
-    invs = W._q("SELECT code, buyer_id, product_name, status FROM invoices WHERE LOWER(code) LIKE ? ORDER BY created_at DESC LIMIT 8", (like,))
+    num = int(q) if q.isdigit() and len(q) < 16 else None
+    users = W._q("SELECT id, first_name, username, tokens FROM users WHERE CAST(id AS TEXT)=? OR LOWER(COALESCE(username,'')) LIKE ? OR LOWER(COALESCE(first_name,'')) LIKE ? "
+                 "OR COALESCE(phone,'') LIKE ? ORDER BY created_at DESC LIMIT 8", (q, like, like, "%" + q + "%"))
+    o_where, o_args = ("(LOWER(tracking_code) LIKE ? OR LOWER(link) LIKE ?" + (" OR user_id=?)" if num else ")")), (like, like) + ((num,) if num else ())
+    orders = W._q(f"SELECT tracking_code, user_id, service, quantity, status FROM service_orders WHERE {o_where} ORDER BY created_at DESC LIMIT 8", o_args)
+    r_where, r_args = ("(LOWER(tracking_code) LIKE ? OR LOWER(link) LIKE ?" + (" OR user_id=?)" if num else ")")), (like, like) + ((num,) if num else ())
+    reqs = W._q(f"SELECT tracking_code, user_id, link, status FROM requests WHERE {r_where} ORDER BY created_at DESC LIMIT 8", r_args)
+    i_where, i_args = ("(LOWER(code) LIKE ?" + (" OR buyer_id=?)" if num else ")")), (like,) + ((num,) if num else ())
+    invs = W._q(f"SELECT code, buyer_id, product_name, status FROM invoices WHERE {i_where} ORDER BY created_at DESC LIMIT 8", i_args)
     return {"users": [{"id": r[0], "name": r[1] or "", "username": r[2] or "", "tokens": W._num(r[3])} for r in users],
             "orders": [{"code": r[0], "user": r[1], "service": r[2], "qty": W._num(r[3]), "status": r[4]} for r in orders],
             "requests": [{"code": r[0], "user": r[1], "link": r[2] or "", "status": r[3]} for r in reqs],
@@ -993,3 +998,44 @@ def admins_post(uid, arg, body, qs):
         raise WebErr("فقط ادمین اصلی می‌تواند رمز دیگران را تغییر دهد.", 403)
     pw = W.set_password(t)
     return {"ok": True, "password": pw}
+
+
+# ============ اطلاعات تکمیلی داشبورد ============
+@api("GET", "dashx")
+def dashx(uid, arg, body, qs):
+    from datetime import timedelta
+    b = _b()
+    q1, Q = W._q1, W._q
+    mid = b.now_local().replace(hour=0, minute=0, second=0, microsecond=0)
+    t0, t1 = b._utc_str(mid), b._utc_str(mid - timedelta(days=1))
+    w0, w1 = b._utc_str(mid - timedelta(days=6)), b._utc_str(mid - timedelta(days=13))
+    now = b._utcnow_str()
+    sales = lambda a, z=None: W._num(q1("SELECT COALESCE(SUM(final_amount),0) FROM invoices WHERE status='paid' AND created_at >= ?" + (" AND created_at < ?" if z else ""), (a, z) if z else (a,)))
+    gl = b.GAMES._rows("SELECT game, stake_total, payout_total FROM g_log WHERE ts>=? AND kind NOT IN ('cancel','admin')", (mid.timestamp(),)) if getattr(b, "GAMES", None) else []
+    stake = sum(r["stake_total"] or 0 for r in gl)
+    pay = sum(r["payout_total"] or 0 for r in gl)
+    nm = lambda f, u: _lab(f, u)
+    return {
+        "today": {"requests": q1("SELECT COUNT(*) FROM requests WHERE created_at >= ?", (t0,)), "orders": q1("SELECT COUNT(*) FROM service_orders WHERE created_at >= ?", (t0,)),
+                  "joins": q1("SELECT COUNT(*) FROM joins WHERE joined_at >= ?", (t0,)), "lefts": q1("SELECT COUNT(*) FROM joins WHERE left_at >= ?", (t0,)),
+                  "paid": q1("SELECT COUNT(*) FROM invoices WHERE status='paid' AND created_at >= ?", (t0,)),
+                  "hands": len(gl), "stake": W._num(stake), "house": W._num(round(stake - pay, 2))},
+        "yesterday": {"sales": sales(t1, t0), "users": q1("SELECT COUNT(*) FROM users WHERE created_at >= ? AND created_at < ?", (t1, t0))},
+        "week": {"sales": sales(w0), "prev_sales": sales(w1, w0), "users": q1("SELECT COUNT(*) FROM users WHERE created_at >= ?", (w0,)),
+                 "prev_users": q1("SELECT COUNT(*) FROM users WHERE created_at >= ? AND created_at < ?", (w1, w0))},
+        "totals": {"sponsors": q1("SELECT COUNT(*) FROM sponsor_subs WHERE status='active' AND ends_at > ?", (now,)), "banned": q1("SELECT COUNT(*) FROM users WHERE banned=1"),
+                   "neg": q1("SELECT COUNT(*) FROM users WHERE tokens<0"), "joins_active": q1("SELECT COUNT(*) FROM joins WHERE left_at IS NULL"),
+                   "orders_all": q1("SELECT COUNT(*) FROM service_orders"), "requests_all": q1("SELECT COUNT(*) FROM requests")},
+        "new_users": [{"id": r[0], "name": nm(r[1], r[2]), "created": str(r[3])[:16]} for r in Q("SELECT id, first_name, username, created_at FROM users ORDER BY created_at DESC LIMIT 6")],
+        "pend_orders": [{"code": r[0], "user": r[1], "service": r[2], "qty": W._num(r[3]), "extra": r[4] or "", "cost": W._num(r[5]), "status": "pending", "created": str(r[6])[:16], "link": r[7] or "", "name": nm(r[8], r[9]), "username": r[9] or ""}
+                        for r in Q("SELECT o.tracking_code, o.user_id, o.service, o.quantity, o.extra, o.token_cost, o.created_at, o.link, u.first_name, u.username FROM service_orders o LEFT JOIN users u ON u.id=o.user_id WHERE o.status='pending' ORDER BY o.created_at LIMIT 5")],
+        "review": [{"code": r[0], "user": r[1], "product": r[2], "amount": W._num(r[3]), "created": str(r[4])[:16]}
+                   for r in Q("SELECT code, buyer_id, product_name, final_amount, created_at FROM invoices WHERE status='review' ORDER BY created_at LIMIT 5")],
+        "requests": [{"code": r[0], "link": r[1] or "", "count": r[2], "done": r[3], "status": r[4]}
+                     for r in Q("SELECT r.tracking_code, r.link, r.member_count, (SELECT COUNT(*) FROM joins j WHERE j.tracking_code=r.tracking_code AND j.left_at IS NULL), r.status FROM requests r "
+                                "WHERE r.status NOT IN ('completed','cancelled','removed','deleted','relinked') ORDER BY r.created_at DESC LIMIT 5")],
+        "rich": [{"id": r[0], "name": nm(r[1], r[2]), "v": W._num(r[3])} for r in Q("SELECT id, first_name, username, tokens FROM users ORDER BY tokens DESC LIMIT 5")],
+        "refs": [{"id": r[0], "name": nm(r[1], r[2]), "v": r[3]} for r in Q("SELECT u.id, u.first_name, u.username, COUNT(s.id) c FROM users u JOIN users s ON s.referred_by=u.id GROUP BY u.id, u.first_name, u.username ORDER BY c DESC LIMIT 5")],
+        "buyers": [{"id": r[0], "name": nm(r[1], r[2]), "v": W._num(r[3])} for r in Q("SELECT u.id, u.first_name, u.username, SUM(i.final_amount) s FROM invoices i JOIN users u ON u.id=i.buyer_id WHERE i.status='paid' GROUP BY u.id, u.first_name, u.username ORDER BY s DESC LIMIT 5")],
+        "audit": [{"action": r[0], "ts": str(r[1])[:16], "name": r[2] or str(r[3])} for r in Q("SELECT a.action, a.ts, u.first_name, a.admin_id FROM web_audit a LEFT JOIN users u ON u.id=a.admin_id ORDER BY a.id DESC LIMIT 6")] if (W._tables() or True) else [],
+    }

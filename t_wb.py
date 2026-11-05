@@ -110,3 +110,4 @@ with b.get_db() as c: c.execute("INSERT INTO betrayers (user_id) VALUES (201)") 
 P("betrayer/201/unflag",{},False)
 if len(b.ADMIN_IDS)>1:
     r=P("admins",{"id":b.ADMIN_IDS[1]}); ok(len(r.get("password",""))>=16,"admin pw reset by main")
+j=G("dashx"); ok("today" in j and isinstance(j["new_users"],list) and "refs" in j and "audit" in j,"dashx")
