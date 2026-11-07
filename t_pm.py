@@ -59,7 +59,7 @@ ok(T("")=="" and T("abc")=="abc","empty/plain")
 s=T("<b>⏳️ وضعیت: درحال انجام\n✅️ وضعیت: تکمیل شده\n🚫 وضعیت: ربات عزل شد\n❌ وضعیت: لغو شده (موجودی برگشت)</b>")
 ok(ids(s)==[pm_.WAIT,pm_.CHK,"5818716826699307883",pm_.CROSS],"status lines")
 # دوز
-ok("<tg-emoji" not in T("<b>❌⭕◻️ ✅</b>"),"xo board untouched")
+ok(ids(T("<b>❌⭕◻️</b>"))==[pm_.DOOZ_X,"5857031396723269245"],"xo board premium")
 # سقف ۱۰۰
 ok(len(ids(T("\n".join(["✅ x"]*150))))<=100,"cap 100")
 # ارسال: فعال
@@ -102,7 +102,7 @@ fail["v"]=None
 b.set_setting("premium_emoji_msg_map",json.dumps({"موجودی:":"","سلام":"5000000000000000001","bad":"12"},ensure_ascii=False)); me.refresh()
 mode,rules=me.settings()
 ok("موجودی:" not in rules and rules.get("سلام")=="5000000000000000001" and "bad" not in rules,"override merge")
-ok(ids(T("<b>🏦 موجودی : 5</b>"))==[],"disabled rule")
+ok(ids(T("<b>💰 موجودی : 5</b>"))==[],"disabled rule")
 ok(ids(T("<b>👋 سلام دوست</b>"))==["5000000000000000001"],"custom rule")
 # با دکمه‌ها هم‌زمان
 b.set_setting("premium_emoji_msg_map",""); b.set_setting("premium_emoji_msg","auto"); b.set_setting("premium_emoji","auto"); me.refresh(); b.PREMOJI.refresh(); calls.clear()
@@ -135,4 +135,50 @@ for name in ("MAIN_MENU_TEXT","HELP_TEXT","RULES_TEXT"):
 allt.append(b._boldify("sendMessage",{"text":b.invoice_text("p",1000,"C1"),"parse_mode":"Markdown"})["text"])
 bad=[g for t in allt for g in re.findall(r'<tg-emoji emoji-id="\d+">(.*?)</tg-emoji>',T(t)) if pm_.safe_glyph(g)!=g]
 ok(not bad,"all real texts: tg-emoji content valid "+str(bad))
+
+# ---- v12: ایموجی‌های خام، ارقام گروه، دوز ----
+print("--- v12 ---")
+G=lambda h: me.transform(h,group=True)
+ok(ids(T("<b>🎗 به بخش JFJ رفتن خوش آمدید.</b>"))==["5818866927216369505"],"jfj welcome id")
+ok("رفتن" in b.JFJ_WELCOME_TEXT,"jfj welcome text has رفتن")
+gl={"🎯":"5832335747088130009","🥇":"5832692422647226240","🥈":"5834620746999012948","🥉":"5832346686369832003","🏅":"5836866392124563486",
+"🎖":"5845858434439716957","🏆":"5818913299978263825","🎲":"5875483791702630534","🃏":"5875308385238262342","🏦":"5886285995229323603",
+"📄":"5882230558259420962","✂️":"5881796225396645401","👑":"5837050654811496370","🔍":"5823239319887815835","🏁":"5888594273862950655",
+"📋":"5911198059676574025","👥️":"5816404884458577332","⤵":"5820903824046432799","📊":"5298520596945070277","🕹":"5852627620725792383",
+"🛎":"5883982896326254229","🪪":"5843911663203392756","🏰":"5857321629138297224","🎭":"5879733124971111582","⏰️":"5906896396526560494",
+"🎉":"5461151367559141950","⁉️":"5258344772778619330","✨️":"5818677197036069696","🍇":"5337218351066266838","🍋":"5219705713680463026",
+"⭕️":"5857031396723269245"}
+bad=[k for k,v in gl.items() if ids(T("<b>x "+k+" y</b>"))!=[v]]
+ok(not bad,"raw emoji map "+str(bad))
+ok(ids(T("<b>7️⃣ x</b>"))==["5884468176091094657"],"keycap 7")
+# دوز
+x=T("<b>🎭 نقش › ❌️\n❌️⭕️◻️\n◻️❌️◻️\nتعیین نشده ❌</b>")
+ok(ids(x)==[pm_.GLOBAL_EMOJI["🎭"],pm_.DOOZ_X,pm_.DOOZ_X,"5857031396723269245",pm_.DOOZ_X,pm_.CROSS],"dooz x/o contexts")
+# بازنده
+l=T("<b>📊 وضعیت ››› بازنده ⛔️</b>"); ok(ids(l)==["5872823922751185495"],"loser line")
+w=T("<b>📊 وضعیت ››› برنده 🏆</b>"); ok(ids(w)==["5298520596945070277","5818913299978263825"],"winner line")
+ok(ids(T("<b>🔻 برای پیوستن به میز دکمه‌ی زیر را بزنید.</b>"))==["5857454223368657979"],"join table line")
+# رقم‌ها
+d=G("<b>💰 ورودی: ۱۲۰ شاهی\nنفر 3 ام</b>")
+ok(ids(d).count(pm_.DIGIT_IDS["1"])==1 and pm_.DIGIT_IDS["2"] in ids(d) and pm_.DIGIT_IDS["0"] in ids(d) and pm_.DIGIT_IDS["3"] in ids(d),"digits fa+en in group")
+ok(">۱<" not in d and ">1️⃣<" in d,"digit fallback keycap")
+ok(not any(i in ids(T("<b>۱۲۰ شاهی</b>")) for i in pm_.DIGIT_IDS.values()),"no digits in private")
+ok(ids(G('<b>@bot123 و <a href="tg://user?id=123">علی 5</a> و <code>77</code> و JFJ2 و 1,500</b>'))==[pm_.DIGIT_IDS["1"],pm_.DIGIT_IDS["5"],pm_.DIGIT_IDS["0"],pm_.DIGIT_IDS["0"]],"digits skip usernames/links/code/words")
+many=G("<b>"+" ".join(["12345"]*20)+"</b>")
+ok(not ids(many),"too many digits → none")
+b.set_setting("premium_emoji_msg","auto"); b.set_setting("premium_emoji_msg_state",""); b.set_setting("premium_emoji_msg_digits","1"); me.refresh(); calls.clear()
+b.tg("sendMessage",chat_id=-100123,text="⏳ *زمان ۶۰ ثانیه*",parse_mode="Markdown")
+ok(pm_.DIGIT_IDS["6"] in ids(calls[0][1]["text"]),"group send digits")
+calls.clear(); b.tg("sendMessage",chat_id=55,text="⏳ *زمان ۶۰ ثانیه*",parse_mode="Markdown")
+ok(pm_.DIGIT_IDS["6"] not in ids(calls[0][1]["text"]),"private no digits")
+b.set_setting("premium_emoji_msg_digits","0"); me.refresh(); calls.clear()
+b.tg("sendMessage",chat_id=-100123,text="⏳ *زمان ۶۰ ثانیه*",parse_mode="Markdown")
+ok(pm_.DIGIT_IDS["6"] not in ids(calls[0][1]["text"]),"digits switch off")
+b.set_setting("premium_emoji_msg_digits","1"); me.refresh()
+# همه‌ی tg-emoji ها متن مجاز دارند (متن‌های بازی)
+import games as gm
+samples=[b._boldify("sendMessage",{"text":t,"parse_mode":"Markdown"})["text"] for t in (b.JFJ_WELCOME_TEXT,gm._lb_menu_text(),"🥇 اول › x\n🏅 چهارم\n🎖 پنجم\n🍇🍋7️⃣ 🃏 🪪 🏰 🛎 🕹 ⁉️ ✨️ ⏰️ ⤵ 📋 👥️ 📄 ✂️ 🎭")]
+bad=[g for t in samples for g in re.findall(r'<tg-emoji emoji-id="\d+">(.*?)</tg-emoji>',me.transform(t,group=True)) if pm_.safe_glyph(g)!=g]
+ok(not bad,"v12 glyphs valid "+str(bad))
+ok("🔻" not in gm._lb_menu_text(),"no 🔻 in leaderboard menu")
 print(f"t_pm: PASS={P} FAIL={F}")

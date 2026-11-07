@@ -72,7 +72,7 @@ DEFAULT_RULES = {
     "لینک زیرمجموعه‌گیری اختصاصی": "5816404884458577332",
     "با ارسال لینک بالا": "5823592920250327036",
     # --- شروع JFJ و درخواست JFJ ---
-    "به بخش JFJ رفتن": "5888594273862950655",
+    "به بخش JFJ رفتن": "5818866927216369505",
     "در این بخش با جوین شدن": GEM,
     "دارم برات درخواست JFJ پیدا": WAIT,
     "تعداد ممبر مورد نیاز": "5819151717907832367",
@@ -130,13 +130,35 @@ DEFAULT_RULES = {
     # --- جوین اجباری و لفت ---
     "خوش اومدی گلم": "5409109841538994759",
     "به دلیل لفت دادن شما": WARN,
+    # --- بازی‌ها ---
+    "برای پیوستن به میز": "5857454223368657979",
+    "وضعیت ››› بازنده": "5872823922751185495",
 }
 
 # ایموجی ← آیدی: در هر جای متن (حتی وسط خط) جایگزین می‌شوند
 GLOBAL_EMOJI = {
     "⚠": WARN, "❗": WARN, "‼": WARN, "🛑": WARN,
     "💎": GEM, "✅": CHK, "❌": CROSS, "◁": "5823664135103061930",
+    "🎯": "5832335747088130009", "🥇": "5832692422647226240", "🥈": "5834620746999012948", "🥉": "5832346686369832003",
+    "🏅": "5836866392124563486", "🎖": "5845858434439716957", "🏆": "5818913299978263825", "🎲": "5875483791702630534",
+    "🃏": "5875308385238262342", "🏦": WALLET, "📄": "5882230558259420962", "✂": "5881796225396645401",
+    "👑": "5837050654811496370", "🔍": CODE, "🏁": "5888594273862950655", "📋": "5911198059676574025",
+    "👥": "5816404884458577332", "⤵": "5820903824046432799", "📊": "5298520596945070277", "🕹": "5852627620725792383",
+    "🛎": "5883982896326254229", "🪪": "5843911663203392756", "🏰": "5857321629138297224", "🎭": "5879733124971111582",
+    "⏰": CLOCK, "🎉": "5461151367559141950", "⁉": "5258344772778619330", "✨": "5818677197036069696",
+    "🍇": "5337218351066266838", "🍋": "5219705713680463026", "⭕": "5857031396723269245",
 }
+DOOZ_X = "5857415006022278161"          # ❌ در پیام‌های دوز (خط نقش بازیکن و صفحه‌ی بازی)
+KEYCAP7 = "5884468176091094657"         # 7️⃣ در کازینو
+# ارقام در پیام‌های گروه (دستورهای بازی): هم ارقام انگلیسی هم فارسی
+DIGIT_IDS = {"1": "5845974321247297274", "2": "5843861725618642819", "3": "5843973811380167207",
+             "4": "5846158858812136854", "5": "5846159120805141727", "6": "5845716047683921674",
+             "7": "5845766741182914502", "8": "5845685686560105154", "9": "5845753611467889699",
+             "0": "5845994722341952716"}
+MAX_DIGITS = 60                         # اگر پیام بیش از این رقم داشت، ارقام پرمیوم نمی‌شوند (سقف ۱۰۰ ایموجی در هر پیام)
+_FA_TO_EN = {ord(c): str(i) for i, c in enumerate("۰۱۲۳۴۵۶۷۸۹")}
+_DIGITS_RE = re.compile(r"(?<![A-Za-z_@/#0-9۰-۹])[0-9۰-۹]+(?![A-Za-z_])")
+_BOARD_ONLY = re.compile(r"^[❌⭕◻\uFE0E\uFE0F\u200c\s]+$")
 
 _ID = re.compile(r"^\d{15,20}$")
 
@@ -243,7 +265,17 @@ class PremMsg:
         self._cache = (time.time(), (mode, rules))
         return mode, rules
 
+    def digits_on(self):
+        """ارقام پیام‌های گروه هم پرمیوم شوند؟ (تنظیم premium_emoji_msg_digits؛ پیش‌فرض روشن)"""
+        t, v = getattr(self, "_dcache", (0.0, None))
+        if v is not None and time.time() - t < 20:
+            return v
+        v = (self.bot.get_setting("premium_emoji_msg_digits", "1") or "1") != "0"
+        self._dcache = (time.time(), v)
+        return v
+
     def refresh(self):
+        self._dcache = (0.0, None)
         self._cache = (0.0, None)
         self._scache = (0.0, None)
         self._rules = None
@@ -287,14 +319,16 @@ class PremMsg:
     def _tg(eid, glyph):
         return f'<tg-emoji emoji-id="{eid}">{glyph}</tg-emoji>'
 
-    def transform(self, h, rules=None):
-        """h = متن HTML ؛ خروجی: HTML با <tg-emoji>  (یا همان h اگر چیزی عوض نشد)"""
+    def transform(self, h, rules=None, group=False, digits=True):
+        """h = متن HTML ؛ خروجی: HTML با <tg-emoji>  (یا همان h اگر چیزی عوض نشد).
+        group=True یعنی پیام در گروه می‌رود (ارقام هم پرمیوم می‌شوند)"""
         if not h or not isinstance(h, str):
             return h
         if rules is None:
             rules = self.settings()[1]
         comp = self._compiled(rules)
         whole = norm(h)
+        use_digits = bool(group and digits and sum(len(x) for x in _DIGITS_RE.findall(_TAG.sub("", h))) <= MAX_DIGITS)
         lines = h.split("\n")
         depth = 0           # عمق <code>/<pre> در ابتدای هر خط
         out = []
@@ -317,16 +351,20 @@ class PremMsg:
                 if glyph:
                     line = line[:m.end(1)] + self._tg(eid, glyph) + line[m.end():]
                     n += 1
-            line, n = self._globals(line, n)
+            line, n = self._globals(line, n, use_digits)
             out.append(line)
         res = "\n".join(out)
         return res if n else h
 
-    def _globals(self, line, n):
-        if n >= MAX_EMOJI or "⭕" in line:
+    def _globals(self, line, n, use_digits=False):
+        if n >= MAX_EMOJI:
             return line, n
+        plain = _html.unescape(_TAG.sub("", line))
+        dooz_x = ("⭕" in plain) or ("نقش" in plain) or bool(_BOARD_ONLY.match(plain.strip() or "-"))
         parts = re.split(r"(<[^>]*>)", line)
-        res, in_te, in_code = [], 0, 0
+        res, in_te, in_code, in_a = [], 0, 0, 0
+        cls = "([" + "".join(GLOBAL_EMOJI) + "])[\uFE0E\uFE0F]?"
+        rx = re.compile(r"(7\uFE0F?\u20E3)|" + cls + (r"|" + _DIGITS_RE.pattern if use_digits else ""))
         for p in parts:
             if p.startswith("<") and p.endswith(">"):
                 low = p.lower()
@@ -338,9 +376,13 @@ class PremMsg:
                     in_code += 1
                 elif re.match(r"</(code|pre)>", low):
                     in_code = max(0, in_code - 1)
+                elif re.match(r"<a\b", low):
+                    in_a += 1
+                elif low.startswith("</a"):
+                    in_a = max(0, in_a - 1)
                 res.append(p)
                 continue
-            if in_te or in_code or not p:
+            if in_te or in_code or in_a or not p:
                 res.append(p)
                 continue
 
@@ -348,13 +390,31 @@ class PremMsg:
                 nonlocal n
                 if n >= MAX_EMOJI:
                     return mm.group(0)
-                ch = mm.group(1)
-                g = safe_glyph(ch + "\uFE0F" if ch in "⚠❗‼✅❌" else ch)
+                whole_m = mm.group(0)
+                if mm.group(1):
+                    eid, g = KEYCAP7, whole_m if whole_m.endswith("\u20e3") else "7\uFE0F\u20E3"
+                    g = safe_glyph(g)
+                elif mm.group(2):
+                    ch = mm.group(2)
+                    eid = GLOBAL_EMOJI[ch]
+                    if ch == "❌" and dooz_x:
+                        eid = DOOZ_X
+                    g = safe_glyph(ch + "\uFE0F" if ord(ch) < 0x1F000 else ch)
+                else:        # رقم‌ها
+                    run = whole_m
+                    if n + len(run) > MAX_EMOJI:
+                        return run
+                    outp = []
+                    for d in run:
+                        e = d.translate(_FA_TO_EN)
+                        outp.append(self._tg(DIGIT_IDS[e], e + "\uFE0F\u20E3"))
+                    n += len(run)
+                    return "".join(outp)
                 if not g:
-                    return mm.group(0)
+                    return whole_m
                 n += 1
-                return self._tg(GLOBAL_EMOJI[ch], g)
-            p = re.sub("([" + "".join(GLOBAL_EMOJI) + "])[︎️]?", sub, p)
+                return self._tg(eid, g)
+            p = rx.sub(sub, p)
             res.append(p)
         return "".join(res), n
 
@@ -368,7 +428,13 @@ class PremMsg:
             return None
         if not self.active():
             return None
-        t2 = self.transform(params[key])
+        cid = params.get("chat_id")
+        try:
+            group = int(cid) < 0
+        except (TypeError, ValueError):
+            group = False
+        digits = self.digits_on() if group else False
+        t2 = self.transform(params[key], group=group, digits=digits)
         if t2 is params[key] or t2 == params[key]:
             return None
         p2 = dict(params)

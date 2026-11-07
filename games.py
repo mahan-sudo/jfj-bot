@@ -1268,7 +1268,7 @@ def _lb_rank(kind, uid):
 
 
 def _lb_menu_text():
-    return ("🏆 لیدربرد جهانی شاهنشاهی 👑\n\n🔻 لطفا نوع لیدربرد را انتخاب کنید 🔍\n\n"
+    return ("🏆 لیدربرد جهانی شاهنشاهی 👑\n\nلطفا نوع لیدربرد را انتخاب کنید 🔍\n\n"
             + "\n".join(LB_KINDS[k]["desc"] for k in ("t", "r", "q", "j")))
 
 
@@ -1306,10 +1306,10 @@ def _lb_view(kind, page, viewer):
         r = rows[i]
         who = f"{_mention(r['uid'], _name({'first_name': r['first_name']}))} {emos[i - lo]}"
         head = (f"{LB_MEDALS[i]} {LB_TITLES[i]} › {who}" if i < len(LB_TITLES)
-                else f"🔻 رتبه {_n(i + 1)} › {who}")
+                else f"رتبه {_n(i + 1)} › {who}")
         blocks.append(f"{head}\n{_lb_value_line(kind, r['v'])}")
     txt = f"🏆 لیدربرد جهانی شاهنشاهی 👑\n\n{LB_KINDS[kind]['desc']}\n\n"
-    txt += "\n\n".join(blocks) if blocks else "🔻 هنوز کاربری در این لیدربرد ثبت نشده است."
+    txt += "\n\n".join(blocks) if blocks else "هنوز کاربری در این لیدربرد ثبت نشده است."
     if B.user_exists(viewer):
         rk = _lb_rank(kind, viewer)
         txt += ("\n\n🎖️ رتبه شما › " + (f"{_n(rk)}ام لیدربرد" if rk else "هنوز رتبه‌ای ندارید"))

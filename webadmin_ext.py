@@ -1065,6 +1065,7 @@ def premsg_get(uid, arg, body, qs):
         items.append({"key": k, "id": rules.get(k, ""), "default": pmg.DEFAULT_RULES.get(k, ""), "custom": k in ov,
                       "disabled": k in ov and ov[k] in ("", None)})
     return {"mode": mode, "state": kind, "state_ts": int(ts), "retry_hours": pmg.RETRY_AFTER // 3600, "items": items,
+            "digits": pm.digits_on(),
             "emoji": [{"e": e, "id": i} for e, i in pmg.GLOBAL_EMOJI.items()]}
 
 
@@ -1081,6 +1082,10 @@ def premsg_post(uid, act, body, qs):
             b.set_setting("premium_emoji_msg_state", "")
         pm.refresh()
         return {"ok": True}
+    if act == "digits":
+        b.set_setting("premium_emoji_msg_digits", "0" if pm.digits_on() else "1")
+        pm.refresh()
+        return {"ok": True, "digits": pm.digits_on()}
     if act == "map":
         key = str(body.get("key") or "").strip()
         eid = str(body.get("id") or "").strip()

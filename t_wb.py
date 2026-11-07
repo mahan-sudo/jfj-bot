@@ -136,3 +136,6 @@ P("premsg/map",{"key":"موجودی:","reset":True}); ok(not [i for i in G("prem
 P("premsg/map",{"key":"سلام دوست","reset":True})
 r=P("premsg/test",{}); ok(r.get("ok"),"premsg test send")
 P("premsg/nope",{},False)
+j=G("premsg"); ok(j["digits"] is True,"premsg digits default on")
+P("premsg/digits",{}); ok(G("premsg")["digits"] is False,"premsg digits off")
+P("premsg/digits",{}); ok(G("premsg")["digits"] is True,"premsg digits on")
