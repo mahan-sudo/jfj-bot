@@ -37,6 +37,8 @@ DEFAULT_KEYS = {
     "ممبر فیک چنل": "5888998808242625656",
     "ری‌اکشن پست": "5830106027701314719", "ویو پست": "5843493805835165294",
     "قبل": "5845874566336880660", "قبلی": "5845874566336880660",
+    "بعد": "5843732253829503840", "بعدی": "5843732253829503840",
+    "تغییر تعداد بازیکن": "5816404884458577332",
     "کپی لینک زیرمجموعه‌گیری": "5859215993183674044",
     "ارسال شماره‌ی من": "5884362854903064294",
     "قوانین": "5825563515670242868", "سفارش من": "5888937012253171131",
@@ -44,7 +46,6 @@ DEFAULT_KEYS = {
     "Mini app": "5825460599663894403", "بانک انتقال": "5859667780793539624",
     "حساب من": "5843973755545590553", "بازگشت": "5832364184066614283",
 }
-# «بعدی» و «بعد»: آیدی ارسالی ۱۸ رقمی بود (سایر آیدی‌ها ۱۹ رقم) و احتمالاً ناقص است؛ از پنل وب می‌شود اضافه کرد.
 
 # وقتی اسکلت متن در جدول بالا نبود: اولین ایموجی شناخته‌شده‌ی داخل متن (به ترتیب نوشتن) جایگزین می‌شود
 EMOJI_KEYS = {
@@ -158,12 +159,29 @@ class Premoji:
             return None
         c = core(text)
         if not c:
-            return None
+            return self._emoji_only(text or "", cb) if allow_solo else None
         if c in mp:
             return mp[c], c
         for ch in re.sub("[︎️]", "", text or ""):
             if ch in EMOJI_KEYS:
                 return EMOJI_KEYS[ch], c
+        return None
+
+    @staticmethod
+    def _emoji_only(t, cb):
+        """دکمه‌ای که متنش فقط ایموجی است (مثل 🎰 یا 🪨📄✂️ یا ❌⭕ منوی کازینو).
+        هر دکمه فقط «یک» آیکون می‌گیرد: اولین ایموجی شناخته‌شده آیکون می‌شود و بقیه (اگر بود) به‌صورت متن می‌مانند"""
+        sel = str(cb or "").startswith("g:sel:")
+        for i, ch in enumerate(t):
+            if sel and ch in "❌⭕":
+                eid = DOOZ_X if ch == "❌" else DOOZ_O
+            elif ch in EMOJI_KEYS:
+                eid = EMOJI_KEYS[ch]
+            else:
+                continue
+            rest = t[:i] + re.sub("^[\uFE0E\uFE0F]+", "", t[i + 1:])
+            rest = rest.strip()
+            return eid, (rest if core(rest) == "" and _EMO_RE.search(rest) else BLANK)
         return None
 
     def prepare(self, params):

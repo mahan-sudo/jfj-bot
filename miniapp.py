@@ -519,7 +519,7 @@ def process_leave(uid, code, owner_id, link):
     bot.send(owner_id, f"🔔 *یه ممبر لفت داده!*\n💎 *تعداد {bot.fmt_tokens(bot.LEAVE_REFUND_TO_OWNER)} شاهی به موجودی شما اضافه شد.*")
     with bot.get_db() as c:
         c.execute("UPDATE users SET tokens = tokens - ? WHERE id=?", (bot.JOIN_REWARD, uid))
-    bot.send(uid, f"⛔️ *به دلیل لفت دادن شما*\n*از لینک ({link}) تعداد 💎{bot.JOIN_REWARD} شاهی از شما کم شد!*")
+    bot.send(uid, f"⚠️ *به دلیل لفت دادن شما*\n*از لینک ({link}) تعداد 💎{bot.JOIN_REWARD} شاهی از شما کم شد!*")
     bot.rep_ev_leave(uid, owner_id, code, link, bot.JOIN_REWARD, bot.LEAVE_REFUND_TO_OWNER)
     return True
 

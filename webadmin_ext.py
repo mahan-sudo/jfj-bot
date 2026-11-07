@@ -1041,6 +1041,84 @@ def dashx(uid, arg, body, qs):
     }
 
 
+# ============ ایموجی پرمیوم متن پیام‌ها ============
+def _pm():
+    b = _b()
+    if getattr(b, "MSGEMO", None) is None:
+        raise WebErr("ماژول ایموجی پرمیوم پیام‌ها لود نشده است.", 503)
+    return b, b.MSGEMO
+
+
+@api("GET", "premsg")
+def premsg_get(uid, arg, body, qs):
+    import premium_msg as pmg
+    b, pm = _pm()
+    mode, rules = pm.settings()
+    kind, ts = pm.state()
+    raw = b.get_setting("premium_emoji_msg_map", "") or ""
+    try:
+        ov = json.loads(raw) if raw else {}
+    except ValueError:
+        ov = {}
+    items = []
+    for k in sorted(set(pmg.DEFAULT_RULES) | set(ov)):
+        items.append({"key": k, "id": rules.get(k, ""), "default": pmg.DEFAULT_RULES.get(k, ""), "custom": k in ov,
+                      "disabled": k in ov and ov[k] in ("", None)})
+    return {"mode": mode, "state": kind, "state_ts": int(ts), "retry_hours": pmg.RETRY_AFTER // 3600, "items": items,
+            "emoji": [{"e": e, "id": i} for e, i in pmg.GLOBAL_EMOJI.items()]}
+
+
+@api("POST", "premsg")
+def premsg_post(uid, act, body, qs):
+    import premium_msg as pmg
+    b, pm = _pm()
+    if act == "mode":
+        m = body.get("mode")
+        if m not in ("auto", "on", "off"):
+            raise WebErr("حالت نامعتبر است.")
+        b.set_setting("premium_emoji_msg", m)
+        if m != "off":
+            b.set_setting("premium_emoji_msg_state", "")
+        pm.refresh()
+        return {"ok": True}
+    if act == "map":
+        key = str(body.get("key") or "").strip()
+        eid = str(body.get("id") or "").strip()
+        if not key or len(key) > 120:
+            raise WebErr("اسکلت متن خط را بنویس (حداکثر ۱۲۰ نویسه).")
+        if eid and not pmg.valid_id(eid):
+            raise WebErr("آیدی ایموجی باید فقط عدد و بین ۱۵ تا ۲۰ رقم باشد.")
+        raw = b.get_setting("premium_emoji_msg_map", "") or ""
+        try:
+            ov = json.loads(raw) if raw else {}
+        except ValueError:
+            ov = {}
+        if body.get("reset"):
+            ov.pop(key, None)
+        elif eid or key in pmg.DEFAULT_RULES:
+            ov[key] = eid
+        else:
+            raise WebErr("آیدی ایموجی را وارد کن.")
+        if len(ov) > 400:
+            raise WebErr("تعداد موارد سفارشی زیاد است.")
+        b.set_setting("premium_emoji_msg_map", json.dumps(ov, ensure_ascii=False))
+        pm.refresh()
+        return {"ok": True}
+    if act == "test":
+        txt = ("💎 <b>شاهی چیه و چه کاربردی داره؟</b>\n"
+               "⚠️ <b>نکته مهم:</b>\n"
+               "1️⃣ <b>ممبر واقعی: تست</b>\n"
+               "✅ <b>وضعیت: تکمیل شده</b>\n"
+               "❌ <b>وضعیت: لغو شده</b>\n\n"
+               "🧪 اگر به‌جای ایموجی‌های معمولی، ایموجی پرمیوم می‌بینی یعنی فعاله.")
+        r = b.tg("sendMessage", chat_id=uid, text=txt, parse_mode="HTML", _notx=True)
+        if not r.get("ok"):
+            raise WebErr("ارسال پیام تست ناموفق بود: " + str(r.get("description", ""))[:120])
+        kind, _ = pm.state()
+        return {"ok": True, "state": kind, "active": pm.active()}
+    raise WebErr("درخواست نامعتبر است.", 404)
+
+
 # ============ ایموجی پرمیوم دکمه‌ها ============
 def _pe():
     b = _b()
