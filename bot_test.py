@@ -1063,7 +1063,35 @@ def tg(method, _timeout=45, **params):
     return _tg_raw(method, _timeout, **params)
 
 
+PREMOJI = None
+
+
 def _tg_raw(method, _timeout=45, **params):
+    """ارسال به تلگرام؛ اگر ایموجی پرمیوم دکمه‌ها فعال باشد آیدی‌ها اضافه می‌شود و در صورت رد شدن، همان پیام بدون آن‌ها می‌رود"""
+    pe = PREMOJI
+    if pe is not None and params.get("reply_markup"):
+        try:
+            alt = pe.prepare(params)
+        except Exception:
+            logging.exception("premoji.prepare")
+            alt = None
+        if alt:
+            r = _tg_send(method, _timeout, alt["params"])
+            if r.get("ok"):
+                try:
+                    pe.note_ok()
+                except Exception:
+                    logging.exception("premoji.note_ok")
+                return r
+            try:
+                return pe.on_fail(_tg_send, method, _timeout, params, alt, r)
+            except Exception:
+                logging.exception("premoji.on_fail")
+                return r
+    return _tg_send(method, _timeout, params)
+
+
+def _tg_send(method, _timeout, params):
     """urllib خودش پروکسی محیط (http_proxy/https_proxy) را استفاده می‌کند.
     هیچ‌وقت exception پرتاب نمی‌کند؛ در صورت هر خطایی dict با ok=False برمی‌گرداند
     تا یک قطعی شبکه هرگز وسط یک فلو (مثل شروع JFJ) آن را نصفه‌کاره نگذارد."""
@@ -2799,6 +2827,15 @@ def _back(sec, text="🔙 بازگشت به منو"):
     return [_ab(text, f"adm_p:{sec}:home")]
 
 
+def _premoji_label():
+    mode = get_setting("premium_emoji", "auto")
+    if mode == "off":
+        return "🔴 خاموش"
+    kind, ts = (PREMOJI.state() if PREMOJI is not None else ("", 0))
+    st = "🟢 فعال" if kind == "ok" else ("⚠️ پذیرفته نشد؛ متن ساده (هر ۶ ساعت دوباره امتحان)" if kind == "fail" and mode == "auto" else "⏳ هنوز امتحان نشده")
+    return ("🔵 روشن (اجباری) · " if mode == "on" else "🤖 خودکار · ") + st
+
+
 def render_general():
     on = get_setting("bot_enabled", "1") != "0"
     fj = len(fj_entries())
@@ -2814,6 +2851,7 @@ def render_general():
         f"⏱ کرون ارسال اطلاعیه: <b>{_fmt_dur(cron_sec())}</b> بین هر دو نفر\n"
         f"📛 متن قوانین: {'✏️ سفارشی' if get_setting('rules_text') else '📄 پیش‌فرض'}\n"
         f"📣 گزارشات ربات: {'🟢 فعال' if rep_ready() else '🔴 تنظیم نشده'}\n"
+        f"💎 ایموجی پرمیوم دکمه‌ها: <b>{_premoji_label()}</b>\n"
         f"🗣 صدای جفج: {'🟢 روشن (' + ('پیام مخفی' if get_setting('vc_mode', 'hide') != 'public' else 'پیام عمومی') + ')' if sbool('vc_on', '1') else '🔴 خاموش'}\n"
         "\n👇 <i>برای تغییر هر مورد، دکمه‌اش را بزنید.</i>"
     )
@@ -2829,6 +2867,7 @@ def render_general():
         [_ab("👁 پیش‌نمایش قوانین", "adm_p:g:rv")],
         [_ab("📣 گزارشات ربات", "adm_p:x:rep", SUCCESS if rep_ready() else DANGER)],
         [_ab("🗣 صدای جفج", "adm_p:x:vc", SUCCESS if sbool("vc_on", "1") else DANGER)],
+        [_ab("💎 ایموجی پرمیوم: " + {"auto": "خودکار", "on": "روشن", "off": "خاموش"}.get(get_setting("premium_emoji", "auto"), "خودکار"), "adm_p:g:pe", PRIMARY)],
         [_ab("♻️ بازیابی بکاپ", "adm_p:x:rs", SUCCESS)],
     )
     return text, kb
@@ -3483,6 +3522,16 @@ def admin_panel_callback(cq):
             if act == "tg":
                 set_setting("bot_enabled", "1" if get_setting("bot_enabled", "1") == "0" else "0")
                 ack("وضعیت ربات تغییر کرد.")
+                return home()
+            if act == "pe":
+                cur = get_setting("premium_emoji", "auto")
+                nx = {"auto": "on", "on": "off", "off": "auto"}.get(cur, "auto")
+                set_setting("premium_emoji", nx)
+                if nx != "off":
+                    set_setting("premium_emoji_state", "")      # دوباره امتحان شود
+                if PREMOJI is not None:
+                    PREMOJI.refresh()
+                ack("ایموجی پرمیوم: " + {"auto": "خودکار", "on": "روشن", "off": "خاموش"}[nx])
                 return home()
             if act == "cas":
                 set_setting("casino_on", "1" if get_setting("casino_on", "1") == "0" else "0")
@@ -6841,6 +6890,13 @@ def handle_update(update):
     else:
         return
 
+    # دکمه‌ی ریپلای با ایموجی پرمیوم فقط «اسکلت متن» را می‌فرستد؛ به متن اصلی دکمه برمی‌گردد تا هندلرها همان‌طور کار کنند
+    if message and PREMOJI is not None and message.get("text") and message["chat"].get("type") == "private":
+        try:
+            message["text"] = PREMOJI.normalize_incoming(message["text"].strip())
+        except Exception:
+            logging.exception("premoji.normalize")
+
     # گروه/سوپرگروه/کانال: فقط بخش بازی‌ها (کازینو شاهنشاهی)؛ بقیه‌ی پیام‌های گروه نادیده گرفته می‌شود
     if message and message["chat"].get("type") != "private":
         if VOICE is not None:
@@ -8310,6 +8366,21 @@ XPAGES["rs"] = render_restore
 
 
 # ===================== اجرا =====================
+def init_premoji():
+    """ایموجی پرمیوم دکمه‌ها (premium_btn.py)؛ خطا در لود نباید ربات را از کار بیندازد"""
+    global PREMOJI
+    try:
+        import premium_btn as _pb
+        pm = _pb.Premoji(_GlobalsProxy())
+        g = globals()
+        pm.register_reply_texts([v for k, v in g.items() if isinstance(v, str) and (k.startswith("BTN_") or k == "BACK_BTN")])
+        PREMOJI = pm
+        logging.info("💎 ایموجی پرمیوم دکمه‌ها آماده شد (حالت: %s)", get_setting("premium_emoji", "auto"))
+    except Exception:
+        logging.exception("premium_btn.py لود نشد؛ دکمه‌ها بدون ایموجی پرمیوم ادامه می‌دهند")
+        PREMOJI = None
+
+
 def main():
     global BOT_USERNAME, BOT_ID
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -8341,6 +8412,7 @@ def main():
     threading.Thread(target=rep_worker, daemon=True).start()
     threading.Thread(target=rep_scheduler, daemon=True).start()
     global GAMES, VOICE, TEXTS
+    init_premoji()
     setup_bot_commands()
     try:
         import texts as _texts

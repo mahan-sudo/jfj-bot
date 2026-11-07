@@ -409,11 +409,11 @@ const NAV=[
  ["منوی اصلی",[["dash","داشبورد","dash"],["users","کاربران","users"],["inv","رسیدها","receipt","pending_receipts"],["ord","سفارش خدمات","bag","pending_orders"],["req","درخواست‌های JFJ","req","active_requests"]]],
  ["فروش و مالی",[["fin","مالی و پرداخت","wallet"],["packs","بسته‌ها","coin"],["prod","محصولات","box"],["spons","اسپانسری‌ها","crown"]]],
  ["مدیریت",[["fj","جوین اجباری","link"],["blk","کانال‌های مسدود","block"],["sec","بخش‌های ربات","grid"],["ref","زیرمجموعه‌گیری","users"],["bt","خیانت در JFJ","shield","betrayers"]]],
- ["پیکربندی",[["set","تنظیمات","gear"],["txt","متن‌های ربات","text"],["gm","بازی‌ها","game"],["rp","گزارش‌ها","doc"],["gen","پشتیبانی و صدا","bolt"]]],
+ ["پیکربندی",[["set","تنظیمات","gear"],["txt","متن‌های ربات","text"],["pe","ایموجی پرمیوم دکمه‌ها","coin"],["gm","بازی‌ها","game"],["rp","گزارش‌ها","doc"],["gen","پشتیبانی و صدا","bolt"]]],
  ["ابزار",[["srch","جستجوی سراسری","search"],["bc","پیام همگانی","send"],["tools","شارژ همگانی و بکاپ","save"]]],
  ["امنیت",[["adm","ادمین‌ها و رمز","shield"],["aud","گزارش عملیات","pulse"]]]];
 let CUR="dash",ARG=null,BADGES={};const SHUT={},HIST=[];
-let DIR="f",RT=0,LASTK="";const MC=new Set(["user","gm","fin","gen","ref","reqd","tools","adm","fj","sec","set","prod","packs","spons","rp","bc"]);
+let DIR="f",RT=0,LASTK="";const MC=new Set(["pe","user","gm","fin","gen","ref","reqd","tools","adm","fj","sec","set","prod","packs","spons","rp","bc"]);
 function go(v,a,noPush){DIR=noPush?"b":"f";if(!noPush&&!(CUR===v&&ARG===(a||null)))HIST.push([CUR,ARG]);CUR=v;ARG=a||null;closeMenu();location.hash=v+(a?"/"+a:"");render()}
 function back(){const p=HIST.pop()||["dash",null];go(p[0],p[1],true)}
 function closeMenu(){$(".side")?.classList.remove("open");$(".veil")?.classList.remove("on")}
@@ -704,6 +704,25 @@ VIEWS.gen=async()=>{const[g,gx]=await Promise.all([api("general"),api("generalx"
    h("div",{class:"card"},h("h3",null,"احراز شماره و متن‌ها"),h("div",{class:"row"},h("div",{class:"m"},h("b",null,"احراز شماره‌ی کاربران"),h("span",null,"کاربر برای استفاده شماره‌اش را بفرستد")),h("div",{class:"e"},sw(gx.phone_verify,()=>api("generalx",{op:"phone_verify"})))),h("div",{class:"row"},h("div",{class:"m"},h("b",null,"متن قوانین پیش‌فرض")),h("div",{class:"e"},h("button",{class:"btn sm red",onclick:()=>confirmBox("متن قوانین به پیش‌فرض برگردد؟","بازگردانی",()=>safe(()=>api("generalx",{op:"rules_reset"}),"برگشت").then(render),true)},"بازگردانی"))),h("div",{class:"row"},h("div",{class:"m"},h("b",null,"متن پشتیبانی پیش‌فرض")),h("div",{class:"e"},h("button",{class:"btn sm red",onclick:()=>confirmBox("متن پشتیبانی به پیش‌فرض برگردد؟","بازگردانی",()=>safe(()=>api("generalx",{op:"support_reset"}),"برگشت").then(render),true)},"بازگردانی")))),
    h("div",{class:"card"},h("h3",null,"پیام صوتی"),h("div",{class:"row"},h("div",{class:"m"},h("b",null,"فعال")),h("div",{class:"e"},sw(g.voice.on,()=>api("general",{op:"vc_toggle"})))),h("div",{class:"row"},h("div",{class:"m"},h("b",null,"حالت عمومی")),h("div",{class:"e"},sw(g.voice.mode==="public",on=>api("general",{op:"vc_mode",value:on?"public":"hide"})))),h("div",{class:"row"},h("div",{class:"m"},h("b",null,"پاسخ جایگزین")),h("div",{class:"e"},sw(g.voice.fb,()=>api("general",{op:"vc_fb"})))),h("button",{class:"btn blk",style:"margin-top:8px",onclick:()=>confirmBox("سطح‌های صدا بازنشانی شوند؟","بازنشانی",()=>safe(()=>api("general",{op:"vc_reset"}),"انجام شد"))},"بازنشانی سطوح")),
    h("div",{class:"card"},h("h3",null,"زمان‌بندی"),E("cron","فاصله‌ی کارهای خودکار (ثانیه)",String(g.cron),{num:1})))};
+VIEWS.pe=async()=>{const r=await api("premoji");
+  const ago=t=>{const m=Math.max(0,Math.round((Date.now()/1000-t)/60));return m<60?fa(m)+" دقیقه":m<1440?fa(Math.round(m/60))+" ساعت":fa(Math.round(m/1440))+" روز"};
+  const stt=r.mode==="off"?["خاموش","r"]:r.state==="ok"?["فعال و تأییدشده","g"]:r.state==="fail"&&r.mode==="auto"?["پذیرفته نشد؛ متن ساده","y"]:["هنوز امتحان نشده","b"];
+  const modes=[["auto","خودکار"],["on","روشن"],["off","خاموش"]];
+  const edit=it=>editBox("آیدی ایموجی «"+it.key+"»",it.id,{ltr:1,hint:"فقط عدد، ۱۵ تا ۲۰ رقم. خالی = این دکمه ایموجی پرمیوم نگیرد."},async x=>{await api("premoji/map",{key:it.key,id:x.trim()});render(true)});
+  const add=()=>{const k=h("input",{class:"in",placeholder:"متن دکمه (بدون ایموجی)، مثلاً: خرید شاهی"}),i=h("input",{class:"in ltr",placeholder:"آیدی ایموجی پرمیوم (عدد ۱۹ رقمی)",inputmode:"numeric",style:"margin-top:8px"});
+    const sh=sheet("افزودن دکمه",h("div",null,h("p",{class:"hint"},"فقط اسکلت متن را بنویس؛ ایموجی و علامت‌های اضافه‌ی دکمه حذف می‌شوند و ایموجی پرمیوم جایگزین می‌شود."),k,i),
+      [h("button",{class:"btn",onclick:()=>sh.close()},"بستن"),h("button",{class:"btn pri",onclick:async()=>{const x=await safe(()=>api("premoji/map",{key:k.value,id:i.value}),"ذخیره شد");if(x){sh.close();render(true)}}},"ذخیره")])};
+  const test=async()=>{const x=await safe(()=>api("premoji/test",{}),"پیام تست به ربات خودت فرستاده شد");if(x)setTimeout(()=>render(true),600)};
+  return h("div",null,phead("coin","ایموجی پرمیوم دکمه‌ها","آیکون پرمیوم کنار متن دکمه‌های ربات"),
+   h("div",{class:"note"},"تلگرام ایموجی پرمیوم روی دکمه را فقط وقتی قبول می‌کند که صاحب ربات اشتراک پرمیوم داشته باشد. در حالت «خودکار» اگر پذیرفته نشود، ربات خودش به متن ساده برمی‌گردد و هر "+fa(r.retry_hours)+" ساعت دوباره امتحان می‌کند؛ با تمدید پرمیوم خودش روشن می‌شود."),
+   h("div",{class:"card"},h("h3",null,"وضعیت",h("span",{class:"pill "+stt[1]},stt[0])),
+     h("div",{class:"tabs",style:"margin-bottom:10px"},modes.map(([k,t])=>h("button",{class:r.mode===k?"on":"",onclick:async()=>{if(r.mode!==k){await safe(()=>api("premoji/mode",{mode:k}),"ذخیره شد");render(true)}}},t))),
+     r.state&&r.mode!=="off"&&h("p",{class:"hint"},(r.state==="ok"?"آخرین ارسال موفق: ":"آخرین رد شدن: ")+"حدود "+ago(r.state_ts)+" پیش"),
+     h("button",{class:"btn blk",onclick:test},ic("send"),"ارسال پیام تست به خودم")),
+   h("div",{class:"card"},h("h3",null,"فهرست دکمه‌ها ("+nf(r.items.length)+")",h("span",{class:"sub"},h("button",{class:"btn sm pri",onclick:add},ic("plus"),"افزودن"))),
+     r.items.map(it=>h("div",{class:"row tap",onclick:()=>edit(it)},h("div",{class:"m"},h("b",null,it.key),h("span",{class:"ltr"},it.id||"بدون ایموجی")),h("div",{class:"e"},it.disabled?h("span",{class:"pill r"},"غیرفعال"):it.custom?h("span",{class:"pill b"},"سفارشی"):h("span",{class:"pill"},"پیش‌فرض"),it.custom&&h("button",{class:"btn sm","aria-label":"بازگشت به پیش‌فرض",onclick:async e=>{e.stopPropagation();await safe(()=>api("premoji/map",{key:it.key,reset:true}),"به پیش‌فرض برگشت");render(true)}},"پیش‌فرض"))))),
+   h("div",{class:"card"},h("h3",null,"جایگزینی خودکار ایموجی‌ها"),h("p",{class:"hint"},"اگر متن دکمه در فهرست بالا نبود، ایموجی‌های زیر (در صورت وجود در متن دکمه) با نسخه‌ی پرمیوم‌شان عوض می‌شوند:"),
+     h("div",{class:"vr"},r.emoji.map(e=>h("button",{style:"direction:ltr;cursor:default"},e.e+"  "+e.id.slice(0,6)+"…")))))};
 VIEWS.bt=async()=>{const r=await api("betrayers");
   return h("div",null,phead("shield","خیانت در JFJ","کسانی که پس از ثبت درخواست همه‌ی JFJ‌ها را ترک کرده‌اند"),h("div",{class:"note"},"شرط ثبت: دست‌کم "+fa(r.min_joins)+" جوین و ترک همه‌ی آن‌ها. ربات فقط ممبرهایی را حذف می‌کند که خودش برای او آورده بود."),
    h("div",{class:"card"},r.betrayers.length?r.betrayers.map(b=>h("div",{class:"row"},h("div",{class:"av tone-r"},ic("shield")),h("div",{class:"m tap",onclick:()=>go("user",b.id)},h("b",null,b.name||b.id),h("span",null,b.flagged+" · "+nf(b.orders)+" درخواست · "+nf(b.kicked)+" حذف")),h("div",{class:"e"},h("button",{class:"btn sm",onclick:()=>safe(()=>api("betrayer/"+b.id+"/rerun",{}),"اجرا شد").then(render)},"اجرای دوباره"),h("button",{class:"btn sm red",onclick:()=>confirmBox("کاربر از فهرست خیانت‌کارها خارج شود؟ (ممبرهای حذف‌شده برنمی‌گردند)","خارج کن",()=>safe(()=>api("betrayer/"+b.id+"/unflag",{}),"خارج شد").then(()=>render(true)),true)},"خروج")))):empty("خیانت‌کاری ثبت نشده.","shield")))};

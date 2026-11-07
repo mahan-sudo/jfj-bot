@@ -1039,3 +1039,89 @@ def dashx(uid, arg, body, qs):
         "buyers": [{"id": r[0], "name": nm(r[1], r[2]), "v": W._num(r[3])} for r in Q("SELECT u.id, u.first_name, u.username, SUM(i.final_amount) s FROM invoices i JOIN users u ON u.id=i.buyer_id WHERE i.status='paid' GROUP BY u.id, u.first_name, u.username ORDER BY s DESC LIMIT 5")],
         "audit": [{"action": r[0], "ts": str(r[1])[:16], "name": r[2] or str(r[3])} for r in Q("SELECT a.action, a.ts, u.first_name, a.admin_id FROM web_audit a LEFT JOIN users u ON u.id=a.admin_id ORDER BY a.id DESC LIMIT 6")] if (W._tables() or True) else [],
     }
+
+
+# ============ ایموجی پرمیوم دکمه‌ها ============
+def _pe():
+    b = _b()
+    if getattr(b, "PREMOJI", None) is None:
+        raise WebErr("ماژول ایموجی پرمیوم لود نشده است.", 503)
+    return b, b.PREMOJI
+
+
+@api("GET", "premoji")
+def premoji_get(uid, arg, body, qs):
+    import premium_btn as pb
+    b, pm = _pe()
+    mode, mp = pm.settings()
+    kind, ts = pm.state()
+    raw = b.get_setting("premium_emoji_map", "") or ""
+    try:
+        ov = json.loads(raw) if raw else {}
+    except ValueError:
+        ov = {}
+    keys = sorted(set(pb.DEFAULT_KEYS) | set(ov))
+    items = []
+    for k in keys:
+        cur = mp.get(k)
+        items.append({"key": k, "id": cur or "", "default": pb.DEFAULT_KEYS.get(k, ""), "custom": k in ov,
+                      "disabled": k in ov and ov[k] in ("", None)})
+    return {"mode": mode, "state": kind, "state_ts": int(ts), "retry_hours": pb.RETRY_AFTER // 3600, "items": items,
+            "emoji": [{"e": e, "id": i} for e, i in pb.EMOJI_KEYS.items()]}
+
+
+@api("POST", "premoji")
+def premoji_post(uid, act, body, qs):
+    import premium_btn as pb
+    b, pm = _pe()
+    if act == "mode":
+        m = body.get("mode")
+        if m not in ("auto", "on", "off"):
+            raise WebErr("حالت نامعتبر است.")
+        b.set_setting("premium_emoji", m)
+        if m != "off":
+            b.set_setting("premium_emoji_state", "")
+        pm.refresh()
+        return {"ok": True}
+    if act == "map":
+        key = str(body.get("key") or "").strip()
+        eid = str(body.get("id") or "").strip()
+        if not key or len(key) > 60:
+            raise WebErr("متن دکمه را بنویس (حداکثر ۶۰ نویسه).")
+        key = pb.core(key) or key
+        if eid and not pb.valid_id(eid):
+            raise WebErr("آیدی ایموجی باید فقط عدد و بین ۱۵ تا ۲۰ رقم باشد.")
+        raw = b.get_setting("premium_emoji_map", "") or ""
+        try:
+            ov = json.loads(raw) if raw else {}
+        except ValueError:
+            ov = {}
+        if body.get("reset"):
+            ov.pop(key, None)
+        elif eid or key in pb.DEFAULT_KEYS:
+            ov[key] = eid          # id خالی روی کلید پیش‌فرض = غیرفعال کردن آن دکمه
+        else:
+            raise WebErr("آیدی ایموجی را وارد کن.")
+        if len(ov) > 300:
+            raise WebErr("تعداد موارد سفارشی زیاد است.")
+        b.set_setting("premium_emoji_map", json.dumps(ov, ensure_ascii=False))
+        pm.refresh()
+        return {"ok": True}
+    if act == "test":
+        mode, mp = pm.settings()
+        keys = [k for k in sorted(mp)][:90]
+        rows, row = [], []
+        for k in keys:
+            row.append(b.btn_inline(k, "noop"))
+            if len(row) == 3:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+        r = b.tg("sendMessage", chat_id=uid, text="🧪 تست ایموجی پرمیوم دکمه‌ها\nاگر کنار دکمه‌ها ایموجی پرمیوم می‌بینی یعنی فعاله.",
+                 reply_markup={"inline_keyboard": rows}, _notx=True)
+        if not r.get("ok"):
+            raise WebErr("ارسال پیام تست ناموفق بود: " + str(r.get("description", ""))[:120])
+        kind, _ = pm.state()
+        return {"ok": True, "state": kind, "active": pm.active()}
+    raise WebErr("درخواست نامعتبر است.", 404)
