@@ -26,7 +26,7 @@ T=lambda h: me.transform(h)
 def ids(h): return re.findall(r'emoji-id="(\d+)"',h)
 # خط‌به‌خط
 h=T("<b>🌸 به جفج شاهنشاهی خوش آمدی!\n\n🤔 من برات چکار انجام میدم؟\n- متن\n\n/help ◁ [کلیک کن] چطور جفج برم؟! راهنما\n\n🎯 همین الان شروع JFJ رو بزن جفج برو.</b>")
-ok(ids(h)==["5461151367559141950","5314589624377554054","5845874566336880660","5928998611764387949"],"welcome ids")
+ok(ids(h)==["5461151367559141950","5314589624377554054","5823664135103061930","5928998611764387949"],"welcome ids")
 ok(h.startswith('<b><tg-emoji emoji-id="5461151367559141950">🌸</tg-emoji> به جفج'),"first line inside bold")
 ok("- متن" in h,"plain bullet untouched")
 # سراسری
@@ -122,4 +122,17 @@ ok(pm_.N1 in ids(T(iv)) and "5888625992196431593" in ids(T(iv)) and "58190510352
 ok(len(b.HELP_TEXT)<3800,"help under limit")
 # صفحه تنظیمات
 t,k=b.render_general(); ok("ایموجی پرمیوم پیام‌ها" in t,"render_general msg line")
+
+# ---- v11.1: متن داخل tg-emoji باید ایموجی واقعی باشد (ENTITY_TEXT_INVALID) ----
+print("--- glyph safety ---")
+ok(pm_.safe_glyph("◁")=="◀️" and pm_.safe_glyph("●") is None and pm_.safe_glyph("★") is None and pm_.safe_glyph("🌸")=="🌸","safe_glyph")
+ok(pm_.safe_glyph("1️⃣")=="1️⃣" and pm_.safe_glyph("⚠️")=="⚠️" and pm_.safe_glyph("✅️")=="✅️","safe_glyph keycap/bmp")
+h=T("<b>● شاهی چیه و چه کاربردی داره؟\n/help ◁ x</b>")
+ok('>●<' not in h and '>◁<' not in h and "◀️" in h,"non-emoji glyph never inside tg-emoji")
+allt=[]
+for name in ("MAIN_MENU_TEXT","HELP_TEXT","RULES_TEXT"):
+    allt.append(b._boldify("sendMessage",{"text":getattr(b,name),"parse_mode":"Markdown" if name!="MAIN_MENU_TEXT" else None})["text"])
+allt.append(b._boldify("sendMessage",{"text":b.invoice_text("p",1000,"C1"),"parse_mode":"Markdown"})["text"])
+bad=[g for t in allt for g in re.findall(r'<tg-emoji emoji-id="\d+">(.*?)</tg-emoji>',T(t)) if pm_.safe_glyph(g)!=g]
+ok(not bad,"all real texts: tg-emoji content valid "+str(bad))
 print(f"t_pm: PASS={P} FAIL={F}")
