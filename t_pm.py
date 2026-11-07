@@ -138,7 +138,6 @@ ok(not bad,"all real texts: tg-emoji content valid "+str(bad))
 
 # ---- v12: ایموجی‌های خام، ارقام گروه، دوز ----
 print("--- v12 ---")
-G=lambda h: me.transform(h,group=True)
 ok(ids(T("<b>🎗 به بخش JFJ رفتن خوش آمدید.</b>"))==["5818866927216369505"],"jfj welcome id")
 ok("رفتن" in b.JFJ_WELCOME_TEXT,"jfj welcome text has رفتن")
 gl={"🎯":"5832335747088130009","🥇":"5832692422647226240","🥈":"5834620746999012948","🥉":"5832346686369832003","🏅":"5836866392124563486",
@@ -158,27 +157,34 @@ ok(ids(x)==[pm_.GLOBAL_EMOJI["🎭"],pm_.DOOZ_X,pm_.DOOZ_X,"5857031396723269245"
 l=T("<b>📊 وضعیت ››› بازنده ⛔️</b>"); ok(ids(l)==["5872823922751185495"],"loser line")
 w=T("<b>📊 وضعیت ››› برنده 🏆</b>"); ok(ids(w)==["5298520596945070277","5818913299978263825"],"winner line")
 ok(ids(T("<b>🔻 برای پیوستن به میز دکمه‌ی زیر را بزنید.</b>"))==["5857454223368657979"],"join table line")
-# رقم‌ها
-d=G("<b>💰 ورودی: ۱۲۰ شاهی\nنفر 3 ام</b>")
-ok(ids(d).count(pm_.DIGIT_IDS["1"])==1 and pm_.DIGIT_IDS["2"] in ids(d) and pm_.DIGIT_IDS["0"] in ids(d) and pm_.DIGIT_IDS["3"] in ids(d),"digits fa+en in group")
-ok(">۱<" not in d and ">1️⃣<" in d,"digit fallback keycap")
-ok(not any(i in ids(T("<b>۱۲۰ شاهی</b>")) for i in pm_.DIGIT_IDS.values()),"no digits in private")
-ok(ids(G('<b>@bot123 و <a href="tg://user?id=123">علی 5</a> و <code>77</code> و JFJ2 و 1,500</b>'))==[pm_.DIGIT_IDS["1"],pm_.DIGIT_IDS["5"],pm_.DIGIT_IDS["0"],pm_.DIGIT_IDS["0"]],"digits skip usernames/links/code/words")
-many=G("<b>"+" ".join(["12345"]*20)+"</b>")
-ok(not ids(many),"too many digits → none")
+# رقم‌ها: فقط رتبه‌ی لیدربرد
+D=pm_.DIGIT_IDS
+r1=T("<b>رتبه ۱۲ › <a href=\"tg://user?id=5\">علی 77</a> 🍟\nمقدار: ۱۲۰ شاهی</b>")
+ok(ids(r1)==[D["1"],D["2"]],"leaderboard rank digits only")
+r2=T("<b>🎖️ رتبه شما › ۱۵ام لیدربرد</b>")
+ok(ids(r2)==[pm_.GLOBAL_EMOJI["🎖"],D["1"],D["5"]],"my rank digits")
+r3=T("<b>🎖️ رتبه › 3ام لیدربرد</b>")
+ok(D["3"] in ids(r3),"profile rank digits (en)")
+ok(">۱<" not in r1 and ">1️⃣<" in r1,"digit fallback keycap")
+ok(not any(i in ids(T("<b>💰 ورودی: ۱۲۰ شاهی\nنفر 3 ام\nمبلغ 5000</b>")) for i in D.values()),"other numbers untouched")
 b.set_setting("premium_emoji_msg","auto"); b.set_setting("premium_emoji_msg_state",""); b.set_setting("premium_emoji_msg_digits","1"); me.refresh(); calls.clear()
-b.tg("sendMessage",chat_id=-100123,text="⏳ *زمان ۶۰ ثانیه*",parse_mode="Markdown")
-ok(pm_.DIGIT_IDS["6"] in ids(calls[0][1]["text"]),"group send digits")
-calls.clear(); b.tg("sendMessage",chat_id=55,text="⏳ *زمان ۶۰ ثانیه*",parse_mode="Markdown")
-ok(pm_.DIGIT_IDS["6"] not in ids(calls[0][1]["text"]),"private no digits")
+b.tg("sendMessage",chat_id=-100123,text="رتبه ۶ › x",parse_mode="Markdown")
+ok(D["6"] in ids(calls[0][1]["text"]),"group send rank digits")
+calls.clear(); b.tg("sendMessage",chat_id=-100123,text="⏳ *زمان ۶۰ ثانیه*",parse_mode="Markdown")
+ok(D["6"] not in ids(calls[0][1]["text"]),"group other numbers plain")
 b.set_setting("premium_emoji_msg_digits","0"); me.refresh(); calls.clear()
-b.tg("sendMessage",chat_id=-100123,text="⏳ *زمان ۶۰ ثانیه*",parse_mode="Markdown")
-ok(pm_.DIGIT_IDS["6"] not in ids(calls[0][1]["text"]),"digits switch off")
+b.tg("sendMessage",chat_id=-100123,text="رتبه ۶ › x",parse_mode="Markdown")
+ok(D["6"] not in ids(calls[0][1]["text"]),"digits switch off")
 b.set_setting("premium_emoji_msg_digits","1"); me.refresh()
+# 🪨 و پشتیبانی
+ok(ids(T("<b>🪨 سنگ</b>"))==["5882236803141868717"],"rock emoji")
+sp=T("<b>☎️ پشتیبانی\n\n🔭 لطفا موضوع و توضیحات خود را در یک قالب مسیج ارسال کرده تا بمانید!\n\n@x</b>")
+ok(ids(sp)==["5465169893580086142","5893125726353236397"],"support ids")
+import games as gm
 # همه‌ی tg-emoji ها متن مجاز دارند (متن‌های بازی)
 import games as gm
 samples=[b._boldify("sendMessage",{"text":t,"parse_mode":"Markdown"})["text"] for t in (b.JFJ_WELCOME_TEXT,gm._lb_menu_text(),"🥇 اول › x\n🏅 چهارم\n🎖 پنجم\n🍇🍋7️⃣ 🃏 🪪 🏰 🛎 🕹 ⁉️ ✨️ ⏰️ ⤵ 📋 👥️ 📄 ✂️ 🎭")]
-bad=[g for t in samples for g in re.findall(r'<tg-emoji emoji-id="\d+">(.*?)</tg-emoji>',me.transform(t,group=True)) if pm_.safe_glyph(g)!=g]
+bad=[g for t in samples for g in re.findall(r'<tg-emoji emoji-id="\d+">(.*?)</tg-emoji>',me.transform(t)) if pm_.safe_glyph(g)!=g]
 ok(not bad,"v12 glyphs valid "+str(bad))
 ok("🔻" not in gm._lb_menu_text(),"no 🔻 in leaderboard menu")
 print(f"t_pm: PASS={P} FAIL={F}")

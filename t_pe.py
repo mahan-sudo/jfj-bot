@@ -129,11 +129,16 @@ ok(rs("🎲","g:sel:1:d")==("5875483791702630534",pb.BLANK),"dice icon")
 rr=rs("🪨📄✂️","g:sel:1:r")
 ok(rr and rr[0]=="5882236803141868717" and "📄" in rr[1],"rps icon first id + rest text")
 ok(rs("🎰","g:sel:1:s")[1]==pb.BLANK,"blank text")
-kb2={"inline_keyboard":[[{"text":"🎰","callback_data":"g:sel:1:s"},{"text":"🎲","callback_data":"g:sel:1:d"},{"text":"🪨📄✂️","callback_data":"g:sel:1:r"}],[{"text":"بعدی ▷","callback_data":"n"}]]}
+import games as gm
+try: gm.B=b
+except Exception: pass
+kb2=gm._menu_kb(1)
 calls.clear(); b._tg_raw("sendMessage",chat_id=1,text="x",reply_markup=kb2)
 rm_=json.loads(calls[0][1])["reply_markup"]
 flat=[x for r_ in rm_["inline_keyboard"] for x in r_]
-ok(all("icon_custom_emoji_id" in x for x in flat),"casino menu all icons")
+bt={x["callback_data"].split(":")[-1]:x for x in flat}
+ok(bt["s"].get("icon_custom_emoji_id")=="5875360259853263196" and bt["d"].get("icon_custom_emoji_id")=="5875483791702630534","casino slot/dice icons")
+ok(bt["r"]["text"]=="سنگ‌کاغذ‌قیچی" and "icon_custom_emoji_id" not in bt["r"],"rps button plain name")
 # general panel renders
 t,k=b.render_general(); ok("ایموجی پرمیوم" in t,"render_general")
 print(f"t_pe: PASS={P} FAIL={F}")
