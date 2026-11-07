@@ -54,7 +54,7 @@ ok(g(2,1)["icon_custom_emoji_id"]==pb.DOOZ_O,"dooz o")
 ok("icon_custom_emoji_id" not in g(2,2) and g(2,2)["text"]=="◻️","empty cell untouched")
 ok(g(3,0)["icon_custom_emoji_id"]==pb.DIGIT_IDS["3"],"digit")
 ok(g(3,1)["icon_custom_emoji_id"]=="5819154526816444042" and g(3,1)["text"]==pb.BLANK,"solo ❌ elsewhere")
-ok("icon_custom_emoji_id" not in g(3,2),"بعدی بدون آیدی معتبر دست‌نخورده")
+ok("icon_custom_emoji_id" in g(3,2),"بعدی حالا آیدی دارد")
 ok(g(3,3)["icon_custom_emoji_id"]=="5845874566336880660" and g(3,3)["text"]=="قبلی","prev")
 ok(kb["inline_keyboard"][0][0]["text"]=="پیوستن به میز 🃏","original not mutated")
 # --- reply keyboards ---
@@ -117,6 +117,23 @@ calls.clear(); b._tg_raw("sendMessage",chat_id=1,text="x",reply_markup=json.dump
 ok("icon_custom_emoji_id" in calls[0][1],"string markup")
 # no markup → untouched
 calls.clear(); b._tg_raw("sendMessage",chat_id=1,text="x"); ok(len(calls)==1,"no markup")
+# ---- v10: بعدی / تغییر تعداد بازیکن / دکمه‌های منوی کازینو ----
+b.set_setting("premium_emoji","auto"); b.set_setting("premium_emoji_map",""); b.set_setting("premium_emoji_state",""); pm.refresh()
+_mode,_mp=pm.settings()
+rs=lambda t,cb="x": pm.resolve(t,cb,_mp,True)
+ok(rs("بعدی ▷")==("5843732253829503840","بعدی") or rs("بعدی ▷")[0]=="5843732253829503840","next button id")
+ok(rs("بعدی")[0]=="5843732253829503840","next plain")
+ok(rs("تغییر تعداد بازیکن 👑")==("5816404884458577332","تغییر تعداد بازیکن"),"change players id")
+ok(rs("🎰","g:sel:1:s")==("5875360259853263196",pb.BLANK),"slot icon")
+ok(rs("🎲","g:sel:1:d")==("5875483791702630534",pb.BLANK),"dice icon")
+rr=rs("🪨📄✂️","g:sel:1:r")
+ok(rr and rr[0]=="5882236803141868717" and "📄" in rr[1],"rps icon first id + rest text")
+ok(rs("🎰","g:sel:1:s")[1]==pb.BLANK,"blank text")
+kb2={"inline_keyboard":[[{"text":"🎰","callback_data":"g:sel:1:s"},{"text":"🎲","callback_data":"g:sel:1:d"},{"text":"🪨📄✂️","callback_data":"g:sel:1:r"}],[{"text":"بعدی ▷","callback_data":"n"}]]}
+calls.clear(); b._tg_raw("sendMessage",chat_id=1,text="x",reply_markup=kb2)
+rm_=json.loads(calls[0][1])["reply_markup"]
+flat=[x for r_ in rm_["inline_keyboard"] for x in r_]
+ok(all("icon_custom_emoji_id" in x for x in flat),"casino menu all icons")
 # general panel renders
 t,k=b.render_general(); ok("ایموجی پرمیوم" in t,"render_general")
 print(f"t_pe: PASS={P} FAIL={F}")
