@@ -573,7 +573,8 @@ def _menu_text():
 
 
 def _menu_kb(tid):
-    return _kb([_btn(GAMES[k]["emoji"], f"g:sel:{tid}:{k}") for k in casino_games()])
+    # تلگرام روی هر دکمه فقط یک آیکون پرمیوم می‌پذیرد؛ دکمه‌ی سنگ‌کاغذ‌قیچی (سه ایموجی) با نام ساده می‌آید
+    return _kb([_btn("سنگ‌کاغذ‌قیچی" if k == "r" else GAMES[k]["emoji"], f"g:sel:{tid}:{k}") for k in casino_games()])
 
 
 def _owner_line(t):

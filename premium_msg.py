@@ -132,6 +132,9 @@ DEFAULT_RULES = {
     "به دلیل لفت دادن شما": WARN,
     # --- بازی‌ها ---
     "برای پیوستن به میز": "5857454223368657979",
+    # --- پشتیبانی ---
+    "پشتیبانی": "5465169893580086142",
+    "لطفا موضوع و توضیحات": WARN,
     "وضعیت ››› بازنده": "5872823922751185495",
 }
 
@@ -146,18 +149,17 @@ GLOBAL_EMOJI = {
     "👥": "5816404884458577332", "⤵": "5820903824046432799", "📊": "5298520596945070277", "🕹": "5852627620725792383",
     "🛎": "5883982896326254229", "🪪": "5843911663203392756", "🏰": "5857321629138297224", "🎭": "5879733124971111582",
     "⏰": CLOCK, "🎉": "5461151367559141950", "⁉": "5258344772778619330", "✨": "5818677197036069696",
-    "🍇": "5337218351066266838", "🍋": "5219705713680463026", "⭕": "5857031396723269245",
+    "🪨": "5882236803141868717", "🍇": "5337218351066266838", "🍋": "5219705713680463026", "⭕": "5857031396723269245",
 }
 DOOZ_X = "5857415006022278161"          # ❌ در پیام‌های دوز (خط نقش بازیکن و صفحه‌ی بازی)
 KEYCAP7 = "5884468176091094657"         # 7️⃣ در کازینو
-# ارقام در پیام‌های گروه (دستورهای بازی): هم ارقام انگلیسی هم فارسی
+# ارقام «رتبه‌ی کاربران در لیدربرد» (رتبه ۶ › …  /  رتبه شما › ۱۲ام): هم ارقام انگلیسی هم فارسی
 DIGIT_IDS = {"1": "5845974321247297274", "2": "5843861725618642819", "3": "5843973811380167207",
              "4": "5846158858812136854", "5": "5846159120805141727", "6": "5845716047683921674",
              "7": "5845766741182914502", "8": "5845685686560105154", "9": "5845753611467889699",
              "0": "5845994722341952716"}
-MAX_DIGITS = 60                         # اگر پیام بیش از این رقم داشت، ارقام پرمیوم نمی‌شوند (سقف ۱۰۰ ایموجی در هر پیام)
 _FA_TO_EN = {ord(c): str(i) for i, c in enumerate("۰۱۲۳۴۵۶۷۸۹")}
-_DIGITS_RE = re.compile(r"(?<![A-Za-z_@/#0-9۰-۹])[0-9۰-۹]+(?![A-Za-z_])")
+_RANK_RE = re.compile(r"(رتبه(?: شما)?(?: ›+)? ?)([0-9۰-۹]{1,6})(?![0-9۰-۹])")
 _BOARD_ONLY = re.compile(r"^[❌⭕◻\uFE0E\uFE0F\u200c\s]+$")
 
 _ID = re.compile(r"^\d{15,20}$")
@@ -266,7 +268,7 @@ class PremMsg:
         return mode, rules
 
     def digits_on(self):
-        """ارقام پیام‌های گروه هم پرمیوم شوند؟ (تنظیم premium_emoji_msg_digits؛ پیش‌فرض روشن)"""
+        """رقم رتبه‌ی لیدربرد پرمیوم شود؟ (تنظیم premium_emoji_msg_digits؛ پیش‌فرض روشن)"""
         t, v = getattr(self, "_dcache", (0.0, None))
         if v is not None and time.time() - t < 20:
             return v
@@ -319,16 +321,15 @@ class PremMsg:
     def _tg(eid, glyph):
         return f'<tg-emoji emoji-id="{eid}">{glyph}</tg-emoji>'
 
-    def transform(self, h, rules=None, group=False, digits=True):
+    def transform(self, h, rules=None, digits=True):
         """h = متن HTML ؛ خروجی: HTML با <tg-emoji>  (یا همان h اگر چیزی عوض نشد).
-        group=True یعنی پیام در گروه می‌رود (ارقام هم پرمیوم می‌شوند)"""
+        digits=True یعنی رقم رتبه‌ی لیدربرد هم پرمیوم شود"""
         if not h or not isinstance(h, str):
             return h
         if rules is None:
             rules = self.settings()[1]
         comp = self._compiled(rules)
         whole = norm(h)
-        use_digits = bool(group and digits and sum(len(x) for x in _DIGITS_RE.findall(_TAG.sub("", h))) <= MAX_DIGITS)
         lines = h.split("\n")
         depth = 0           # عمق <code>/<pre> در ابتدای هر خط
         out = []
@@ -351,12 +352,45 @@ class PremMsg:
                 if glyph:
                     line = line[:m.end(1)] + self._tg(eid, glyph) + line[m.end():]
                     n += 1
-            line, n = self._globals(line, n, use_digits)
+            line, n = self._globals(line, n)
+            if digits and "رتبه" in line and n < MAX_EMOJI:
+                line, n = self._rank_digits(line, n)
             out.append(line)
         res = "\n".join(out)
         return res if n else h
 
-    def _globals(self, line, n, use_digits=False):
+    def _rank_digits(self, line, n):
+        def sub(mm):
+            nonlocal n
+            run = mm.group(2)
+            if n + len(run) > MAX_EMOJI:
+                return mm.group(0)
+            outp = []
+            for d in run:
+                e = d.translate(_FA_TO_EN)
+                outp.append(self._tg(DIGIT_IDS[e], e + "\uFE0F\u20E3"))
+            n += len(run)
+            return mm.group(1) + "".join(outp)
+        parts = re.split(r"(<[^>]*>)", line)
+        in_te = in_code = in_a = 0
+        res = []
+        for p in parts:
+            if p.startswith("<") and p.endswith(">"):
+                low = p.lower()
+                in_te += low.startswith("<tg-emoji")
+                in_te = max(0, in_te - low.startswith("</tg-emoji"))
+                in_code += bool(re.match(r"<(code|pre)\b", low))
+                in_code = max(0, in_code - bool(re.match(r"</(code|pre)>", low)))
+                in_a += bool(re.match(r"<a\b", low))
+                in_a = max(0, in_a - low.startswith("</a"))
+                res.append(p)
+            elif in_te or in_code or in_a:
+                res.append(p)
+            else:
+                res.append(_RANK_RE.sub(sub, p))
+        return "".join(res), n
+
+    def _globals(self, line, n):
         if n >= MAX_EMOJI:
             return line, n
         plain = _html.unescape(_TAG.sub("", line))
@@ -364,7 +398,7 @@ class PremMsg:
         parts = re.split(r"(<[^>]*>)", line)
         res, in_te, in_code, in_a = [], 0, 0, 0
         cls = "([" + "".join(GLOBAL_EMOJI) + "])[\uFE0E\uFE0F]?"
-        rx = re.compile(r"(7\uFE0F?\u20E3)|" + cls + (r"|" + _DIGITS_RE.pattern if use_digits else ""))
+        rx = re.compile(r"(7\uFE0F?\u20E3)|" + cls)
         for p in parts:
             if p.startswith("<") and p.endswith(">"):
                 low = p.lower()
@@ -400,16 +434,8 @@ class PremMsg:
                     if ch == "❌" and dooz_x:
                         eid = DOOZ_X
                     g = safe_glyph(ch + "\uFE0F" if ord(ch) < 0x1F000 else ch)
-                else:        # رقم‌ها
-                    run = whole_m
-                    if n + len(run) > MAX_EMOJI:
-                        return run
-                    outp = []
-                    for d in run:
-                        e = d.translate(_FA_TO_EN)
-                        outp.append(self._tg(DIGIT_IDS[e], e + "\uFE0F\u20E3"))
-                    n += len(run)
-                    return "".join(outp)
+                else:
+                    return whole_m
                 if not g:
                     return whole_m
                 n += 1
@@ -428,13 +454,7 @@ class PremMsg:
             return None
         if not self.active():
             return None
-        cid = params.get("chat_id")
-        try:
-            group = int(cid) < 0
-        except (TypeError, ValueError):
-            group = False
-        digits = self.digits_on() if group else False
-        t2 = self.transform(params[key], group=group, digits=digits)
+        t2 = self.transform(params[key], digits=self.digits_on())
         if t2 is params[key] or t2 == params[key]:
             return None
         p2 = dict(params)
