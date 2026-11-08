@@ -43,7 +43,7 @@ r=b._tg_raw("sendMessage",chat_id=1,text="x",reply_markup=kb)
 sent=json.loads(calls[-1][1])["reply_markup"]["inline_keyboard"]
 ok(r["ok"],"send ok")
 g=lambda i,j:sent[i][j]
-ok(g(0,0)["text"]=="پیوستن به میز" and g(0,0)["icon_custom_emoji_id"]=="5819032824623144971" and g(0,0)["style"]=="success","join icon")
+ok(g(0,0)["text"]=="پیوستن به میز" and g(0,0)["icon_custom_emoji_id"]=="5857454223368657979" and g(0,0)["style"]=="success","join icon")
 ok(g(0,1)["text"]=="انصراف" and g(0,1)["icon_custom_emoji_id"]=="5819154526816444042","cancel")
 ok(g(0,2)["text"]=="ارسال برای همه" and g(0,2)["icon_custom_emoji_id"]=="5830144944399981619","✅ generic")
 ok(g(1,0)["icon_custom_emoji_id"]=="5875360259853263196" and g(1,0)["text"]=="گردونه","slot")

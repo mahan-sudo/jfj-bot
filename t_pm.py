@@ -187,4 +187,16 @@ samples=[b._boldify("sendMessage",{"text":t,"parse_mode":"Markdown"})["text"] fo
 bad=[g for t in samples for g in re.findall(r'<tg-emoji emoji-id="\d+">(.*?)</tg-emoji>',me.transform(t)) if pm_.safe_glyph(g)!=g]
 ok(not bad,"v12 glyphs valid "+str(bad))
 ok("🔻" not in gm._lb_menu_text(),"no 🔻 in leaderboard menu")
+
+# ---- v14 ----
+print("--- v14 ---")
+ok(ids(T("<b>🎰 گردونه</b>"))==["5875360259853263196"],"slot emoji")
+ok(ids(T("<b>x 🔺️ y 🔻 z</b>"))==["6046421205160829795","6046541528669626552"],"triangles")
+ok(ids(T("<b>🆔️ شناسه</b>"))==["5908942862543756657"],"id emoji")
+ok(ids(T("<b>🚀 درخواست JFJ شما #ثبت شد.\n\n🔍 کد پیگیری: 5</b>"))[0]==pm_.CHK,"jfj order submitted rocket")
+ok(ids(T("<b>🚀 سفارش افزایش ممبر شما #ثبت شد.\n\n🔍 کد پیگیری: 5</b>"))[0]==pm_.CHK,"service order submitted rocket")
+ok(ids(T("<b>🛍 سفارش‌های خرید محصولات شما\n\n🔍 کد پیگیری: 5</b>"))[0]=="5909146585727509820","orders list unaffected")
+ok(ids(T("<b>🔻 لطفا مبلغ ورودی را در جواب همین پنل وارد کنید.\nحداقل مبلغ › ۵ شاهی</b>"))==[pm_.GEM],"stake prompt gem")
+ok(ids(T("<b>🔻 برای پیوستن به میز دکمه‌ی زیر را بزنید.</b>"))==["5857454223368657979"],"join table line")
+ok("🔻 لطفا مبلغ ورودی" in open(os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","games.py"),encoding="utf-8").read(),"plain stake prompt unchanged")
 print(f"t_pm: PASS={P} FAIL={F}")
