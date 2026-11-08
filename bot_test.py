@@ -4601,6 +4601,12 @@ def msg_kind(m):
     return None
 
 
+_PREM_CODE_HELP = ("💎 <b>ایموجی پرمیوم با کد</b> (برای متن و کپشن)\n"
+                   "هر جای متن بنویسید <code>{5825623013852192219}</code> یا همراه ایموجی جایگزین "
+                   "<code>{💎:5825623013852192219}</code>؛ ربات هنگام ارسال آن را به ایموجی پرمیوم تبدیل می‌کند. "
+                   "ایموجی داخل آکولاد فقط وقتی دیده می‌شود که پرمیوم نمایش داده نشود.")
+
+
 def rich_start(chat_id, admin_id, purpose, back, **extra):
     set_state(admin_id, "adm_in", dict(name="rich", purpose=purpose, back=back, kind=None, **extra))
     rows = [[_ab(RICH_KINDS["photo"], "adm_p:x:rk:photo", PRIMARY), _ab(RICH_KINDS["voice"], "adm_p:x:rk:voice", PRIMARY)],
@@ -4612,7 +4618,51 @@ def rich_start(chat_id, admin_id, purpose, back, **extra):
         ttl = "📡 <b>همگانی درخواست JFJ</b>"
     _hsend(chat_id, f"{ttl}\n{LINE}\nپیام شما چه نوعی است؟ 👇\n\n"
                     "<i>ربات دقیقاً همان پیامی را که می‌فرستید ارسال می‌کند: bold، کج‌نویس، خط‌خورده، اسپویلر، "
-                    "لینک، کد و ایموجی‌ها (حتی پریمیوم) همه حفظ می‌شوند.</i>", _kb(*rows))
+                    "لینک، کد و ایموجی‌ها (حتی پریمیوم) همه حفظ می‌شوند.</i>\n\n" + _PREM_CODE_HELP, _kb(*rows))
+
+
+_CE_GLYPH = {}
+
+
+def custom_emoji_glyphs(ids):
+    """ایموجی معمولیِ هر ایموجی پرمیوم را از تلگرام می‌گیرد (برای کدهای بدون ایموجی جایگزین مثل {5825623013852192219})"""
+    need = [i for i in ids if i not in _CE_GLYPH][:200]
+    if need:
+        r = _tg_raw("getCustomEmojiStickers", 15, custom_emoji_ids=need)
+        for st in (r.get("result") or []) if r.get("ok") else []:
+            if st.get("custom_emoji_id") and st.get("emoji"):
+                _CE_GLYPH[str(st["custom_emoji_id"])] = st["emoji"]
+    return {i: _CE_GLYPH.get(i) for i in ids}
+
+
+def expand_premium_codes_html(text):
+    """کدهای {id} و {😀:id} در متن HTML ← <tg-emoji>"""
+    import premium_msg as pmg
+    return pmg.expand_html(text, custom_emoji_glyphs) if pmg.has_codes(text) else text
+
+
+def rich_convert_codes(message):
+    """اگر متن/کپشن پیام ادمین کد ایموجی پرمیوم دارد، نسخه‌ی تبدیل‌شده را در همان چت می‌سازد و (mid, None) برمی‌گرداند؛
+    اگر کدی نبود (None, None) و اگر تلگرام نپذیرفت (None, توضیح خطا)"""
+    import premium_msg as pmg
+    chat_id = message["chat"]["id"]
+    is_text = bool(message.get("text"))
+    text = message.get("text") if is_text else message.get("caption")
+    ents = message.get("entities") if is_text else message.get("caption_entities")
+    if not pmg.has_codes(text):
+        return None, None
+    nt, ne, n = pmg.expand_entities(text, ents, custom_emoji_glyphs)
+    if not n:
+        return None, None
+    if is_text:
+        r = _tg_raw("sendMessage", chat_id=chat_id, text=nt, entities=ne)
+    else:
+        r = _tg_raw("copyMessage", chat_id=chat_id, from_chat_id=chat_id, message_id=message["message_id"],
+                    caption=nt, caption_entities=ne)
+    if not r.get("ok"):
+        return None, str(r.get("description", r.get("error_description", "")))[:150] or "خطای نامشخص"
+    res = r["result"]
+    return res.get("message_id"), None
 
 
 def rich_receive(message, data):
@@ -4623,9 +4673,23 @@ def rich_receive(message, data):
         _hsend(chat_id, f"❗️ نوع پیام با گزینه‌ی انتخابی (<b>{RICH_KINDS[data['kind']]}</b>) نمی‌خواند؛ دوباره بفرستید یا نوع را عوض کنید.",
                _kb([_ab("🔁 تغییر نوع پیام", "adm_p:x:rch", PRIMARY), _ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
         return
-    data = dict(data, src_chat=chat_id, src_mid=message["message_id"])
+    src_mid, converted = message["message_id"], False
+    if kind != "forward":
+        try:
+            cm, err = rich_convert_codes(message)
+        except Exception:
+            logging.exception("rich_convert_codes")
+            cm, err = None, "خطای داخلی"
+        if err:
+            _hsend(chat_id, f"❗️ تبدیل کد ایموجی پرمیوم ممکن نشد: <code>{_hmod.escape(err)}</code>\n"
+                            "آیدی ایموجی را بررسی کنید و پیام را دوباره بفرستید.")
+            return
+        if cm:
+            src_mid, converted = cm, True
+    data = dict(data, src_chat=chat_id, src_mid=src_mid)
     set_state(admin_id, "adm_in", data)
-    pr = send_rich(chat_id, chat_id, message["message_id"], data.get("kind") == "forward")
+    # اگر کدها تبدیل شدند، پیامِ تبدیل‌شده خودش پیش‌نمایش است
+    pr = {"ok": True} if converted else send_rich(chat_id, chat_id, message["message_id"], data.get("kind") == "forward")
     if not pr.get("ok"):
         _hsend(chat_id, "❗️ پیش‌نمایش پیام ممکن نشد؛ دوباره بفرستید.")
         return
@@ -6444,7 +6508,7 @@ def v2_admin_callback(cq):
                      "<b>فوروارد</b> (با نام مبدأ) برای گیرندگان می‌فرستد."
                      if args[0] == "forward" else
                      "حالا پیام را <b>همان‌طور که می‌خواهید کاربر ببیند</b> بفرستید. "
-                     "فرمت‌ها (bold، کج، خط‌خورده، اسپویلر، لینک و…) دقیقاً حفظ می‌شود."),
+                     "فرمت‌ها (bold، کج، خط‌خورده، اسپویلر، لینک و…) دقیقاً حفظ می‌شود.\n\n" + _PREM_CODE_HELP),
                      _kb([_ab("🔁 تغییر نوع", "adm_p:x:rch", PRIMARY), _ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
                 return True
             if act in ("rgo", "rgop"):

@@ -13,7 +13,7 @@ except m.ApiError as e: print("PASS",e)
 print("PASS" if not m.products_info(5)["views"]["enabled"] else "FAIL info")
 # JFJ
 with b.get_db() as c:
-    cols=[r[1] for r in c.execute("PRAGMA table_info(requests)")]
+    cols=[r[0] for r in c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='requests'")]
     print(cols)
 m.reconcile_leaves=lambda *a,**k:[]; m.member_status=lambda *a,**k:"left"; m.chat_title=lambda *a,**k:"T"
 b.resolve_chat_ident=lambda cid,link:"@chanx"; b.bot_admin_state=lambda i:True
@@ -23,7 +23,7 @@ r=m.api_join_list(5,{}); print("PASS" if len(r["items"])==1 else "FAIL listed",l
 b.block_chan(["@chanx"])
 r=m.api_join_list(5,{}); print("PASS" if len(r["items"])==0 else "FAIL blocked still listed")
 # confirm برای کد قدیمی در لیست
-with b.get_db() as c: c.execute("INSERT OR REPLACE INTO mini_seen (user_id,code,verified) VALUES (5,'C1',1)")
+with b.get_db() as c: c.execute("INSERT INTO mini_seen (user_id,code,verified) VALUES (5,'C1',1) ON CONFLICT (user_id,code) DO UPDATE SET verified=1")
 r=m.api_join_confirm(5,{"code":"C1"}); print("PASS" if r.get("gone") else "FAIL confirm",r)
 b.unblock_chan("@chanx")
 r=m.api_join_list(5,{}); print("PASS" if len(r["items"])==1 else "FAIL unblocked")

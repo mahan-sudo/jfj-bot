@@ -51,7 +51,7 @@ t0=time.time()
 th=threading.Thread(target=cb,args=(12,f"g:sel:{tid}:s",mid[0]))   # غریبه → alert کند
 th.start(); time.sleep(0.2)
 t1=time.time()
-with b.get_db() as c: c.execute("BEGIN IMMEDIATE"); c.execute("UPDATE users SET tokens=tokens WHERE id=11"); c.commit()
+with b.get_db() as c: c.execute("UPDATE users SET tokens=tokens WHERE id=11"); c.commit()
 dt=time.time()-t1
 th.join(); ok(dt<0.5,f"callback کند، قفل نوشتن را نگه نمی‌دارد (انتظار نوشتن دیگر: {dt:.2f}s)")
 b.answer_callback=orig_ans
@@ -60,4 +60,4 @@ with b.get_db() as c:
     c.execute("DELETE FROM g_cool")
     c.execute("INSERT INTO g_tables (chat_id,owner,owner_name,state,stake,maxp,send_dl,touched,created,game) VALUES (1,11,'x','send',10,1,0,0,0,'s')")
 g._tick(); ok(True,"میز خراب (بدون بازیکن) کل tick را نمی‌خواباند")
-os.remove(DB)
+

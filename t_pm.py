@@ -13,6 +13,8 @@ def ok(c,n):
 calls=[]; fail={"v":None}
 def fake_send(method, timeout, params):
     calls.append((method,params))
+    if method=="getCustomEmojiStickers":
+        return {"ok":True,"result":[{"custom_emoji_id":i,"emoji":"🔥"} for i in params["custom_emoji_ids"] if i!="1"*19]}
     t=params.get("text") or params.get("caption") or ""
     if fail["v"]=="emoji" and "<tg-emoji" in t:
         return {"ok":False,"error_code":400,"description":"Bad Request: DOCUMENT_INVALID"}
@@ -157,25 +159,9 @@ ok(ids(x)==[pm_.GLOBAL_EMOJI["🎭"],pm_.DOOZ_X,pm_.DOOZ_X,"5857031396723269245"
 l=T("<b>📊 وضعیت ››› بازنده ⛔️</b>"); ok(ids(l)==["5872823922751185495"],"loser line")
 w=T("<b>📊 وضعیت ››› برنده 🏆</b>"); ok(ids(w)==["5298520596945070277","5818913299978263825"],"winner line")
 ok(ids(T("<b>🔻 برای پیوستن به میز دکمه‌ی زیر را بزنید.</b>"))==["5857454223368657979"],"join table line")
-# رقم‌ها: فقط رتبه‌ی لیدربرد
-D=pm_.DIGIT_IDS
-r1=T("<b>رتبه ۱۲ › <a href=\"tg://user?id=5\">علی 77</a> 🍟\nمقدار: ۱۲۰ شاهی</b>")
-ok(ids(r1)==[D["1"],D["2"]],"leaderboard rank digits only")
-r2=T("<b>🎖️ رتبه شما › ۱۵ام لیدربرد</b>")
-ok(ids(r2)==[pm_.GLOBAL_EMOJI["🎖"],D["1"],D["5"]],"my rank digits")
-r3=T("<b>🎖️ رتبه › 3ام لیدربرد</b>")
-ok(D["3"] in ids(r3),"profile rank digits (en)")
-ok(">۱<" not in r1 and ">1️⃣<" in r1,"digit fallback keycap")
-ok(not any(i in ids(T("<b>💰 ورودی: ۱۲۰ شاهی\nنفر 3 ام\nمبلغ 5000</b>")) for i in D.values()),"other numbers untouched")
-b.set_setting("premium_emoji_msg","auto"); b.set_setting("premium_emoji_msg_state",""); b.set_setting("premium_emoji_msg_digits","1"); me.refresh(); calls.clear()
-b.tg("sendMessage",chat_id=-100123,text="رتبه ۶ › x",parse_mode="Markdown")
-ok(D["6"] in ids(calls[0][1]["text"]),"group send rank digits")
-calls.clear(); b.tg("sendMessage",chat_id=-100123,text="⏳ *زمان ۶۰ ثانیه*",parse_mode="Markdown")
-ok(D["6"] not in ids(calls[0][1]["text"]),"group other numbers plain")
-b.set_setting("premium_emoji_msg_digits","0"); me.refresh(); calls.clear()
-b.tg("sendMessage",chat_id=-100123,text="رتبه ۶ › x",parse_mode="Markdown")
-ok(D["6"] not in ids(calls[0][1]["text"]),"digits switch off")
-b.set_setting("premium_emoji_msg_digits","1"); me.refresh()
+# رقم رتبه ساده می‌ماند (اعداد کیبورد، نه ایموجی پرمیوم)
+r1=T("<b>رتبه 12 › <a href=\"tg://user?id=5\">علی 77</a> 🍟\n🎖️ رتبه شما › 15ام لیدربرد\n🎖️ رتبه › 3ام لیدربرد</b>")
+ok(ids(r1)==[pm_.GLOBAL_EMOJI["🎖"]]*2 and "رتبه 12 ›" in r1 and "15ام" in r1 and "3ام" in r1,"rank digits stay plain")
 # 🪨 و پشتیبانی
 ok(ids(T("<b>🪨 سنگ</b>"))==["5882236803141868717"],"rock emoji")
 sp=T("<b>☎️ پشتیبانی\n\n🔭 لطفا موضوع و توضیحات خود را در یک قالب مسیج ارسال کرده تا بمانید!\n\n@x</b>")
@@ -199,4 +185,64 @@ ok(ids(T("<b>🛍 سفارش‌های خرید محصولات شما\n\n🔍 ک�
 ok(ids(T("<b>🔻 لطفا مبلغ ورودی را در جواب همین پنل وارد کنید.\nحداقل مبلغ › ۵ شاهی</b>"))==[pm_.GEM],"stake prompt gem")
 ok(ids(T("<b>🔻 برای پیوستن به میز دکمه‌ی زیر را بزنید.</b>"))==["5857454223368657979"],"join table line")
 ok("🔻 لطفا مبلغ ورودی" in open(os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","games.py"),encoding="utf-8").read(),"plain stake prompt unchanged")
+
+# ---- v16: کد ایموجی پرمیوم در اطلاعیه‌ها ----
+print("--- codes ---")
+CODE="5825623013852192219"
+x=pm_.expand_html("سلام {💎:%s} و {%s} و {😀:123}"%(CODE,"5830144944399981619"),lambda ids:{i:"✅" for i in ids})
+ok(x.count("<tg-emoji")==2 and '>💎</tg-emoji>' in x and '>✅</tg-emoji>' in x and "{😀:123}" in x,"expand_html both formats, short id untouched")
+ok(pm_.expand_html("بدون کد")=="بدون کد","expand_html no code")
+x=pm_.expand_html("{x:%s}"%CODE,lambda ids:{CODE:"🔥"}); ok('>🔥</tg-emoji>' in x,"invalid glyph falls back to lookup")
+x=pm_.expand_html("{%s}"%CODE); ok('>⭐</tg-emoji>' in x,"no lookup → default star")
+x=pm_.expand_html("{●:%s}"%CODE,lambda ids:{CODE:"🔥"}); ok('>🔥</tg-emoji>' in x,"non-emoji glyph rejected")
+t0="سلام {💎:%s} علی {%s} 😀 x"%(CODE,"5830144944399981619")
+L=pm_.u16len(t0)
+nt,ne,n=pm_.expand_entities(t0,[{"type":"bold","offset":0,"length":4},{"type":"italic","offset":5,"length":L-5}],lambda ids:{i:"✅" for i in ids})
+ce=[e for e in ne if e["type"]=="custom_emoji"]
+ok(n==2 and nt=="سلام 💎 علی ✅ 😀 x" and [(e["offset"],e["length"],e["custom_emoji_id"]) for e in ce]==[(5,2,CODE),(12,1,"5830144944399981619")],"entities: replaced + offsets")
+it=[e for e in ne if e["type"]=="italic"][0]; ok(it["offset"]==5 and it["offset"]+it["length"]==pm_.u16len(nt),"entities: italic span adjusted")
+ok([e for e in ne if e["type"]=="bold"][0]=={"type":"bold","offset":0,"length":4},"entities: bold before untouched")
+nt,ne,n=pm_.expand_entities("a {%s} b"%CODE,[{"type":"code","offset":0,"length":9}]); ok(n==0 and nt=="a {%s} b"%CODE,"codes inside code entity untouched")
+nt,ne,n=pm_.expand_entities("😀 {%s}"%CODE,[],None); ok(ne==[{"type":"custom_emoji","offset":3,"length":1,"custom_emoji_id":CODE}] and nt.endswith("⭐"),"utf16 offset after astral emoji")
+# جریان تلگرامی: متن
+b.set_setting("premium_emoji_msg","auto"); me.refresh(); calls.clear()
+msg={"message_id":50,"chat":{"id":7},"from":{"id":7},"text":"سلام {%s} {💎:%s}"%("5830144944399981619",CODE),"entities":[{"type":"bold","offset":0,"length":4}]}
+mid,err=b.rich_convert_codes(msg)
+sm=[c for c in calls if c[0]=="sendMessage"]
+ok(mid==1 and err is None and len(sm)==1 and sm[0][1]["chat_id"]==7 and "parse_mode" not in sm[0][1] and len([e for e in sm[0][1]["entities"] if e["type"]=="custom_emoji"])==2,"telegram flow text: sendMessage with entities")
+ok(any(c[0]=="getCustomEmojiStickers" for c in calls) and sm[0][1]["text"].startswith("سلام 🔥"),"bare code looked up via getCustomEmojiStickers")
+calls.clear(); b.rich_convert_codes(msg)
+ok(not any(c[0]=="getCustomEmojiStickers" for c in calls),"glyph lookup cached")
+# کپشن
+calls.clear()
+cm={"message_id":51,"chat":{"id":7},"from":{"id":7},"photo":[{}],"caption":"عکس {💎:%s}"%CODE,"caption_entities":[]}
+mid,err=b.rich_convert_codes(cm); cp=[c for c in calls if c[0]=="copyMessage"]
+ok(mid==1 and len(cp)==1 and cp[0][1]["message_id"]==51 and cp[0][1]["caption_entities"][0]["custom_emoji_id"]==CODE,"telegram flow caption: copyMessage with caption_entities")
+ok(b.rich_convert_codes({"message_id":52,"chat":{"id":7},"text":"بدون کد"})==(None,None),"no code → None")
+# رد شدن توسط تلگرام
+def bad_send(method, timeout, params):
+    calls.append((method,params))
+    if method=="sendMessage": return {"ok":False,"error_code":400,"description":"Bad Request: DOCUMENT_INVALID"}
+    return fake_send(method,timeout,params)
+b._tg_send=bad_send
+mid,err=b.rich_convert_codes(msg); ok(mid is None and "DOCUMENT_INVALID" in err,"telegram rejects → error text")
+b._tg_send=fake_send
+# rich_receive: پیام تبدیل‌شده جای اصلی را می‌گیرد و پیش‌نمایش دوباره فرستاده نمی‌شود
+calls.clear()
+b.set_state(7,"adm_in",{"name":"rich","purpose":"bc","back":"s","kind":"text","aud":"all"})
+b.rich_receive(msg,{"name":"rich","purpose":"bc","back":"s","kind":"text","aud":"all"})
+_,d=b.get_state(7)
+ok(d.get("src_mid")==1 and d.get("src_chat")==7 and not any(c[0]=="copyMessage" for c in calls),"rich_receive uses converted message, no duplicate preview")
+calls.clear()
+b.rich_receive({"message_id":60,"chat":{"id":7},"from":{"id":7},"text":"بدون کد"},{"name":"rich","purpose":"bc","back":"s","kind":"text","aud":"all"})
+_,d=b.get_state(7); ok(d.get("src_mid")==60 and any(c[0]=="copyMessage" for c in calls),"rich_receive without code: normal preview")
+b._tg_send=bad_send; calls.clear()
+b.set_state(7,"adm_in",{"name":"rich","purpose":"bc","back":"s","kind":"text","aud":"all"})
+b.rich_receive(msg,{"name":"rich","purpose":"bc","back":"s","kind":"text","aud":"all"})
+_,d=b.get_state(7); ok(not d.get("src_mid") and any("DOCUMENT_INVALID" in str(c[1].get("text","")) for c in calls),"rich_receive: rejected code → error to admin, nothing queued")
+b._tg_send=fake_send
+# راهنما در متن‌های ادمین
+ok("{💎:5825623013852192219}" in b._PREM_CODE_HELP and "{5825623013852192219}" in b._PREM_CODE_HELP,"help text mentions both formats")
+# وب
+ok("tg-emoji" in b.expand_premium_codes_html("x {💎:%s}"%CODE),"web html expansion")
 print(f"t_pm: PASS={P} FAIL={F}")

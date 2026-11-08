@@ -9,6 +9,9 @@ for f in ("t_g", "t_g2", "t_x", "t_c", "t_a", "t_t", "t_r", "t_n", "t_v", "t_w",
     print(f"{f}: PASS={p} FAIL={len(fl)}")
     for l in fl:
         print("   ", l)
-    bad += len(fl) + (1 if r.returncode not in (0,) and not p else 0)
+    if r.returncode != 0:
+        print("    ❌ تست وسط کار با خطا قطع شد (کد %s):" % r.returncode)
+        print("      " + "\n      ".join((r.stderr or "").strip().splitlines()[-4:]))
+    bad += len(fl) + (1 if r.returncode != 0 else 0)
 print("همه‌چیز سالم است ✅" if not bad else f"❌ {bad} خطا")
 sys.exit(1 if bad else 0)

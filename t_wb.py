@@ -136,6 +136,10 @@ P("premsg/map",{"key":"موجودی:","reset":True}); ok(not [i for i in G("prem
 P("premsg/map",{"key":"سلام دوست","reset":True})
 r=P("premsg/test",{}); ok(r.get("ok"),"premsg test send")
 P("premsg/nope",{},False)
-j=G("premsg"); ok(j["digits"] is True,"premsg digits default on")
-P("premsg/digits",{}); ok(G("premsg")["digits"] is False,"premsg digits off")
-P("premsg/digits",{}); ok(G("premsg")["digits"] is True,"premsg digits on")
+print("--- broadcast codes ---")
+sent.clear()
+P("broadcast",{"aud":"all","text":"سلام {💎:5825623013852192219} دوستان"})
+sm=[p for m,p in sent if m=="sendMessage" and "tg-emoji" in str(p.get("text",""))]
+ok(len(sm)==1 and '<tg-emoji emoji-id="5825623013852192219">💎</tg-emoji>' in sm[0]["text"],"web broadcast: code → tg-emoji")
+sent.clear(); P("broadcast",{"aud":"all","text":"بدون کد {123}"}); sm=[p for m,p in sent if m=="sendMessage"]
+ok(sm and "tg-emoji" not in sm[0]["text"] and "{123}" in sm[0]["text"],"web broadcast: plain text untouched")

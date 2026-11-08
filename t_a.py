@@ -49,4 +49,3 @@ for d in ("acc_ref","sp_pick:x","sps:t:public","svc_views"):
     ok(alerts and "غیرفعال" in str(alerts[-1]),f"callback {d} مسدود")
 alerts.clear(); b.handle_callback({"id":"c","from":{"id":ADM,"first_name":"x"},"data":"acc_ref","message":{"chat":{"id":ADM,"type":"private"},"message_id":3}}); ok(not any("غیرفعال" in str(a) for a in alerts),"ادمین مسدود نمی‌شود")
 b.set_setting("sec_off",'[]')
-os.remove(DB)

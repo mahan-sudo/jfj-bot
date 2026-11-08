@@ -76,7 +76,7 @@ b.set_setting("sec_off",'["bk"]'); n0=len(sent); gm(11,"انتقال شاهی 5 
 b.set_setting("sec_off",'[]')
 # 10) ایندکس و لاگ مالی
 with b.get_db() as c:
-    ix={r[1] for r in c.execute("PRAGMA index_list(g_xfer)")}; nlog=c.execute("SELECT COUNT(*) FROM g_log").fetchone()[0]
+    ix={r[0] for r in c.execute("SELECT indexname FROM pg_indexes WHERE tablename='g_xfer'")}; nlog=c.execute("SELECT COUNT(*) FROM g_log").fetchone()[0]
 ok("g_xfer_st" in ix and "g_xfer_snd" in ix,"ایندکس‌های g_xfer")
 ok(nlog>=1,f"لاگ مالی ثبت شده ({nlog})")
 print(g.casino_day_block(b.now_local().date().isoformat()) or "NOBLOCK")
@@ -90,7 +90,7 @@ g._PROF_LAST.clear()
 for i in (11,12): 
     with b.get_db() as c: c.execute("UPDATE users SET tokens=500 WHERE id=?",(i,))
 gm(11,"پروفایل"); t_=last()["text"]
-ok("👑 پروفایل شاهنشاهی" in t_ and "آیدی عددی ›› <code>11</code>" in t_ and "رتبه" in t_ and "⤫ 🎲 تاس" in t_ and "⤫🕹 دوز" in t_,"پروفایل خودم (بدون عکس: متن)")
+ok("🏰 پروفایل شاهنشاهی" in t_ and "آیدی عددی ›› <code>11</code>" in t_ and "رتبه" in t_ and "⤫ 🎲 تاس" in t_ and "⤫🕹 دوز" in t_,"پروفایل خودم (بدون عکس: متن)")
 g._PROF_LAST.clear(); gm(11,"شاهیام"); ok("پروفایل شاهنشاهی" in last()["text"],"شاهیام")
 g._PROF_LAST.clear(); gm(11,"پروفایلش"); n0=len(sent); ok(True,"")
 g._PROF_LAST.clear(); n0=len(sent); gm(11,"پروفایلش"); ok(len(sent)==n0,"پروفایلش بدون ریپلای: بی‌صدا")
@@ -103,7 +103,7 @@ with b.get_db() as c: c.execute("UPDATE g_cool SET ts=0"); c.execute("DELETE FRO
 tidx,px=setups(11,"s",10,2); cb(12,f"g:jn:{tidx}",px); gm(11,dice=64,emoji="🎰"); gm(12,dice=1,emoji="🎰"); time.sleep(g.REVEAL_DELAY+.2); g._tick(); g._tick()
 with b.get_db() as c: stt={(r[0],r[1]):(r[2],r[3]) for r in c.execute("SELECT user_id,game,wins,losses FROM g_stats")}
 ok(stt.get((11,"s"))==(1,0) and stt.get((12,"s"))==(0,1),f"آمار برد/باخت ثبت شد {stt}")
-g._PROF_LAST.clear(); gm(11,"پروفایل"); ok("اسلات › برد ›› ۱ باخت ›› ۰" in last()["text"],"آمار در پروفایل")
+g._PROF_LAST.clear(); gm(11,"پروفایل"); ok("اسلات\nبرد ›› ۱ باخت ›› ۰" in last()["text"],"آمار در پروفایل")
 # عکس پروفایل → sendPhoto
 orig2=b.tg
 def withphoto(method,_timeout=45,**pp):
@@ -137,26 +137,25 @@ with b.get_db() as c:
     c.execute("INSERT INTO joins (user_id,tracking_code) VALUES (24,'R0')"); c.execute("INSERT INTO joins (user_id,tracking_code) VALUES (24,'R1')")
     c.execute("UPDATE users SET banned=1 WHERE id=45"); c.execute("UPDATE users SET tokens=50 WHERE id<21")
 g._LB_LAST.clear(); gm(21,"لیدربرد"); m_=last(); _t=m_["text"]
-ok("🏆 لیدربرد جهانی شاهنشاهی 👑" in _t and "🔻 لطفا نوع لیدربرد را انتخاب کنید 🔍" in _t and "لیدربرد شروع JFJ › فعالترین های شاهنشاهی با بیشترین جفج" in _t,"متن منوی لیدربرد")
+ok("🏆 لیدربرد جهانی شاهنشاهی 👑" in _t and "\n\nلطفا نوع لیدربرد را انتخاب کنید 🔍" in _t and "🔻" not in _t and "لیدربرد شروع JFJ › فعالترین های شاهنشاهی با بیشترین جفج" in _t,"متن منوی لیدربرد")
 _kb_=_j.dumps(m_["reply_markup"],ensure_ascii=False); ok("شاهی 💎" in _kb_ and "زیرمجموعه‌گیری 👥️" in _kb_ and "درخواست JFJ 👑" in _kb_ and "شروع JFJ 🏆" in _kb_,"دکمه‌های منو")
 _rows_=m_["reply_markup"]["inline_keyboard"]
 ok([len(r) for r in _rows_]==[1,2,1] and "شاهی" in _rows_[0][0]["text"] and "درخواست" in _rows_[1][0]["text"] and "شروع" in _rows_[1][1]["text"] and "زیرمجموعه" in _rows_[2][0]["text"],"چیدمان ۱ / ۲ / ۱")
 print("STYLE",[ [b.get("style") for b in r] for r in _rows_])
 ok(all(b.get("style")=="success" for r in _rows_ for b in r),"همه‌ی دکمه‌های منو سبز")
 cb(21,"g:lb:21:t:0",77); e=lastedit()["text"]
-ok("پادشاه شاهنشاهی" in e and "ارشد شاهنشاهی" in e and "وزیراعظم شاهنشاهی" in e and "رتبه ۶" not in e and e.count("💎 موجودی ››")==5,"صفحه اول: ۵ نفر با لقب‌ها")
+ok("پادشاه شاهنشاهی" in e and "ارشد شاهنشاهی" in e and "وزیراعظم شاهنشاهی" in e and "رتبه 6" not in e and e.count("💎 موجودی ››")==5,"صفحه اول: ۵ نفر با لقب‌ها")
 ok("U44" in e.split("پادشاه شاهنشاهی")[1].split("\n")[0] and "U45" not in e,"نفر اول بیشترین موجودی؛ کاربر مسدود نیست")
 ok("رتبه شما ›" in e and "ام لیدربرد" in e,"رتبه شما")
 ek=lastedit()["reply_markup"]["inline_keyboard"]; ok(len(ek)==2 and "بعدی" in str(ek[0]) and "قبلی" not in str(ek[0]) and "بازگشت ◁" in str(ek[1]),"دکمه‌ها صفحه اول")
 cb(21,"g:lb:21:t:1",77); e=lastedit()["text"]
 _em=[ch for ch in ["🍟","🍿","🍱","🍩","🍭","🌽","🥨","🥐","🍔","🍺","🍷","🧸","🔥","☃️","⛄️"] if ch in e.replace("🔹","")]
 ok(len(_em)==10 and sum(e.count(x) for x in _em)==10,"ایموجی‌های صفحه تکراری نیست")
-ok(e.count("🔻 رتبه")==10 and "رتبه ۶ ›" in e and "رتبه ۱۵ ›" in e,"صفحه دوم: ۱۰ نفر از رتبه ۶")
+ok(e.count("\nرتبه ")==10 and "رتبه 6 ›" in e and "رتبه 15 ›" in e and "🔻" not in e,"صفحه دوم: ۱۰ نفر از رتبه ۶")
 ek=lastedit()["reply_markup"]["inline_keyboard"]; ok("قبلی" in str(ek[0]) and "بعدی" in str(ek[0]),"قبلی و بعدی")
-cb(21,"g:lb:21:t:2",77); e=lastedit()["text"]; ok("رتبه ۱۶ ›" in e,"صفحه سوم")
+cb(21,"g:lb:21:t:2",77); e=lastedit()["text"]; ok("رتبه 16 ›" in e,"صفحه سوم")
 cb(21,"g:lb:21:r:0",77); e=lastedit()["text"]; ok("زیرمجموعه ها ›› " in e and "۸ دعوت" in e and "U21" in e,"لیدربرد زیرمجموعه‌گیری")
 cb(21,"g:lb:21:q:0",77); e=lastedit()["text"]; ok("۳ درخواست" in e and "U23" in e,"لیدربرد درخواست")
 cb(21,"g:lb:21:j:0",77); e=lastedit()["text"]; ok("۲ جفج رفته" in e and "U24" in e,"لیدربرد شروع جفج")
 cb(21,"g:lb:21:m:0",77); ok("لطفا نوع لیدربرد" in lastedit()["text"],"بازگشت به منو")
 al0=len(alerts); cb(22,"g:lb:21:t:0",77); ok("مخصوص" in str(alerts[-1]) ,"پنل مخصوص صاحبش است")
-os.remove(DB)

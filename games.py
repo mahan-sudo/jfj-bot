@@ -1165,7 +1165,7 @@ def _profile_text(uid, name, tokens):
             f"👤 کاربر › {_mention(uid, name)} {random.choice(PLAYER_EMOJIS)}\n"
             f"\u200f🪪 آیدی عددی ›› <code>{int(uid)}</code>\n\n"
             f"🏦 موجودی ››› {_t(tokens)} شاهی 💎\n"
-            f"🎖️ رتبه › {_n(_lb_rank('t', uid))}ام لیدربرد\n\n"
+            f"🎖️ رتبه › {_lb_rank('t', uid)}ام لیدربرد\n\n"
             "📊 آمار بازی ها\n🃏 کازینو\n"
             f"⤫ 🎲 تاس\n{line('d')}\n"
             f"⤫ 🎰 اسلات\n{line('s')}\n"
@@ -1307,13 +1307,13 @@ def _lb_view(kind, page, viewer):
         r = rows[i]
         who = f"{_mention(r['uid'], _name({'first_name': r['first_name']}))} {emos[i - lo]}"
         head = (f"{LB_MEDALS[i]} {LB_TITLES[i]} › {who}" if i < len(LB_TITLES)
-                else f"رتبه {_n(i + 1)} › {who}")
+                else f"رتبه {i + 1} › {who}")
         blocks.append(f"{head}\n{_lb_value_line(kind, r['v'])}")
     txt = f"🏆 لیدربرد جهانی شاهنشاهی 👑\n\n{LB_KINDS[kind]['desc']}\n\n"
     txt += "\n\n".join(blocks) if blocks else "هنوز کاربری در این لیدربرد ثبت نشده است."
     if B.user_exists(viewer):
         rk = _lb_rank(kind, viewer)
-        txt += ("\n\n🎖️ رتبه شما › " + (f"{_n(rk)}ام لیدربرد" if rk else "هنوز رتبه‌ای ندارید"))
+        txt += ("\n\n🎖️ رتبه شما › " + (f"{rk}ام لیدربرد" if rk else "هنوز رتبه‌ای ندارید"))
     nav = []
     if page > 0:
         nav.append(_btn("قبلی ◁", f"g:lb:{viewer}:{kind}:{page - 1}"))

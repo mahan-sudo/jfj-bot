@@ -33,4 +33,3 @@ with b.get_db() as c: c.execute("UPDATE g_cool SET ts=0"); c.execute("UPDATE g_t
 tid,p=setups(11,"d",10,1); cb(11,f"g:pk:{tid}:o",p)
 gmid(11,1,p+9,"🎲"); gmid(11,6,p+10,"🎲"); gmid(11,6,p+11,"🎲")
 ok(g._players(tid)[0]["value"]==1,"تاس: اولی (۱) حساب شد")
-os.remove(DB)

@@ -59,7 +59,7 @@ admcb("adm_p:x:gx_find"); adm_text("11"); pg=[q for m,q in sent if m=="sendMessa
 ok("آخرین بازی‌ها" in pg and "<code>11</code>" in pg and "برد ۱" in pg,"صفحه‌ی بازیکن")
 admcb("adm_p:x:gx_find"); adm_text("999999"); ok("پیدا نشد" in [q for m,q in sent if m=="sendMessage" and q.get("chat_id")==ADM][-1]["text"],"کاربر ناموجود")
 # ریست کول‌داون
-with b.get_db() as c: c.execute("INSERT OR REPLACE INTO g_cool VALUES (11,?)",(time.time(),))
+with b.get_db() as c: c.execute("INSERT INTO g_cool VALUES (11,?) ON CONFLICT (user_id) DO UPDATE SET ts=EXCLUDED.ts",(time.time(),))
 admcb("adm_p:x:gx_cdr:11"); ok(g._cool_left(11)==0,"ریست کول‌داون")
 # محرومیت از بازی
 admcb("adm_p:x:gx_ban:11"); ok(g.gbanned(11),"محروم شد")
@@ -76,10 +76,10 @@ with b.get_db() as c: c.execute("UPDATE users SET tokens=5 WHERE id<21"); c.exec
 g._LB_LAST.clear(); g._PROF_LAST.clear(); rk=g._lb_rank("t",28)
 rows=g._rows(g._LB_SQL["t"][0],(100,)); pos=[r["uid"] for r in rows].index(28)+1
 ok(rk==pos,f"رتبه = جایگاه واقعی در لیست ({rk}=={pos})")
-gm(28,"پروفایل"); ok(f"{g._n(pos)}ام لیدربرد" in last()["text"],"پروفایل همان رتبه")
-cb(28,"g:lb:28:t:0",77); e=lastedit()["text"]; ok(f"{g._n(pos)}ام لیدربرد" in e,"لیدربرد همان رتبه (در صفحه‌ی اول یا در هر صفحه)")
+gm(28,"پروفایل"); ok(f"{pos}ام لیدربرد" in last()["text"],"پروفایل همان رتبه")
+cb(28,"g:lb:28:t:0",77); e=lastedit()["text"]; ok(f"{pos}ام لیدربرد" in e,"لیدربرد همان رتبه (در صفحه‌ی اول یا در هر صفحه)")
 # ورود از کیبورد اصلی پنل مدیریت
 n0=len(sent); adm_text("🃏 بازی‌های گروهی")
 q=[q for m_,q in sent[n0:] if m_=="sendMessage" and q.get("chat_id")==ADM]
 ok(q and "بازی‌های گروهی" in q[-1]["text"] and "gx_cfg" in str(q[-1]["reply_markup"]) and "adm_p:g:home" not in str(q[-1]["reply_markup"]),"کیبورد اصلی: باز شدن صفحه‌ی بازی‌ها بدون دکمه‌ی بازگشت قدیمی")
-os.remove(DB)
+

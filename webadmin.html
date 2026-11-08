@@ -738,7 +738,6 @@ VIEWS.pm=async()=>{const r=await api("premsg");
    h("div",{class:"card"},h("h3",null,"وضعیت",h("span",{class:"pill "+stt[1]},stt[0])),
      h("div",{class:"tabs",style:"margin-bottom:10px"},modes.map(([k,t])=>h("button",{class:r.mode===k?"on":"",onclick:async()=>{if(r.mode!==k){await safe(()=>api("premsg/mode",{mode:k}),"ذخیره شد");render(true)}}},t))),
      r.state&&r.mode!=="off"&&h("p",{class:"hint"},(r.state==="ok"?"آخرین ارسال موفق: ":"آخرین رد شدن: ")+"حدود "+ago(r.state_ts)+" پیش"),
-     h("div",{class:"row"},h("div",{class:"m"},h("b",null,"رقم رتبه در لیدربرد"),h("span",null,"عدد رتبه‌ی کاربران در لیدربرد با ایموجی پرمیوم نمایش داده شود")),h("div",{class:"e"},sw(r.digits,()=>api("premsg/digits",{})))),
      h("button",{class:"btn blk",onclick:test},ic("send"),"ارسال پیام تست به خودم")),
    h("div",{class:"card"},h("h3",null,"قانون‌های خط‌ها ("+nf(r.items.length)+")",h("span",{class:"sub"},h("button",{class:"btn sm pri",onclick:add},ic("plus"),"افزودن"))),
      r.items.map(it=>h("div",{class:"row tap",onclick:()=>edit(it)},h("div",{class:"m"},h("b",{style:"white-space:normal"},nice(it.key)),h("span",{class:"ltr"},it.id||"بدون ایموجی")),h("div",{class:"e"},it.disabled?h("span",{class:"pill r"},"غیرفعال"):it.custom?h("span",{class:"pill b"},"سفارشی"):h("span",{class:"pill"},"پیش‌فرض"),it.custom&&h("button",{class:"btn sm","aria-label":"بازگشت به پیش‌فرض",onclick:async e=>{e.stopPropagation();await safe(()=>api("premsg/map",{key:it.key,reset:true}),"به پیش‌فرض برگشت");render(true)}},"پیش‌فرض"))))),
@@ -753,7 +752,7 @@ VIEWS.bc=async()=>{let aud="all",kind="text",file=null;const ta=h("textarea",{cl
   const dz=h("div",{class:"dz",onclick:()=>fi.click()});const fi=h("input",{type:"file",style:"display:none",onchange:()=>{file=fi.files[0]||null;paintDz()}});
   function paintDz(){dz.classList.toggle("has",!!file);dz.replaceChildren(ic("plus"),file?file.name+" · "+fa((file.size/1048576).toFixed(1))+" مگابایت":"انتخاب فایل (حداکثر "+fa(LIM[kind])+" مگابایت)")}
   const mbox=h("div");
-  function paintKind(){fi.accept=ACC[kind]||"";file=null;fi.value="";mbox.replaceChildren(...(kind==="text"?[]:[dz]));paintDz();ta.placeholder=kind==="text"?"متن پیام (HTML تلگرام مجاز است)…":"کپشن (اختیاری؛ HTML مجاز، حداکثر ۷۰۰ نویسه)";ta.style.display=kind==="sticker"?"none":"";ta.maxLength=kind==="text"?4000:700}
+  function paintKind(){fi.accept=ACC[kind]||"";file=null;fi.value="";mbox.replaceChildren(...(kind==="text"?[]:[dz]));paintDz();ta.placeholder=kind==="text"?"متن پیام (HTML تلگرام مجاز است؛ ایموجی پرمیوم: {💎:5825623013852192219})…":"کپشن (اختیاری؛ HTML مجاز، حداکثر ۷۰۰ نویسه)";ta.style.display=kind==="sticker"?"none":"";ta.maxLength=kind==="text"?4000:700}
   const kt=h("div",{class:"tabs",style:"margin-bottom:10px"},KINDS.map(([k,t])=>h("button",{class:k===kind?"on":"",onclick:e=>{kind=k;[...kt.children].forEach(x=>x.classList.remove("on"));e.currentTarget.classList.add("on");paintKind()}},t)));
   const at=h("div",{class:"tabs",style:"margin-bottom:10px"},[["all","همه"],["active","فعال‌ها"],["new","جدیدها"],["chan","کانال‌ها"]].map(([k,t])=>h("button",{class:k===aud?"on":"",onclick:e=>{aud=k;[...at.children].forEach(x=>x.classList.remove("on"));e.currentTarget.classList.add("on")}},t)));
   const upload=()=>new Promise((res,rej)=>{const x=new XMLHttpRequest();x.open("POST","/admin/api/upload?kind="+kind+"&name="+encodeURIComponent(file.name)+"&caption="+encodeURIComponent(ta.value.trim()));x.setRequestHeader("X-Requested-With","jfj");x.withCredentials=true;
@@ -768,7 +767,9 @@ VIEWS.bc=async()=>{let aud="all",kind="text",file=null;const ta=h("textarea",{cl
   const btn=h("button",{class:"btn pri blk",onclick:()=>confirmBox("پیام برای مخاطبان انتخاب‌شده ارسال شود؟","ارسال",go_)},ic("send"),"ارسال");
   paintKind();
   return h("div",null,phead("send","پیام همگانی","متن، عکس، ویدیو، گیف، ویس، آهنگ، فایل یا استیکر"),h("div",{class:"card"},h("label",{class:"lbl"},"نوع پیام"),kt,h("label",{class:"lbl"},"مخاطبان"),at,mbox,ta,prog,h("label",{class:"row",style:"border:0;cursor:pointer"},pin,"سنجاق کردن پیام"),btn),
-   h("div",{class:"note"},"رسانه ابتدا برای خودت در ربات ارسال می‌شود (پیش‌نمایش) و همان پیام برای مخاطبان کپی می‌شود."))};
+   h("div",{class:"note"},"رسانه ابتدا برای خودت در ربات ارسال می‌شود (پیش‌نمایش) و همان پیام برای مخاطبان کپی می‌شود."),
+   h("div",{class:"note"},h("b",null,"ایموجی پرمیوم با کد: "),"هر جای متن یا کپشن بنویس ",h("code",{class:"ltr"},"{5825623013852192219}")," یا همراه ایموجی جایگزین ",h("code",{class:"ltr"},"{💎:5825623013852192219}"),"؛ هنگام ارسال به ایموجی پرمیوم تبدیل می‌شود. ایموجی داخل آکولاد فقط وقتی دیده می‌شود که پرمیوم نمایش داده نشود."))
+  };
 VIEWS.srch=async()=>{const host=h("div"),inp=h("input",{class:"in",placeholder:"آیدی، نام، @یوزرنیم، کد سفارش/درخواست/فاکتور یا لینک…"});let tm;
   async function run(){const q=inp.value.trim();if(q.length<2){host.replaceChildren(h("p",{class:"hint"},"حداقل ۲ نویسه بنویس."));return}
     const r=await safe(()=>api("search?q="+encodeURIComponent(q)));if(!r)return;const C=(t,items,fn)=>items.length?h("div",{class:"card"},h("h3",null,t),items.map(fn)):null;

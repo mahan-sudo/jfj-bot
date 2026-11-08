@@ -74,4 +74,3 @@ b.set_setting("g_t_on","1")
 t,kb=b.render_games(); ok("gmt:t" in str(kb) and "انتقال شاهی در گروه" in t,"کلید در پنل ادمین")
 # حداقل از تنظیم ربات
 b.MIN_TRANSFER_AMOUNT=50; rmsg(11,"انتقال شاهی 10",to=12); ok("حداقل مبلغ انتقال ۵۰" in lastsend()["text"],"حداقل همان تنظیم بانک ربات است")
-os.remove(DB)

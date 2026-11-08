@@ -22,11 +22,11 @@ gm(11,"کازینو"); ok("برو استراحت" in last()["text"],"سازند�
 gm(12,"کازینو"); ok("🃏 کازینو شاهنشاهی" in last()["text"],"پیوسته می‌تواند میز بسازد")
 with b.get_db() as c: c.execute("UPDATE g_tables SET state='expired' WHERE state='menu'")
 # پیوستن حتی وقتی خودش در کول‌داون باشد: ۱۳ را در کول‌داون بگذار
-with b.get_db() as c: c.execute("INSERT OR REPLACE INTO g_cool VALUES (13,?)",(time.time(),))
+with b.get_db() as c: c.execute("INSERT INTO g_cool VALUES (13,?) ON CONFLICT (user_id) DO UPDATE SET ts=EXCLUDED.ts",(time.time(),))
 with b.get_db() as c: c.execute("DELETE FROM g_cool WHERE user_id=11")
 tid,p=setups(11,"d",10,2); cb(11,f"g:md:{tid}:max",p); cb(13,f"g:jn:{tid}",p); ok(S(tid)=="send" and bal(13)==990,"پیوستن با کول‌داون فعال مشکلی ندارد")
 # متن منقضی
 gm(12,"کازینو")
 with b.get_db() as c: tid=c.execute("SELECT MAX(id) FROM g_tables").fetchone()[0]; c.execute("UPDATE g_tables SET touched=0 WHERE id=?",(tid,))
 g._tick(); _e=lastedit(); ok(_e["text"].rstrip().endswith("🛑 این گردونه دیگر اعتبار ندارد...</b>") and "کازینو شاهنشاهی" in _e["text"] and not _e.get("reply_markup",{}).get("inline_keyboard"),"متن پنل منقضی: ته همان پیام اضافه شد")
-os.remove(DB)
+

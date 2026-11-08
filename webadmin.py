@@ -466,7 +466,10 @@ def broadcast(uid, body):
         raise WebErr("مخاطب نامعتبر است.")
     if not text:
         raise WebErr("متن خالی است.")
-    r = bot.tg("sendMessage", chat_id=uid, text=text[:3900], parse_mode="HTML", disable_web_page_preview=True, _notx=True)
+    text = bot.expand_premium_codes_html(text[:3500])
+    if len(text) > 4096:
+        raise WebErr("متن بعد از تبدیل کد ایموجی‌ها بلندتر از ۴۰۹۶ نویسه شد؛ کوتاه‌ترش کن.")
+    r = bot.tg("sendMessage", chat_id=uid, text=text, parse_mode="HTML", disable_web_page_preview=True, _notx=True)
     if not r.get("ok"):
         raise WebErr("متن پذیرفته نشد: " + str(r.get("description", ""))[:120])
     jid = bot.bc_create(uid, uid, uid, r["result"]["message_id"], aud, pin=1 if body.get("pin") else 0)

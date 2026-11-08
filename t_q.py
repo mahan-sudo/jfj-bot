@@ -78,4 +78,3 @@ b.upsert_user({"id":431,"first_name":"N431"},referred_by=430); b.notify_new_refe
 ok(bal(430)==0,"عضو از قبل: قبل از اولین تعامل پاداش نیست")
 ok(b.fj_gate(431,431) is False and bal(430)==2,"عضو از قبل: بدون کلیک رد می‌شود و پاداش می‌گیرد")
 b.set_setting("fj_enabled","0")
-os.remove(DB)

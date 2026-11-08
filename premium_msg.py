@@ -156,13 +156,6 @@ GLOBAL_EMOJI = {
 }
 DOOZ_X = "5857415006022278161"          # ❌ در پیام‌های دوز (خط نقش بازیکن و صفحه‌ی بازی)
 KEYCAP7 = "5884468176091094657"         # 7️⃣ در کازینو
-# ارقام «رتبه‌ی کاربران در لیدربرد» (رتبه ۶ › …  /  رتبه شما › ۱۲ام): هم ارقام انگلیسی هم فارسی
-DIGIT_IDS = {"1": "5845974321247297274", "2": "5843861725618642819", "3": "5843973811380167207",
-             "4": "5846158858812136854", "5": "5846159120805141727", "6": "5845716047683921674",
-             "7": "5845766741182914502", "8": "5845685686560105154", "9": "5845753611467889699",
-             "0": "5845994722341952716"}
-_FA_TO_EN = {ord(c): str(i) for i, c in enumerate("۰۱۲۳۴۵۶۷۸۹")}
-_RANK_RE = re.compile(r"(رتبه(?: شما)?(?: ›+)? ?)([0-9۰-۹]{1,6})(?![0-9۰-۹])")
 _BOARD_ONLY = re.compile(r"^[❌⭕◻\uFE0E\uFE0F\u200c\s]+$")
 
 _ID = re.compile(r"^\d{15,20}$")
@@ -270,17 +263,7 @@ class PremMsg:
         self._cache = (time.time(), (mode, rules))
         return mode, rules
 
-    def digits_on(self):
-        """رقم رتبه‌ی لیدربرد پرمیوم شود؟ (تنظیم premium_emoji_msg_digits؛ پیش‌فرض روشن)"""
-        t, v = getattr(self, "_dcache", (0.0, None))
-        if v is not None and time.time() - t < 20:
-            return v
-        v = (self.bot.get_setting("premium_emoji_msg_digits", "1") or "1") != "0"
-        self._dcache = (time.time(), v)
-        return v
-
     def refresh(self):
-        self._dcache = (0.0, None)
         self._cache = (0.0, None)
         self._scache = (0.0, None)
         self._rules = None
@@ -324,9 +307,8 @@ class PremMsg:
     def _tg(eid, glyph):
         return f'<tg-emoji emoji-id="{eid}">{glyph}</tg-emoji>'
 
-    def transform(self, h, rules=None, digits=True):
-        """h = متن HTML ؛ خروجی: HTML با <tg-emoji>  (یا همان h اگر چیزی عوض نشد).
-        digits=True یعنی رقم رتبه‌ی لیدربرد هم پرمیوم شود"""
+    def transform(self, h, rules=None):
+        """h = متن HTML ؛ خروجی: HTML با <tg-emoji>  (یا همان h اگر چیزی عوض نشد)"""
         if not h or not isinstance(h, str):
             return h
         if rules is None:
@@ -356,42 +338,9 @@ class PremMsg:
                     line = line[:m.end(1)] + self._tg(eid, glyph) + line[m.end():]
                     n += 1
             line, n = self._globals(line, n)
-            if digits and "رتبه" in line and n < MAX_EMOJI:
-                line, n = self._rank_digits(line, n)
             out.append(line)
         res = "\n".join(out)
         return res if n else h
-
-    def _rank_digits(self, line, n):
-        def sub(mm):
-            nonlocal n
-            run = mm.group(2)
-            if n + len(run) > MAX_EMOJI:
-                return mm.group(0)
-            outp = []
-            for d in run:
-                e = d.translate(_FA_TO_EN)
-                outp.append(self._tg(DIGIT_IDS[e], e + "\uFE0F\u20E3"))
-            n += len(run)
-            return mm.group(1) + "".join(outp)
-        parts = re.split(r"(<[^>]*>)", line)
-        in_te = in_code = in_a = 0
-        res = []
-        for p in parts:
-            if p.startswith("<") and p.endswith(">"):
-                low = p.lower()
-                in_te += low.startswith("<tg-emoji")
-                in_te = max(0, in_te - low.startswith("</tg-emoji"))
-                in_code += bool(re.match(r"<(code|pre)\b", low))
-                in_code = max(0, in_code - bool(re.match(r"</(code|pre)>", low)))
-                in_a += bool(re.match(r"<a\b", low))
-                in_a = max(0, in_a - low.startswith("</a"))
-                res.append(p)
-            elif in_te or in_code or in_a:
-                res.append(p)
-            else:
-                res.append(_RANK_RE.sub(sub, p))
-        return "".join(res), n
 
     def _globals(self, line, n):
         if n >= MAX_EMOJI:
@@ -457,7 +406,7 @@ class PremMsg:
             return None
         if not self.active():
             return None
-        t2 = self.transform(params[key], digits=self.digits_on())
+        t2 = self.transform(params[key])
         if t2 is params[key] or t2 == params[key]:
             return None
         p2 = dict(params)
@@ -507,3 +456,107 @@ class PremMsg:
             except Exception:
                 logging.exception("premsg notify")
         threading.Thread(target=run, daemon=True).start()
+
+
+# =====================================================================
+# کد ایموجی پرمیوم در اطلاعیه‌ها:   {5825623013852192219}   یا   {💎:5825623013852192219}
+# =====================================================================
+CODE_RE = re.compile(r"\{\s*(?:(?P<g>[^\s{}:：0-9][^{}:：]{0,11}?)\s*[:：]\s*)?(?P<id>\d{15,20})\s*\}")
+DEFAULT_GLYPH = "⭐"
+
+CODE_HELP = ("💎 <b>ایموجی پرمیوم با کد</b>\n"
+             "هر جای متن بنویسید <code>{5825623013852192219}</code> یا همراه ایموجی جایگزین "
+             "<code>{💎:5825623013852192219}</code>؛ ربات هنگام ارسال، آن را به ایموجی پرمیوم تبدیل می‌کند. "
+             "ایموجی داخل آکولاد فقط وقتی دیده می‌شود که پرمیوم نمایش داده نشود.")
+CODE_HELP_SHORT = "💎 ایموجی پرمیوم با کد: {5825623013852192219} یا {💎:5825623013852192219}"
+
+
+def u16len(s):
+    return len(s.encode("utf-16-le")) // 2
+
+
+def _pick_glyph(given, found):
+    for g in (given, found):
+        g = (g or "").strip()
+        if g and safe_glyph(g) == g:
+            return g
+    return DEFAULT_GLYPH
+
+
+def has_codes(text):
+    return bool(text) and bool(CODE_RE.search(text))
+
+
+def expand_html(text, lookup=None):
+    """متن HTML ← همان متن با <tg-emoji> به‌جای کدها. lookup(ids)->{id: emoji} برای پیدا کردن ایموجی جایگزین از تلگرام"""
+    if not text or not CODE_RE.search(text):
+        return text
+    ms = list(CODE_RE.finditer(text))[:MAX_EMOJI]
+    found = {}
+    if lookup:
+        try:
+            found = lookup(sorted({m.group("id") for m in ms if not m.group("g")})) or {}
+        except Exception:
+            logging.exception("premsg lookup")
+    out, pos = [], 0
+    for m in ms:
+        out.append(text[pos:m.start()])
+        g = _pick_glyph(m.group("g"), found.get(m.group("id")))
+        out.append(f'<tg-emoji emoji-id="{m.group("id")}">{g}</tg-emoji>')
+        pos = m.end()
+    out.append(text[pos:])
+    return "".join(out)
+
+
+def expand_entities(text, entities, lookup=None):
+    """متن ساده + entities تلگرام (مثل پیامی که ادمین فرستاده) ← (متن جدید, entities جدید, تعداد تبدیل).
+    کدها به یک ایموجی جایگزین + entity از نوع custom_emoji تبدیل می‌شوند و بقیه‌ی entity ها (bold، لینک و…) جابه‌جا می‌شوند."""
+    entities = [dict(e) for e in (entities or [])]
+    if not text or not CODE_RE.search(text):
+        return text, entities, 0
+    # آفست‌های UTF-16 هر تطبیق
+    ms = []
+    for m in CODE_RE.finditer(text):
+        a = u16len(text[:m.start()])
+        ms.append((m, a, a + u16len(m.group(0))))
+    # تطبیقِ داخل code/pre دست نمی‌خورد
+    blocked = [(e["offset"], e["offset"] + e["length"]) for e in entities if e.get("type") in ("code", "pre")]
+    ms = [x for x in ms if not any(x[1] < b1 and x[2] > b0 for b0, b1 in blocked)][:MAX_EMOJI]
+    if not ms:
+        return text, entities, 0
+    found = {}
+    if lookup:
+        try:
+            found = lookup(sorted({x[0].group("id") for x in ms if not x[0].group("g")})) or {}
+        except Exception:
+            logging.exception("premsg lookup")
+    glyphs = [_pick_glyph(x[0].group("g"), found.get(x[0].group("id"))) for x in ms]
+    rlen = [u16len(g) for g in glyphs]
+
+    def mp(p, is_end):
+        shift = 0
+        for (m, a, b), r in zip(ms, rlen):
+            if p <= a:
+                return p + shift
+            if p < b:                       # وسط کد
+                return a + shift + (r if is_end else 0)
+            shift += r - (b - a)
+        return p + shift
+
+    new_ents = []
+    for e in entities:
+        s, t = mp(e["offset"], False), mp(e["offset"] + e["length"], True)
+        if t > s:
+            e["offset"], e["length"] = s, t - s
+            new_ents.append(e)
+    out, pos, shift = [], 0, 0
+    for (m, a, b), g, r in zip(ms, glyphs, rlen):
+        out.append(text[pos:m.start()])
+        out.append(g)
+        pos = m.end()
+        start_new = a + shift
+        new_ents.append({"type": "custom_emoji", "offset": start_new, "length": r, "custom_emoji_id": m.group("id")})
+        shift += r - (b - a)
+    out.append(text[pos:])
+    new_ents.sort(key=lambda e: (e["offset"], -e["length"]))
+    return "".join(out), new_ents, len(ms)
