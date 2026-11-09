@@ -519,6 +519,19 @@ code{direction:ltr;unicode-bidi:isolate;display:inline-block}
   .grid.c3 .stat .v small{display:block;margin:0;font-size:10.5px}
   .grid.c3 .stat .s{font-size:11px}
 }
+
+/* v10b: کاشی‌های آمار داشبورد جمع‌وجور و بدون جای خالی */
+@media(max-width:699px){
+  .grid.c6>.stat{justify-content:flex-start;gap:4px;padding:12px 14px}
+  .grid.c6>.stat .t{margin-bottom:4px}
+  .grid.c6>.stat .v{font-size:22px}
+  .grid.c6>.stat .s{margin-top:0;line-height:1.5}
+  .grid.c6>.stat.wide{padding:12px 14px;row-gap:2px}
+  .grid.c6>.stat.sp1{grid-column:1/-1;display:grid;grid-template-columns:1fr auto;grid-template-areas:"t v" "s v";align-items:center;column-gap:12px}
+  .grid.c6>.stat.sp1>.t{grid-area:t;margin:0}
+  .grid.c6>.stat.sp1>.v{grid-area:v;font-size:24px}
+  .grid.c6>.stat.sp1>.s{grid-area:s;padding-inline-start:2px}
+}
 </style>
 </head>
 <body>
@@ -720,11 +733,12 @@ function foldRows(card,n=16,search=true){
 function foldChips(vr){
   const n=vr.children.length;if(n<=18||vr.dataset.f)return;vr.dataset.f=1;vr.classList.add("vfold");
   const b=h("button",{class:"btn sm vmore",onclick:()=>{const o=vr.classList.toggle("vfold");b.textContent=o?"نمایش همه ("+fa(n)+")":"جمع کردن"}},"نمایش همه ("+fa(n)+")");vr.after(b)}
-const NOTILE=new Set(["users","inv","ord","req","pe","pm","txt","txtg","aud","reqd","srch"]);
+const NOTILE=new Set(["dash","users","inv","ord","req","pe","pm","txt","txtg","aud","reqd","srch"]);
 function tileOK(r){
   if(r.querySelector("input,textarea,select"))return false;
+  if(r.querySelector(".rk"))return false;
   if(!r.classList.contains("tap"))return true;
-  return !r.querySelector(".e .pill")||!r.querySelector(".av")}
+  return !r.querySelector(".av")}
 function tileCards(el){
   el.querySelectorAll(".card").forEach(c=>{
     const rows=[...c.querySelectorAll(":scope>.row")];
@@ -735,6 +749,7 @@ function tileCards(el){
 function finish(el){
   const own=CUR==="txt";
   tileCards(el);
+  el.querySelectorAll(".grid.c6").forEach(g=>{const n=[...g.children].filter(x=>!x.classList.contains("wide"));if(n.length%2)n[n.length-1].classList.add("sp1")});
   el.querySelectorAll(":scope>.card, :scope>div>.card").forEach(c=>{const nr=c.querySelectorAll(":scope>.row").length;if(!own&&nr>16&&!c.querySelector(":scope>.fq")&&!c.classList.contains("tiles"))foldRows(c)});
   el.querySelectorAll(".card .vr").forEach(foldChips);
   if(CUR==="dash"&&matchMedia("(max-width:699px)").matches)el.querySelectorAll(".card").forEach(c=>{if(c.querySelectorAll(":scope>.row").length>3&&!c.querySelector(":scope>.more"))foldRows(c,3,false)});
