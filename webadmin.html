@@ -16,7 +16,7 @@
   --bg:#0B0F19;--bg2:#0E1320;--card:#131A2A;--card2:#1A2336;--card3:#0F1523;--inner:#1B2438;--line:#222C42;
   --blue-d:#19243D;--blue-g:#1D2B4A;--green-g:#123B38;--purple-g:#282237;
   --gold:#E9B653;--green:#50CFA5;--blue:#638CF5;--steel:#A6BCD8;--lime:#A8C94A;--red:#C83E5A;--lime2:#B4E65A;
-  --lav:#C3B5FF;--violet:#9167F7;--blue2:#5685FF;--amber:#F5B94C;--teal:#20B98B;--sky:#8CBFFF;--orange:#FF995C;--rose:#F05270;
+  --lav:#C3B5FF;--violet:#9167F7;--cyan:#53D3E6;--pink:#F27CC9;--indigo:#8497FF;--coral:#FF8470;--blue2:#5685FF;--amber:#F5B94C;--teal:#20B98B;--sky:#8CBFFF;--orange:#FF995C;--rose:#F05270;
   --tx:#E8EDF7;--tx2:#A6BCD8;--tx3:#7C8AA5;
   --rose-g:#3a1822;--rose-bd:#5a2434;--note-bd:#243457;--top:rgba(8,11,19,.92);--on-pri:#06101f;--on-sel:#fff;--on-grn:#06231b;--err-tx:#ffc0cc;
   --sw-off:#242A38;--sw-knob:#cfd8ea;--shade:rgba(0,0,0,.45);
@@ -34,7 +34,7 @@ html[data-theme="ocean"]{
 html[data-theme="navy-day"]{
   --bg:#EEF2FA;--bg2:#FFFFFF;--card:#FFFFFF;--card2:#F4F7FD;--card3:#F5F8FD;--inner:#E8EEF9;--line:#DCE3F1;
   --blue-d:#EAF0FF;--blue-g:#DCE6FF;--green-g:#DDF5EC;--purple-g:#ECE6FF;
-  --gold:#B8860B;--green:#0B8F6A;--blue:#3F6BE0;--steel:#4A5D80;--lav:#6B45D9;--violet:#6B45D9;--blue2:#2F5BD0;--amber:#B97A06;--teal:#0E9F77;--sky:#2F5BD0;--orange:#D9661A;--rose:#D6334F;
+  --gold:#B8860B;--green:#0B8F6A;--blue:#3F6BE0;--steel:#4A5D80;--lav:#6B45D9;--violet:#6B45D9;--blue2:#2F5BD0;--amber:#B97A06;--teal:#0E9F77;--sky:#2F5BD0;--orange:#D9661A;--rose:#D6334F;--cyan:#0A8FA5;--pink:#C2318F;--indigo:#4B5FD8;--coral:#D9533C;--lime:#5E8A10;
   --tx:#0E1630;--tx2:#4A5873;--tx3:#7684A0;
   --rose-g:#FDE5EA;--rose-bd:#F4B9C6;--note-bd:#C9D8F8;--top:rgba(238,242,250,.92);--on-pri:#fff;--on-sel:#1B3FA8;--on-grn:#fff;--err-tx:#B4233C;
   --sw-off:#C5CEE0;--sw-knob:#fff;--shade:rgba(30,50,90,.18);color-scheme:light;
@@ -43,7 +43,7 @@ html[data-theme="navy-day"]{
 html[data-theme="ocean-day"]{
   --bg:#E9F5FD;--bg2:#FFFFFF;--card:#FFFFFF;--card2:#F1F9FE;--card3:#F3FAFE;--inner:#E1F0FB;--line:#D1E5F4;
   --blue-d:#E4F2FD;--blue-g:#D0EAFC;--green-g:#DDF5EC;--purple-g:#ECE6FF;
-  --gold:#B8860B;--green:#0B8F6A;--blue:#0472ED;--blue2:#04A3ED;--steel:#3E5A7E;--lav:#6B45D9;--violet:#6B45D9;--amber:#B97A06;--teal:#0E9F77;--sky:#0460C8;--orange:#D9661A;--rose:#D6334F;
+  --gold:#B8860B;--green:#0B8F6A;--blue:#0472ED;--blue2:#04A3ED;--steel:#3E5A7E;--lav:#6B45D9;--violet:#6B45D9;--amber:#B97A06;--teal:#0E9F77;--sky:#0460C8;--orange:#D9661A;--rose:#D6334F;--cyan:#0A8FA5;--pink:#C2318F;--indigo:#4B5FD8;--coral:#D9533C;--lime:#5E8A10;
   --tx:#05081B;--tx2:#3F4F6E;--tx3:#6E7F9C;
   --rose-g:#FDE5EA;--rose-bd:#F4B9C6;--note-bd:#BFE0F6;--top:rgba(233,245,253,.92);--on-pri:#fff;--on-sel:#04489A;--on-grn:#fff;--err-tx:#B4233C;
   --sw-off:#BFD3E4;--sw-knob:#fff;--shade:rgba(5,80,140,.18);color-scheme:light;
@@ -269,17 +269,17 @@ details.hp div{padding:0 10px 9px;line-height:1.9}details.hp code{direction:ltr;
 
 /* ================= v9: لایه‌ی طراحی (مرحله‌ی ۱) =================
    شبکه‌ی ۴ پیکسلی · کادر کم‌رنگ · رنگ جدا برای هر دسته · نکته‌ها زرد ملایم خط‌چین */
-:root{--bd:color-mix(in srgb,var(--line) 48%,transparent);--r-card:16px;--r-in:12px}
-html[data-theme="navy-day"],html[data-theme="ocean-day"]{--bd:color-mix(in srgb,var(--line) 70%,transparent)}
+:root{--bd:color-mix(in srgb,var(--line) 48%,transparent);--bd2:color-mix(in srgb,var(--line) 78%,transparent);--r-card:16px;--r-in:12px}
+html[data-theme="navy-day"],html[data-theme="ocean-day"]{--bd:color-mix(in srgb,var(--line) 70%,transparent);--bd2:color-mix(in srgb,var(--line) 100%,transparent)}
 body{font-size:13px;line-height:1.75}
 /* رنگ هر دسته: --t */
 .t-b,.tone-b{--t:var(--sky)}.t-g,.tone-g{--t:var(--teal)}.t-p,.tone-p{--t:var(--lav)}.t-y,.tone-y{--t:var(--amber)}
-.t-r,.tone-r{--t:var(--rose)}.t-o,.tone-o{--t:var(--orange)}.t-s,.tone-s{--t:var(--steel)}
+.t-r,.tone-r{--t:var(--rose)}.t-v,.tone-v{--t:var(--violet)}.t-l,.tone-l{--t:var(--lime)}.t-c,.tone-c{--t:var(--cyan)}.t-k,.tone-k{--t:var(--pink)}.t-i,.tone-i{--t:var(--indigo)}.t-q,.tone-q{--t:var(--coral)}.t-o,.tone-o{--t:var(--orange)}.t-s,.tone-s{--t:var(--steel)}
 [class*="tone-"]:not(#_){background:color-mix(in srgb,var(--t) 15%,transparent);color:var(--t)}
 /* هدر */
 .top{height:56px;padding:0 16px;gap:8px;border-bottom:1px solid var(--bd)}
 .brand{height:40px;background:none;border:0;padding:0}.brand b{font-size:14px;font-weight:700}
-.ib{width:40px;height:40px;border-radius:12px;border:0}
+.ib{width:40px;height:40px;border-radius:12px;border:1px solid var(--bd2)}
 .ib .dot{min-width:16px;height:16px;font-size:10px;top:-3px;inset-inline-end:-3px;border-radius:8px;padding:0 4px}
 main{padding:16px 16px 80px}
 /* منو */
@@ -303,17 +303,17 @@ main{padding:16px 16px 80px}
 .ph .chip svg{width:22px;height:22px}
 .ph h1{font-size:19px;font-weight:700;line-height:1.35}.ph p{font-size:12px}
 /* کارت و کاشی */
-.card{border:0;border-radius:var(--r-card);padding:16px;margin-bottom:12px}
+.card{border:1px solid var(--bd2);border-radius:var(--r-card);padding:16px;margin-bottom:12px}
 .card>h3{font-size:14px;font-weight:700;margin-bottom:12px;gap:8px}
 .card>h3 .sub{font-size:11px}
 .grid{gap:12px}
-.stat{border:0;border-radius:var(--r-card);padding:12px 16px 16px;gap:8px}
+.stat{border:1px solid var(--bd2);border-radius:var(--r-card);padding:12px 16px 16px;gap:8px}
 .stat .t{font-size:12px;gap:8px}.stat .t .c{width:32px;height:32px;border-radius:10px}.stat .t .c svg{width:16px;height:16px}
 .stat .v{font-size:24px;font-weight:700;line-height:1.25}.stat .v small{font-size:11px;margin-inline-start:4px}
 .stat .s{font-size:11.5px;color:var(--tx3)}
-.mini{gap:8px}.mini>div{border:0;background:var(--card3);border-radius:12px;padding:12px}
+.mini{gap:8px}.mini>div{border:1px solid var(--bd);background:var(--card3);border-radius:12px;padding:12px}
 .mini b{font-size:18px}.mini span{font-size:11.5px}
-.quick{gap:8px;margin-bottom:12px}.quick button{padding:8px 16px;border:0;background:var(--card);font-size:12px}
+.quick{gap:8px;margin-bottom:12px}.quick button{padding:8px 16px;border:1px solid var(--bd2);background:var(--card);font-size:12px}
 /* ردیف‌ها */
 .row{gap:12px;padding:12px 0;border-bottom:1px solid var(--bd)}
 .row .av{width:36px;height:36px;border-radius:12px}.row .av svg{width:18px;height:18px}
@@ -327,9 +327,9 @@ main{padding:16px 16px 80px}
 .pill.y{--t:var(--amber)}.pill.b{--t:var(--sky)}.pill.g{--t:var(--teal)}.pill.r{--t:var(--rose)}
 .delta{font-size:11px}
 /* دکمه و ورودی */
-.btn{height:40px;padding:0 16px;border-radius:12px;border:0;background:var(--inner);font-size:12.5px;gap:8px}
+.btn{height:40px;padding:0 16px;border-radius:12px;border:1px solid var(--bd2);background:var(--inner);font-size:12.5px;gap:8px}
 .btn.pri{background:var(--blue);color:var(--on-pri)}
-.btn.grn{border:0}.btn.red{background:var(--rose-g);color:var(--rose);border:0}
+.btn.pri,.btn.grn,.btn.red{border-color:transparent}.btn.red{background:var(--rose-g);color:var(--rose)}
 .btn.sm{height:32px;padding:0 12px;font-size:11.5px;border-radius:10px}
 .in{background:var(--card3);border:1px solid var(--bd);border-radius:12px;padding:8px 12px;font-size:13px;min-height:44px}
 textarea.in{min-height:96px;line-height:1.85}
@@ -337,12 +337,12 @@ textarea.in{min-height:96px;line-height:1.85}
 .lbl{font-size:12px;margin:12px 0 4px}
 .hint{font-size:11.5px;margin-bottom:8px}
 /* تب و چیپ */
-.tabs{border:0;border-radius:14px;padding:4px;gap:4px}
+.tabs{border:1px solid var(--bd);border-radius:14px;padding:4px;gap:4px}
 .tabs button{padding:8px 12px;font-size:12px;border-radius:10px}
 .tabs button.on:not(#_){background:var(--card);color:var(--tx);font-weight:700}
 .chips{gap:8px}.chips button{padding:4px 12px;font-size:11.5px}
 .chips button.on:not(#_){background:color-mix(in srgb,var(--blue) 18%,transparent);color:var(--tx)}
-.tb button,.vr button{font-size:11.5px;border:0}
+.tb button,.vr button{font-size:11.5px;border:1px solid var(--bd)}
 /* سوئیچ */
 .sw{width:44px;height:26px}
 .sw::after{top:3px;inset-inline-start:3px;width:20px;height:20px}
@@ -354,23 +354,23 @@ textarea.in{min-height:96px;line-height:1.85}
 details.hp summary{padding:12px;font-size:12px}details.hp div{padding:0 12px 12px;font-size:12px}
 .note code,details.hp code{background:color-mix(in srgb,var(--n) 14%,transparent);border-radius:6px;padding:0 6px}
 /* سایر بسته‌ها */
-.kvs,.lk,.tpl,.pvw,.tx{border:1px solid var(--bd)}
+.kvs,.lk,.tpl,.pvw,.tx{border:1px solid var(--bd2)}
 .kvs{border-radius:12px;padding:4px 12px}.kv{font-size:12px;padding:8px 0;border-bottom:1px solid var(--bd)}.kv b{font-weight:700}
 .lk{padding:8px 12px}.lk .u{font-size:11.5px}
-.tx{border-radius:var(--r-card);padding:16px;margin-bottom:12px;border:0}
+.tx{border-radius:var(--r-card);padding:16px;margin-bottom:12px}
 .tx .txb{font-size:12.5px}
 .tpl,.pvw{font-size:12px;padding:12px}
 .dz{border-color:var(--bd);border-width:1px;padding:24px 16px;font-size:12px}
 .empty{padding:24px 16px;font-size:12px}.empty svg{width:32px;height:32px;margin-bottom:8px;color:var(--tx3);opacity:.5}
-.sheet{border:0;border-radius:24px 24px 0 0;padding:16px 16px 24px}
+.sheet{border:1px solid var(--bd2);border-bottom:0;border-radius:24px 24px 0 0;padding:16px 16px 24px}
 .sheet h2{font-size:15px;margin-bottom:8px}
 .sheet .btns{gap:8px;margin-top:16px}
-.toast{border:0;font-size:12.5px;padding:12px 16px}
+.toast{border:1px solid var(--bd2);font-size:12.5px;padding:12px 16px}
 .bar{height:8px;margin:8px 0 4px;background:color-mix(in srgb,var(--teal) 14%,transparent)}.bar i{background:var(--teal)}
-.login{background:var(--bg)}.login .box{border:0;border-radius:24px;padding:24px 20px;max-width:340px}
+.login{background:var(--bg)}.login .box{border:1px solid var(--bd2);border-radius:24px;padding:24px 20px;max-width:340px}
 .login h1{font-size:17px}.login p{font-size:12px}
 .th button{border:1px solid var(--bd)}.th button.on{border-color:var(--blue)}
-.cmd{border:1px solid var(--bd)}
+.cmd{border:1px solid var(--bd2)}
 
 /* ================= v9b: داشبورد، نمودار، جستجو، حرکت ================= */
 .sk{border-radius:12px;background:linear-gradient(90deg,var(--card) 0,var(--card2) 50%,var(--card) 100%);background-size:200% 100%;animation:sh 1.4s linear infinite}
@@ -397,7 +397,7 @@ details.hp summary{padding:12px;font-size:12px}details.hp div{padding:0 12px 12p
 /* جستجو */
 .cmd-w{padding:8px;align-items:flex-start;background:rgba(5,8,20,.62);backdrop-filter:blur(2px)}
 @media(min-width:700px){.cmd-w{padding-top:9vh}}
-.cmd{border:0;border-radius:20px;max-height:86vh;box-shadow:0 24px 64px var(--shade)}
+.cmd{border:1px solid var(--bd2);border-radius:20px;max-height:86vh;box-shadow:0 24px 64px var(--shade)}
 .cmd .qi{gap:12px;padding:12px 16px;border-bottom:1px solid var(--bd)}
 .cmd .qi svg{width:20px;height:20px}
 .cmd input{font-size:15px;min-height:40px}
@@ -428,6 +428,50 @@ details.hp summary{padding:12px;font-size:12px}details.hp div{padding:0 12px 12p
 .fold{display:none!important}
 .fq{margin:0 0 8px}.more{margin-top:8px;font-size:12px}
 .card>.fq+.row{border-top:0}
+
+/* ---- نوار پیشرفت (meter): ۴ بخش با فاصله‌ی ۲ پیکسلی، سر گرد، رنگ هم‌دسته ---- */
+.mt{--t:var(--blue);margin:8px 0 0}
+.mt.t-g{--t:var(--teal)}
+.mt-h{display:flex;justify-content:space-between;align-items:baseline;font-size:11.5px;color:var(--tx3);margin-bottom:8px}.mt-h b{font-size:12px;color:var(--tx);font-weight:700}
+.mt-b{position:relative;height:6px;border-radius:3px;background:color-mix(in srgb,var(--t) 16%,transparent);overflow:hidden}
+.mt-b i{display:block;height:100%;background:var(--t);border-start-end-radius:3px;border-end-end-radius:3px;transition:width .6s cubic-bezier(.2,.8,.25,1);animation:grow .8s cubic-bezier(.2,.8,.25,1)}
+.mt-b::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(to left,transparent 0,transparent calc(25% - 2px),var(--card) calc(25% - 2px),var(--card) 25%)}
+.row .mt-b::after{background:repeating-linear-gradient(to left,transparent 0,transparent calc(25% - 2px),var(--card) calc(25% - 2px),var(--card) 25%)}
+.mt-n{display:flex;justify-content:space-between;font-size:11.5px;color:var(--tx3);margin-top:8px}
+.row .mt{margin-top:8px}
+.bar{height:6px;border-radius:3px;background:color-mix(in srgb,var(--blue) 16%,transparent);margin:8px 0 0}.bar i{background:var(--blue);border-radius:3px}
+/* کاشی‌های آمارِ پهن (دارای نمودار) روی موبایل: متن کنار، نمودار گوشه */
+@media(max-width:699px){
+  .stat.wide{grid-column:1/-1;display:grid;grid-template-columns:1fr minmax(0,46%);column-gap:16px;align-items:center}
+  .stat.wide>.t,.stat.wide>.v,.stat.wide>.s{grid-column:1}
+  .stat.wide>.spk{grid-column:2;grid-row:1/4;order:0;margin:0;align-self:center}
+  .stat.wide>.spk svg{max-width:none}
+}
+
+.stat.wide{row-gap:4px}
+@media(max-width:699px){
+  .grid.c3 .stat{padding:12px}
+  .grid.c3 .stat .t{gap:8px;min-width:0}
+  .grid.c3 .stat .t .c{width:28px;height:28px;border-radius:9px}
+  .grid.c3 .stat .t{font-size:11.5px;white-space:nowrap}
+  .grid.c3 .stat .v{font-size:22px}
+}
+.stat .t{min-width:0}.stat .t>span:not(.c){min-width:0;overflow:hidden;text-overflow:ellipsis}
+
+/* ردیف‌های دارای چند دکمه: دکمه‌ها زیر عنوان می‌روند تا عنوان بریده نشود */
+.row .m span{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+@media(max-width:699px){
+  .row:has(.e .btn){flex-wrap:wrap;row-gap:8px}
+  .row:has(.e .btn)>.m{flex:1 1 0;min-width:0}
+  .row:has(.e .btn)>.e{flex:1 0 100%;justify-content:flex-start;padding-inline-start:48px;flex-wrap:wrap}
+}
+
+/* تب بخش‌ها: خط‌زیرین با نشانگر هم‌رنگ صفحه (نه جعبه‌ی کپسولی) */
+.pgtabs{border:0;border-radius:0;padding:0;gap:0;border-bottom:1px solid var(--bd2);box-shadow:0 0 0 6px var(--bg),0 1px 0 6px var(--bg)}
+.pgtabs button{position:relative;border-radius:0;padding:12px 8px;font-size:13px;color:var(--tx3);background:none}
+.pgtabs button.on:not(#_){background:none;color:var(--tx);font-weight:700}
+.pgtabs button::after{content:"";position:absolute;inset-inline:16%;bottom:-1px;height:3px;border-radius:3px 3px 0 0;background:var(--t);transform:scaleX(0);transition:transform .2s cubic-bezier(.2,.8,.25,1)}
+.pgtabs button.on::after{transform:scaleX(1)}
 </style>
 </head>
 <body>
@@ -570,7 +614,7 @@ function cmdOpen(){
   function kd(e){if(e.key==="Escape"){e.preventDefault();close()}else if(e.key==="ArrowDown"){e.preventDefault();sel=Math.min(items.length-1,sel+1);mark()}else if(e.key==="ArrowUp"){e.preventDefault();sel=Math.max(0,sel-1);mark()}else if(e.key==="Enter"&&items[sel]){e.preventDefault();pick(items[sel])}}
   document.addEventListener("keydown",kd,true);run()}
 addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();cmdOpen()}else if(e.key==="/"&&!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)&&ME&&!$(".sheet-w")){e.preventDefault();cmdOpen()}});
-const NT={dash:"s",users:"b",user:"b",inv:"y",ord:"p",req:"g",reqd:"g",fin:"y",packs:"y",prod:"o",spons:"y",fj:"g",blk:"r",sec:"s",ref:"b",bt:"r",set:"s",txt:"b",txtg:"b",pe:"p",pm:"p",gm:"p",rp:"s",gen:"o",srch:"b",bc:"r",tools:"g",adm:"r",aud:"s"};
+const NT={dash:"s",users:"b",user:"b",inv:"y",ord:"v",req:"g",reqd:"g",fin:"l",packs:"o",prod:"q",spons:"k",fj:"c",blk:"r",sec:"i",ref:"l",bt:"o",set:"s",txt:"b",txtg:"b",pe:"p",pm:"k",gm:"v",rp:"c",gen:"y",srch:"i",bc:"r",tools:"g",adm:"r",aud:"c"};
 const NAV=[
  ["منوی اصلی",[["dash","داشبورد","dash"],["users","کاربران","users"],["inv","رسیدها","receipt","pending_receipts"],["ord","سفارش خدمات","bag","pending_orders"],["req","درخواست‌های JFJ","req","active_requests"]]],
  ["فروش و مالی",[["fin","مالی و پرداخت","wallet"],["packs","بسته‌ها","coin"],["prod","محصولات","box"],["spons","اسپانسری‌ها","crown"]]],
@@ -605,7 +649,6 @@ function paintBadges(){
   const b=$("#bell");if(b){b.querySelector(".dot")?.remove();const p=(BADGES.pending_receipts||0)+(BADGES.pending_orders||0);if(p)b.append(h("span",{class:"dot"},fa(p)))}}
 /* ---- مرحله‌ی ۳: صفحه‌بندی بخش‌ها (فقط موبایل/تبلت) و جمع‌کردن فهرست‌های بلند ---- */
 const TABS={
-  dash:{n:["نمای کلی","صف‌ها","کاربران","وضعیت"],f:(c,i)=>i<1?null:i<=3?0:i-3},
   fin:{n:["پرداخت","قیمت و پاداش","تخفیف‌ها"],f:c=>{const t=cardTitle(c);return !t?null:/روش|کارت|زرین|ارز/.test(t)?0:/قیمت|پاداش/.test(t)?1:2}},
   gm:{n:["بازی‌ها","گزارش‌ها","هیولا"],f:c=>{const t=cardTitle(c);return !t?null:/^بازی‌ها$|تنظیمات بازی/.test(t)?0:/هیولا/.test(t)?2:1}}
 };
@@ -615,10 +658,10 @@ function tabPages(el,key){
   const T=TABS[key];if(!T)return;const kids=[...el.children];const g=kids.map((c,i)=>T.f(c,i));
   if(new Set(g.filter(x=>x!=null)).size<2)return;
   let cur=Math.min(window._tp[key]||0,T.n.length-1);
-  const bar=h("div",{class:"tabs pgtabs",role:"tablist"},T.n.map((t,i)=>h("button",{role:"tab",class:i===cur?"on":"",onclick:()=>{cur=i;window._tp[key]=i;paint();scrollTo({top:0})}},t)));
+  const bar=h("div",{class:"tabs pgtabs t-"+(NT[key]||"b"),role:"tablist"},T.n.map((t,i)=>h("button",{role:"tab",class:i===cur?"on":"",onclick:()=>{cur=i;window._tp[key]=i;paint();scrollTo({top:0})}},t)));
   function paint(){bar.querySelectorAll("button").forEach((b,i)=>b.classList.toggle("on",i===cur));kids.forEach((c,i)=>c.classList.toggle("pgh",g[i]!=null&&g[i]!==cur))}
   const at=kids.findIndex((c,i)=>g[i]!=null);el.insertBefore(bar,kids[at]);paint()}
-function foldRows(card,n=16){
+function foldRows(card,n=16,search=true){
   const rows=[...card.querySelectorAll(":scope>.row")];if(rows.length<=n)return;
   let shown=n,q="";const first=rows[0];
   const inp=h("input",{class:"in fq",placeholder:"جستجو در این فهرست…",autocomplete:"off"}),more=h("button",{class:"btn blk more"});
@@ -626,9 +669,10 @@ function foldRows(card,n=16){
     rows.forEach((r,i)=>{const ok=!nq||nz(r.textContent).includes(nq);if(ok)match++;const show=ok&&(nq||i<shown);r.classList.toggle("fold",!show);if(show)vis++});
     const left=match-vis;more.classList.toggle("hide",left<=0||!!nq);more.textContent="نمایش "+fa(Math.min(n,left))+" مورد بعدی ("+fa(left)+" باقی‌مانده)"}
   inp.addEventListener("input",()=>{q=inp.value;paint()});more.addEventListener("click",()=>{shown+=n;paint()});
-  card.insertBefore(inp,first);rows[rows.length-1].after(more);paint()}
+  if(search)card.insertBefore(inp,first);rows[rows.length-1].after(more);paint()}
 function finish(el){
   el.querySelectorAll(":scope>.card, :scope>div>.card").forEach(c=>{const nr=c.querySelectorAll(":scope>.row").length;if(nr>16&&!c.querySelector(":scope>.fq"))foldRows(c)});
+  if(CUR==="dash"&&matchMedia("(max-width:699px)").matches)el.querySelectorAll(".card").forEach(c=>{if(c.querySelectorAll(":scope>.row").length>3&&!c.querySelector(":scope>.more"))foldRows(c,3,false)});
   tabPages(el,CUR)}
 function countUp(root){
   if(matchMedia("(prefers-reduced-motion: reduce)").matches)return;
@@ -676,8 +720,12 @@ function donut(items,total,unit){
   return h("div",{class:"donut"},box.firstChild,h("div",{class:"legend",style:"flex-direction:column"},items.map((x,i)=>h("span",null,h("i",{style:"background:"+COLS[i%6]}),x.k+" · "+nf(x.v)+" ("+fa(Math.round(x.v/total*100))+"٪)"))))}
 
 const VIEWS={};
+const meter=(done,total,o={})=>{const pct=Math.max(0,Math.min(100,total?done/total*100:0)),full=pct>=100;
+  return h("div",{class:"mt "+(o.tone||(full?"t-g":"t-b")),role:"progressbar","aria-valuenow":Math.round(pct),"aria-valuemin":0,"aria-valuemax":100},
+    o.head!==false&&h("div",{class:"mt-h"},h("span",null,o.label||(nf(done)+" از "+nf(total))),h("b",null,fa(Math.round(pct))+"٪")),
+    h("div",{class:"mt-b"},h("i",{style:"width:"+pct+"%"})))};
 const spark=(ser,w=120,hh=28)=>{if(!ser||ser.length<2||!ser.some(x=>x.v))return null;const mx=Math.max(...ser.map(x=>x.v),1),pts=ser.map((x,i)=>[2+(w-4)*i/(ser.length-1),hh-3-(hh-6)*x.v/mx]);const e=h("span",{class:"spk"});e.innerHTML=`<svg viewBox="0 0 ${w} ${hh}" width="${w}" height="${hh}" aria-hidden="true"><path d="${smooth(pts)}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" pathLength="1" class="ln"/><circle cx="${pts[pts.length-1][0]}" cy="${pts[pts.length-1][1]}" r="2.4" fill="currentColor"/></svg>`;return e};
-const stat=(t,v,tone,icon,sub,unit,sp)=>h("div",{class:"stat "+tone.replace("tone-","t-")},sp||null,h("div",{class:"t"},h("span",{class:"c "+tone},ic(icon)),t),h("div",{class:"v"},v,unit?h("small",null,unit):null),sub?h("div",{class:"s"},sub):null);
+const stat=(t,v,tone,icon,sub,unit,sp)=>h("div",{class:"stat "+tone.replace("tone-","t-")+(sp?" wide":"")},sp||null,h("div",{class:"t"},h("span",{class:"c "+tone},ic(icon)),t),h("div",{class:"v"},v,unit?h("small",null,unit):null),sub?h("div",{class:"s"},sub):null);
 VIEWS.dash=async()=>{
   const[d,c,x]=await Promise.all([api("dashboard"),api("charts?days=14"),api("dashx")]);
   let days=14,metric="sales",CD=c;
@@ -700,9 +748,9 @@ VIEWS.dash=async()=>{
       stat("کاربران",nf(d.users),"tone-b","users","امروز "+nf(d.new_today)+" نفر جدید",null,spark(c.users)),
       stat("فروش امروز",nf(d.sales_today),"tone-y","wallet",h("span",null,"دیروز: "+nf(x.yesterday.sales)+" ",dl(d.sales_today,x.yesterday.sales)),"تومان",spark(c.sales)),
       stat("رسید در انتظار",nf(d.pending_receipts),"tone-r","receipt","نیازمند بررسی"),
-      stat("سفارش در انتظار",nf(d.pending_orders),"tone-p","bag","خدمات"),
-      stat("درخواست فعال",nf(d.active_requests),"tone-g","req","جوین فعال: "+nf(TT.joins_active),null,spark(c.requests)),
-      stat("موجودی کل",nf(d.tokens_total),"tone-y","coin","شاهی")),
+      stat("سفارش در انتظار",nf(d.pending_orders),"tone-v","bag","خدمات"),
+      stat("درخواست فعال",nf(d.active_requests),"tone-g","req","جوین فعال: "+nf(TT.joins_active)),
+      stat("موجودی کل",nf(d.tokens_total),"tone-c","coin","شاهی")),
     h("div",{class:"card"},h("h3",null,"امروز در یک نگاه",h("span",{class:"sub"},"از ۰۰:۰۰ به وقت ایران")),
       h("div",{class:"mini"},mi(nf(T.requests),"درخواست JFJ"),mi(nf(T.orders),"سفارش خدمات"),mi(nf(T.joins),"جوین جدید"),mi(nf(T.lefts),"لفت"),mi(nf(T.paid),"فاکتور پرداخت‌شده"),mi(nf(T.hands),"دست بازی"),mi(nf(T.stake),"شرط بازی‌ها"),h("div",null,h("b",{style:"color:var(--"+(T.house>=0?"green":"rose")+")"},(T.house>=0?"+":"")+nf(T.house)),h("span",null,"سود/زیان بازی‌ها")))),
     h("div",{class:"two"},
@@ -714,7 +762,7 @@ VIEWS.dash=async()=>{
     h("div",{class:"g3"},
       lst("رسیدهای در انتظار",x.review,i=>h("div",{class:"row tap",onclick:()=>{window._invst="review";go("inv")}},h("div",{class:"av tone-y"},ic("receipt")),h("div",{class:"m"},h("b",null,i.product),h("span",null,"کاربر "+i.user+" · "+i.created)),h("div",{class:"e"},h("span",{class:"pill y"},nf(i.amount)))),"رسید بررسی‌نشده‌ای نیست.","receipt",()=>{window._invst="review";go("inv")}),
       lst("سفارش‌های در انتظار",x.pend_orders,o=>h("div",{class:"row tap",onclick:()=>ordSheet(o)},h("div",{class:"av tone-p"},ic("bag")),h("div",{class:"m"},h("b",null,o.service+" × "+nf(o.qty)),h("span",null,o.name||("کاربر "+o.user))),h("div",{class:"e"},h("span",{class:"pill y"},nf(o.cost)))),"سفارش بازی نیست.","bag",()=>go("ord")),
-      lst("درخواست‌های در جریان",x.requests,r=>h("div",{class:"row tap",onclick:()=>go("reqd",r.code)},h("div",{class:"av tone-g"},ic("req")),h("div",{class:"m"},h("b",{class:"ltr"},r.link||r.code),h("div",{class:"bar"},h("i",{style:"width:"+Math.min(100,r.count?r.done/r.count*100:0)+"%"}))),h("div",{class:"e"},h("span",{class:"pill"},nf(r.done)+"/"+nf(r.count)))),"درخواست فعالی نیست.","req",()=>go("req"))),
+      lst("درخواست‌های در جریان",x.requests,r=>h("div",{class:"row tap",onclick:()=>go("reqd",r.code)},h("div",{class:"av tone-g"},ic("req")),h("div",{class:"m"},h("b",{class:"ltr"},r.link||r.code),h("span",null,fa(Math.round(Math.min(100,r.count?r.done/r.count*100:0)))+"٪ تکمیل")),h("div",{class:"e"},h("span",{class:"pill"},nf(r.done)+"/"+nf(r.count)))),"درخواست فعالی نیست.","req",()=>go("req"))),
     h("div",{class:"g3"},
       lst("کاربران جدید",x.new_users,u=>h("div",{class:"row tap",onclick:()=>go("user",u.id)},h("div",{class:"av"},ic("user")),h("div",{class:"m"},h("b",null,u.name||u.id),h("span",null,u.created))),"کاربری نیست.","users",()=>go("users")),
       rank("پرموجودی‌ترین کاربران",x.rich,v=>nf(v)+" شاهی","coin"),
@@ -790,14 +838,14 @@ function ordSheet(o){
     [h("button",{class:"btn",onclick:()=>s.close()},"بستن"),o.status==="pending"&&h("button",{class:"btn red",onclick:()=>fin(false)},"لغو"),o.status==="pending"&&h("button",{class:"btn grn",onclick:()=>fin(true)},"انجام شد")])}
 VIEWS.req=async()=>{const st=window._reqst||"in_progress",q=window._reqq||"";const list=h("div");
   async function load(){list.replaceChildren(loading());const r=await safe(()=>api("requests?status="+st+"&q="+encodeURIComponent(q)));if(!r)return;
-    list.replaceChildren(h("div",{class:"card"},r.requests.length?r.requests.map(x=>h("div",{class:"row tap",onclick:()=>go("reqd",x.code)},h("div",{class:"av tone-g"},ic("req")),h("div",{class:"m"},h("b",{class:"ltr"},x.link||x.code),h("span",null,uLabel(x.name,x.username,x.user)+" · "+x.created),h("div",{class:"bar"},h("i",{style:"width:"+Math.min(100,x.count?x.done/x.count*100:0)+"%"}))),h("div",{class:"e"},pill(x.status),h("span",{class:"pill"},nf(x.done)+"/"+nf(x.count))))):empty("درخواستی نیست.","req")))}
+    list.replaceChildren(h("div",{class:"card"},r.requests.length?r.requests.map(x=>h("div",{class:"row tap",onclick:()=>go("reqd",x.code)},h("div",{class:"av tone-g"},ic("req")),h("div",{class:"m"},h("b",{class:"ltr"},x.link||x.code),h("span",null,uLabel(x.name,x.username,x.user)+" · "+x.created),meter(x.done,x.count,{head:false})),h("div",{class:"e"},pill(x.status),h("span",{class:"pill"},nf(x.done)+"/"+nf(x.count))))):empty("درخواستی نیست.","req")))}
   const inp=h("input",{class:"in",value:q,placeholder:"کد پیگیری، آیدی کاربر یا بخشی از لینک…",onkeydown:e=>{if(e.key==="Enter"){q=window._reqq=inp.value.trim();load()}}});
   load();return h("div",null,phead("req","درخواست‌های JFJ","جزئیات، جوین‌ها، مسدودسازی و حذف"),h("div",{style:"display:flex;gap:8px;margin-bottom:10px"},inp,h("button",{class:"btn pri",onclick:()=>{q=window._reqq=inp.value.trim();load()}},ic("search"))),listTabs([["in_progress","در جریان"],["done","تکمیل‌شده"],["closed","حذف/لغو"],["all","همه"]],st,k=>{window._reqst=k;render()}),list)};
 VIEWS.reqd=async code=>{const q=await api("reqinfo/"+code),live=h("b",null,"—");
   const pct=Math.min(100,q.count?q.done/q.count*100:0);
   return h("div",null,phead("req","درخواست "+fa(q.code),uLabel(q.name,q.username,q.user)),
    h("div",{class:"grid c3",style:"margin-bottom:12px"},stat("جوین فعال",nf(q.done),"tone-g","users"),stat("لفت‌داده",nf(q.left),"tone-r","out"),stat("درخواستی",nf(q.count),"tone-b","req")),
-   h("div",{class:"card"},h("div",{style:"display:flex;justify-content:space-between;font-size:10px;color:var(--tx2)"},h("span",null,"پیشرفت"),h("span",null,fa(Math.round(pct))+"٪")),h("div",{class:"bar"},h("i",{style:"width:"+pct+"%"}))),
+   h("div",{class:"card"},h("h3",null,"پیشرفت درخواست",h("span",{class:"sub"},nf(q.done)+" از "+nf(q.count))),meter(q.done,q.count,{head:false,tone:q.left?"t-o":""}),h("div",{class:"mt-n"},h("span",null,fa(Math.round(pct))+"٪ تکمیل"),h("span",null,q.left?nf(q.left)+" لفت":"بدون لفت"))),
    q.link&&linkRow(q.link),
    h("div",{class:"kvs"},kv("وضعیت",pill(q.status)),kv("هزینه",nf(q.cost)+" شاهی"),kv("تعداد اولیه‌ی ممبر",nf(q.initial)),kv("زمان ثبت",q.created),kv("آخرین درخواست",q.last),kv("آیدی چت",q.chat_id,{ltr:1}),kv("تعداد درخواست‌های صاحب",nf(q.owner_requests)),kv("خائن",q.betrayer&&"ثبت‌شده"),
      h("div",{class:"kv"},h("span",null,"ممبر زنده‌ی کانال"),live,h("button",{class:"btn sm",onclick:async()=>{live.textContent="…";const r=await safe(()=>api("reqinfo/"+code+"?live=1"));live.textContent=r&&r.live!=null?nf(r.live):"نامشخص"}},"بررسی"))),
