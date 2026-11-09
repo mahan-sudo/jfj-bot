@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0B0F19">
+<meta name="theme-color" content="#0E0F13">
 <script>try{var t=localStorage.getItem("jfj_theme");if(/^(navy|ocean|navy-day|ocean-day)$/.test(t)){document.documentElement.setAttribute("data-theme",t);var m=document.querySelector('meta[name=theme-color]');m&&m.setAttribute("content",{navy:"#080B13",ocean:"#05081B","navy-day":"#EEF2FA","ocean-day":"#E9F5FD"}[t])}}catch(e){}</script>
 <meta name="robots" content="noindex,nofollow">
 <title>پنل مدیریت جفج شاهنشاهی</title>
@@ -13,7 +13,7 @@
 @font-face{font-family:"Peyda";src:url(/admin/assets/Peyda-Bold.woff2) format("woff2");font-weight:700;font-display:swap}
 @font-face{font-family:"Estedad";src:url(/admin/assets/Estedad-Medium.woff2) format("woff2");font-weight:500;font-display:swap}
 :root{
-  --bg:#0B0F19;--bg2:#0E1320;--card:#131A2A;--card2:#1A2336;--card3:#0F1523;--inner:#1B2438;--line:#222C42;
+  --bg:#0E0F13;--bg2:#0B0C10;--card:#15161A;--card2:#1C1D22;--card3:#111216;--inner:#1D1E24;--line:#2A2C34;
   --blue-d:#19243D;--blue-g:#1D2B4A;--green-g:#123B38;--purple-g:#282237;
   --gold:#E9B653;--green:#50CFA5;--blue:#638CF5;--steel:#A6BCD8;--lime:#A8C94A;--red:#C83E5A;--lime2:#B4E65A;
   --lav:#C3B5FF;--violet:#9167F7;--cyan:#53D3E6;--pink:#F27CC9;--indigo:#8497FF;--coral:#FF8470;--blue2:#5685FF;--amber:#F5B94C;--teal:#20B98B;--sky:#8CBFFF;--orange:#FF995C;--rose:#F05270;
@@ -461,9 +461,9 @@ details.hp summary{padding:12px;font-size:12px}details.hp div{padding:0 12px 12p
 /* ردیف‌های دارای چند دکمه: دکمه‌ها زیر عنوان می‌روند تا عنوان بریده نشود */
 .row .m span{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 @media(max-width:699px){
-  .row:has(.e .btn){flex-wrap:wrap;row-gap:8px}
-  .row:has(.e .btn)>.m{flex:1 1 0;min-width:0}
-  .row:has(.e .btn)>.e{flex:1 0 100%;justify-content:flex-start;padding-inline-start:48px;flex-wrap:wrap}
+  .card:not(.tiles)>.row:has(.e .btn){flex-wrap:wrap;row-gap:8px}
+  .card:not(.tiles)>.row:has(.e .btn)>.m{flex:1 1 0;min-width:0}
+  .card:not(.tiles)>.row:has(.e .btn)>.e{flex:1 0 100%;justify-content:flex-start;padding-inline-start:48px;flex-wrap:wrap}
 }
 
 /* تب بخش‌ها: خط‌زیرین با نشانگر هم‌رنگ صفحه (نه جعبه‌ی کپسولی) */
@@ -476,6 +476,49 @@ details.hp summary{padding:12px;font-size:12px}details.hp div{padding:0 12px 12p
 .vr.vfold{max-height:112px;overflow:hidden;-webkit-mask:linear-gradient(#000 60%,transparent);mask:linear-gradient(#000 60%,transparent)}
 .vmore{margin-top:8px}
 code{direction:ltr;unicode-bidi:isolate;display:inline-block}
+
+/* ================= v10: کاشی‌های ۲ ستونه (چپ/راست، نه بالا/پایین) ================= */
+.card.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-content:start}
+@media(min-width:700px){.card.tiles{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}}
+.card.tiles>:not(.row){grid-column:1/-1;margin-bottom:0}
+.card.tiles>h3{margin-bottom:4px}
+.card.tiles>.row{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"a e" "m m";align-items:start;gap:8px;padding:12px;margin:0;min-width:0;border:1px solid var(--bd);border-radius:14px;background:var(--card3)}
+.card.tiles>.row.tap:active{background:var(--card2)}
+.card.tiles>.row>.av{grid-area:a;width:32px;height:32px;border-radius:10px;justify-self:start}
+.card.tiles>.row>.av svg{width:16px;height:16px}
+.card.tiles>.row>.m{grid-area:m;min-width:0}
+.card.tiles>.row>.m b{display:block;font-size:12.5px;line-height:1.6;white-space:normal;overflow:visible}
+.card.tiles>.row>.m span{font-size:11px;line-height:1.7}
+.card.tiles>.row>.e{grid-area:e;justify-self:end;align-self:center;min-width:0}
+.card.tiles>.row:not(:has(>.av)){grid-template-areas:"m e"}
+.card.tiles>.row:not(:has(>.av)):has(>.e .pill,>.e .btn){grid-template-areas:"m m" "e e"}
+.card.tiles>.row:not(:has(>.av))>.e{align-self:start}
+.card.tiles>.row:has(>.e .btn){grid-template-areas:"a a" "m m" "e e"}
+.card.tiles>.row:not(:has(>.av)):has(>.e .btn){grid-template-areas:"m m" "e e"}
+.card.tiles>.row>.e:has(.pill,.btn){justify-self:stretch;justify-content:space-between;flex-wrap:nowrap}
+.card.tiles>.row>.e .btn{flex:1;min-width:0;padding:0 8px;height:32px;font-size:11.5px}
+.card.tiles>.row>.e .pill{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card.tiles>.row>.e>svg:only-child{width:16px;height:16px;color:var(--tx3)}
+.card.tiles>.row>.e .sw{flex:none}
+.card.slim{padding:0 16px}.card.slim>.row{border-bottom:0}
+.empty{padding:16px}.empty svg{width:24px;height:24px;margin-bottom:4px}
+@media(max-width:699px){.card.tiles>.row:last-child:nth-child(even){grid-column:1/-1}}
+/* نوار بخش‌ها: دکمه‌های آیکون‌دار هم‌رنگ صفحه */
+.pgtabs{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;border:0;border-radius:0;padding:0;box-shadow:0 0 0 6px var(--bg);background:var(--bg)}
+.pgtabs::-webkit-scrollbar{display:none}
+.pgtabs button,.pgtabs button.on:not(#_){flex:1 0 auto;display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 16px;border-radius:12px;border:1px solid var(--bd2);background:var(--card);color:var(--tx2);font-size:12.5px;font-weight:400;white-space:nowrap}
+.pgtabs button svg{width:16px;height:16px;color:var(--t)}
+.pgtabs button.on:not(#_){background:color-mix(in srgb,var(--t) 13%,var(--card));border-color:color-mix(in srgb,var(--t) 50%,transparent);color:var(--tx);font-weight:700}
+.pgtabs button::after,.pgtabs button.on::after{display:none}
+/* کاشی‌های سه‌تایی آمار: آیکون بالا، عنوان زیرش */
+@media(max-width:699px){
+  .grid.c3 .stat .t{flex-direction:column;align-items:flex-start;gap:8px;white-space:normal;line-height:1.5}
+  .grid.c3 .stat .t>span:not(.c){overflow:visible;text-overflow:clip}
+  .grid.c3 .stat{padding:12px 10px}
+  .grid.c3 .stat .v{font-size:16px;white-space:nowrap;overflow:visible;text-overflow:clip;letter-spacing:-.3px}
+  .grid.c3 .stat .v small{display:block;margin:0;font-size:10.5px}
+  .grid.c3 .stat .s{font-size:11px}
+}
 </style>
 </head>
 <body>
@@ -653,8 +696,8 @@ function paintBadges(){
   const b=$("#bell");if(b){b.querySelector(".dot")?.remove();const p=(BADGES.pending_receipts||0)+(BADGES.pending_orders||0);if(p)b.append(h("span",{class:"dot"},fa(p)))}}
 /* ---- مرحله‌ی ۳: صفحه‌بندی بخش‌ها (فقط موبایل/تبلت) و جمع‌کردن فهرست‌های بلند ---- */
 const TABS={
-  fin:{n:["پرداخت","قیمت و پاداش","تخفیف‌ها"],f:c=>{const t=cardTitle(c);return !t?null:/روش|کارت|زرین|ارز/.test(t)?0:/قیمت|پاداش/.test(t)?1:2}},
-  gm:{n:["بازی‌ها","گزارش‌ها","هیولا"],f:c=>{const t=cardTitle(c);return !t?null:/^بازی‌ها$|تنظیمات بازی/.test(t)?0:/هیولا/.test(t)?2:1}}
+  fin:{i:["wallet","coin","gift"],n:["پرداخت","قیمت و پاداش","تخفیف‌ها"],f:c=>{const t=cardTitle(c);return !t?null:/روش|کارت|زرین|ارز/.test(t)?0:/قیمت|پاداش/.test(t)?1:2}},
+  gm:{i:["game","doc","bolt"],n:["بازی‌ها","گزارش‌ها","هیولا"],f:c=>{const t=cardTitle(c);return !t?null:/^بازی‌ها$|تنظیمات بازی/.test(t)?0:/هیولا/.test(t)?2:1}}
 };
 const cardTitle=c=>c.classList.contains("card")?(c.querySelector(":scope>h3")?.firstChild?.textContent||"").trim():"";
 window._tp=window._tp||{};
@@ -662,7 +705,7 @@ function tabPages(el,key){
   const T=TABS[key];if(!T)return;const kids=[...el.children];const g=kids.map((c,i)=>T.f(c,i));
   if(new Set(g.filter(x=>x!=null)).size<2)return;
   let cur=Math.min(window._tp[key]||0,T.n.length-1);
-  const bar=h("div",{class:"tabs pgtabs t-"+(NT[key]||"b"),role:"tablist"},T.n.map((t,i)=>h("button",{role:"tab",class:i===cur?"on":"",onclick:()=>{cur=i;window._tp[key]=i;paint();scrollTo({top:0})}},t)));
+  const bar=h("div",{class:"tabs pgtabs t-"+(NT[key]||"b"),role:"tablist"},T.n.map((t,i)=>h("button",{role:"tab",class:i===cur?"on":"",onclick:()=>{cur=i;window._tp[key]=i;paint();scrollTo({top:0})}},T.i?ic(T.i[i]):null,t)));
   function paint(){bar.querySelectorAll("button").forEach((b,i)=>b.classList.toggle("on",i===cur));kids.forEach((c,i)=>c.classList.toggle("pgh",g[i]!=null&&g[i]!==cur))}
   const at=kids.findIndex((c,i)=>g[i]!=null);el.insertBefore(bar,kids[at]);paint()}
 function foldRows(card,n=16,search=true){
@@ -677,9 +720,22 @@ function foldRows(card,n=16,search=true){
 function foldChips(vr){
   const n=vr.children.length;if(n<=18||vr.dataset.f)return;vr.dataset.f=1;vr.classList.add("vfold");
   const b=h("button",{class:"btn sm vmore",onclick:()=>{const o=vr.classList.toggle("vfold");b.textContent=o?"نمایش همه ("+fa(n)+")":"جمع کردن"}},"نمایش همه ("+fa(n)+")");vr.after(b)}
+const NOTILE=new Set(["users","inv","ord","req","pe","pm","txt","txtg","aud","reqd","srch"]);
+function tileOK(r){
+  if(r.querySelector("input,textarea,select"))return false;
+  if(!r.classList.contains("tap"))return true;
+  return !r.querySelector(".e .pill")||!r.querySelector(".av")}
+function tileCards(el){
+  el.querySelectorAll(".card").forEach(c=>{
+    const rows=[...c.querySelectorAll(":scope>.row")];
+    if(rows.length===1&&!c.querySelector(":scope>h3")){c.classList.add("slim");return}
+    if(NOTILE.has(CUR)||rows.length<2||rows.length>48)return;
+    if(!rows.every(tileOK))return;
+    c.classList.add("tiles")})}
 function finish(el){
   const own=CUR==="txt";
-  el.querySelectorAll(":scope>.card, :scope>div>.card").forEach(c=>{const nr=c.querySelectorAll(":scope>.row").length;if(!own&&nr>16&&!c.querySelector(":scope>.fq"))foldRows(c)});
+  tileCards(el);
+  el.querySelectorAll(":scope>.card, :scope>div>.card").forEach(c=>{const nr=c.querySelectorAll(":scope>.row").length;if(!own&&nr>16&&!c.querySelector(":scope>.fq")&&!c.classList.contains("tiles"))foldRows(c)});
   el.querySelectorAll(".card .vr").forEach(foldChips);
   if(CUR==="dash"&&matchMedia("(max-width:699px)").matches)el.querySelectorAll(".card").forEach(c=>{if(c.querySelectorAll(":scope>.row").length>3&&!c.querySelector(":scope>.more"))foldRows(c,3,false)});
   tabPages(el,CUR)}
