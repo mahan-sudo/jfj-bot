@@ -4372,7 +4372,10 @@ def handle_message(message):
 
     if is_admin(user["id"]) and state == "adm_in" and data.get("name") == "rich" and data.get("kind") \
             and text not in ADMIN_SECTION_BTNS and text != BACK_BTN:
-        rich_receive(message, data)
+        if data.get("await") == "cap":
+            rich_caption_receive(message, data)
+        else:
+            rich_receive(message, data)
         return
 
     if (message.get("photo") or message.get("document") or (text and not text.startswith("/"))) \
@@ -4665,6 +4668,73 @@ def rich_convert_codes(message):
     return res.get("message_id"), None
 
 
+CAP_KINDS = ("photo", "voice", "gif")
+CAP_MAX = 1024
+
+
+def rich_cap_preview(chat_id, data, old_mid=None):
+    """پیش‌نمایش رسانه را (با کپشنِ فعلی) در چت ادمین می‌سازد.
+    اگر کپشن عوض شده یا کد ایموجی پرمیوم دارد، یک کپی تازه از رسانه‌ی اصلی با کپشن جدید ساخته می‌شود.
+    خروجی: (mid, error)"""
+    import premium_msg as pmg
+    cap, ents = data.get("cap_text") or "", data.get("cap_ents") or []
+    media_mid = data["media_mid"]
+    if not data.get("cap_dirty") and not pmg.has_codes(cap):
+        r = copy_msg(chat_id, chat_id, media_mid)
+        if not r.get("ok"):
+            return None, "پیش‌نمایش پیام ممکن نشد"
+        return (r.get("result") or {}).get("message_id"), None
+    nt, ne = cap, ents
+    if pmg.has_codes(cap):
+        nt, ne, _n_ = pmg.expand_entities(cap, ents, custom_emoji_glyphs)
+    kw = dict(chat_id=chat_id, from_chat_id=chat_id, message_id=media_mid, caption=nt)
+    if ne:
+        kw["caption_entities"] = ne
+    r = _tg_raw("copyMessage", **kw)
+    if not r.get("ok"):
+        return None, str(r.get("description", r.get("error_description", "")))[:150] or "خطای نامشخص"
+    if old_mid and old_mid != media_mid:
+        try:
+            tg("deleteMessage", chat_id=chat_id, message_id=old_mid)
+        except Exception:
+            pass
+    return (r.get("result") or {}).get("message_id"), None
+
+
+def rich_cap_ask(chat_id, data):
+    cap = data.get("cap_text") or ""
+    if cap:
+        q = (f"📝 این رسانه <b>کپشن</b> دارد ({_n(len(cap))} از {_n(CAP_MAX)} نویسه).\n"
+             "می‌خواهید متن دیگری به <b>انتهای کپشن</b> اضافه کنید؟")
+        rows = [[_ab("➕ افزودن به کپشن", "adm_p:x:rcap", PRIMARY)],
+                [_ab("✅ ادامه", "adm_p:x:rcok", SUCCESS)],
+                [_ab("❌ انصراف", "adm_p:x:rx", DANGER)]]
+    else:
+        q = ("📝 این رسانه <b>کپشن</b> (متنِ زیر رسانه) ندارد.\n"
+             "کپشن <b>اختیاری</b> است؛ می‌خواهید بنویسید؟")
+        rows = [[_ab("✍️ افزودن کپشن", "adm_p:x:rcap", PRIMARY)],
+                [_ab("⏭ ادامه بدون کپشن", "adm_p:x:rcok", SUCCESS)],
+                [_ab("❌ انصراف", "adm_p:x:rx", DANGER)]]
+    _hsend(chat_id, q, _kb(*rows))
+
+
+def rich_confirm(chat_id, data):
+    if data["purpose"] == "dm":
+        q = f"✉️ بالا پیش‌نمایش پیام است. برای {_label(data['uid'])} ارسال شود؟"
+    else:
+        aud = data["aud"]
+        q = (f"📣 بالا پیش‌نمایش اطلاعیه است.\nگیرندگان: <b>{AUD_LABELS[aud]}</b> — <b>{_n(len(bc_targets(aud)))}</b> "
+             f"{'کانال/گروه' if aud == 'chan' else 'نفر'}\n"
+             f"⏱ فاصله‌ی ارسال بین هر دو نفر: <b>{_fmt_dur(cron_sec())}</b>\n\nمطمئنید؟")
+    if data["purpose"] == "dm":
+        _hsend(chat_id, q, _kb([_ab("✅ ارسال", "adm_p:x:rgo", SUCCESS), _ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
+    else:
+        _hsend(chat_id, q + "\n\n📌 پیام بعد از ارسال برای گیرندگان <b>پین</b> بشود؟",
+               _kb([_ab("📌 ارسال و پین", "adm_p:x:rgop", SUCCESS)],
+                   [_ab("✅ ارسال بدون پین", "adm_p:x:rgo", PRIMARY)],
+                   [_ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
+
+
 def rich_receive(message, data):
     chat_id = message["chat"]["id"]
     admin_id = message["from"]["id"]
@@ -4672,6 +4742,26 @@ def rich_receive(message, data):
     if kind != data.get("kind"):
         _hsend(chat_id, f"❗️ نوع پیام با گزینه‌ی انتخابی (<b>{RICH_KINDS[data['kind']]}</b>) نمی‌خواند؛ دوباره بفرستید یا نوع را عوض کنید.",
                _kb([_ab("🔁 تغییر نوع پیام", "adm_p:x:rch", PRIMARY), _ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
+        return
+    # رسانه‌هایی که کپشن می‌پذیرند: کپشن اختیاری است و از ادمین پرسیده می‌شود
+    if kind in CAP_KINDS:
+        cap = message.get("caption") or ""
+        if len(cap) > CAP_MAX:
+            _hsend(chat_id, f"❗️ کپشن بیش از {_n(CAP_MAX)} نویسه است؛ کوتاه‌تر بفرستید.")
+            return
+        data = dict(data, src_chat=chat_id, media_mid=message["message_id"], cap_text=cap,
+                    cap_ents=message.get("caption_entities") or [], cap_dirty=False, cap_prev=None)
+        data.pop("await", None)
+        mid, err = rich_cap_preview(chat_id, data)
+        if err:
+            _hsend(chat_id, ("❗️ تبدیل کد ایموجی پرمیوم ممکن نشد: <code>" + _hmod.escape(err) + "</code>\n"
+                             "آیدی ایموجی را بررسی کنید و پیام را دوباره بفرستید.") if cap
+                   else "❗️ پیش‌نمایش پیام ممکن نشد؛ دوباره بفرستید.")
+            return
+        data["src_mid"] = mid
+        data["cap_prev"] = mid if mid != message["message_id"] else None
+        set_state(admin_id, "adm_in", data)
+        rich_cap_ask(chat_id, data)
         return
     src_mid, converted = message["message_id"], False
     if kind != "forward":
@@ -4693,20 +4783,44 @@ def rich_receive(message, data):
     if not pr.get("ok"):
         _hsend(chat_id, "❗️ پیش‌نمایش پیام ممکن نشد؛ دوباره بفرستید.")
         return
-    if data["purpose"] == "dm":
-        q = f"✉️ بالا پیش‌نمایش پیام است. برای {_label(data['uid'])} ارسال شود؟"
-    else:
-        aud = data["aud"]
-        q = (f"📣 بالا پیش‌نمایش اطلاعیه است.\nگیرندگان: <b>{AUD_LABELS[aud]}</b> — <b>{_n(len(bc_targets(aud)))}</b> "
-             f"{'کانال/گروه' if aud == 'chan' else 'نفر'}\n"
-             f"⏱ فاصله‌ی ارسال بین هر دو نفر: <b>{_fmt_dur(cron_sec())}</b>\n\nمطمئنید؟")
-    if data["purpose"] == "dm":
-        _hsend(chat_id, q, _kb([_ab("✅ ارسال", "adm_p:x:rgo", SUCCESS), _ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
-    else:
-        _hsend(chat_id, q + "\n\n📌 پیام بعد از ارسال برای گیرندگان <b>پین</b> بشود؟",
-               _kb([_ab("📌 ارسال و پین", "adm_p:x:rgop", SUCCESS)],
-                   [_ab("✅ ارسال بدون پین", "adm_p:x:rgo", PRIMARY)],
-                   [_ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
+    rich_confirm(chat_id, data)
+
+
+def rich_caption_receive(message, data):
+    """متنِ ادامه‌ی کپشن از ادمین ← به انتهای کپشن اضافه می‌شود"""
+    import premium_msg as pmg
+    chat_id = message["chat"]["id"]
+    admin_id = message["from"]["id"]
+    if not message.get("text"):
+        _hsend(chat_id, "❗️ برای کپشن فقط <b>متن</b> بفرستید.",
+               _kb([_ab("↩️ بدون تغییر ادامه", "adm_p:x:rcok", SUCCESS), _ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
+        return
+    add, add_ents = message["text"], message.get("entities") or []
+    cap, ents = data.get("cap_text") or "", data.get("cap_ents") or []
+    sep = "\n" if cap else ""
+    new_text = cap + sep + add
+    # کدهای {id} هنگام ساخت پیش‌نمایش به ایموجی پرمیوم تبدیل می‌شوند و کوتاه‌تر می‌شوند؛ طول خامِ متن حدّ را تعیین می‌کند
+    if len(new_text) > CAP_MAX:
+        left = CAP_MAX - len(cap) - len(sep)
+        _hsend(chat_id, f"❗️ با این متن کپشن از {_n(CAP_MAX)} نویسه بیشتر می‌شود ({_n(len(new_text))}). "
+                        f"حداکثر <b>{_n(max(left, 0))}</b> نویسه‌ی دیگر جا دارید؛ کوتاه‌تر بفرستید.",
+               _kb([_ab("↩️ بدون تغییر ادامه", "adm_p:x:rcok", SUCCESS), _ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
+        return
+    shift = pmg.u16len(cap + sep)
+    new_ents = list(ents) + [dict(e, offset=e["offset"] + shift) for e in add_ents]
+    nd = dict(data, cap_text=new_text, cap_ents=new_ents, cap_dirty=True)
+    mid, err = rich_cap_preview(chat_id, nd, data.get("cap_prev"))
+    if err:
+        _hsend(chat_id, f"❗️ کپشن ساخته نشد: <code>{_hmod.escape(err)}</code>\n"
+                        "کپشن قبلی دست‌نخورده ماند؛ دوباره متن را بفرستید یا ادامه دهید.",
+               _kb([_ab("↩️ بدون تغییر ادامه", "adm_p:x:rcok", SUCCESS), _ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
+        return
+    # پیش‌نمایشِ قبلیِ ساخته‌شده توسط ربات پاک می‌شود (رسانه‌ی اصلیِ ادمین دست نمی‌خورد)
+    nd["src_mid"], nd["cap_prev"] = mid, mid
+    nd.pop("await", None)
+    set_state(admin_id, "adm_in", nd)
+    _hsend(chat_id, "✅ به کپشن اضافه شد؛ بالا پیش‌نمایش جدید است.")
+    rich_cap_ask(chat_id, nd)
 
 
 # ---------- مخاطبان و ارسال همگانی با فاصله‌ی زمانی (کرون) ----------
@@ -6501,15 +6615,36 @@ def v2_admin_callback(cq):
                 d["kind"] = args[0]
                 set_state(admin_id, "adm_in", d)
                 ack()
-                hint = {"photo": "🖼 عکس (با کپشن اگر می‌خواهید)", "voice": "🎙 ویس", "sticker": "🎭 استیکر",
-                        "gif": "🎞 گیف", "text": "📝 متن", "forward": "↪️ فوروارد"}[args[0]]
+                hint = {"photo": "🖼 عکس (کپشن اختیاری)", "voice": "🎙 ویس (کپشن اختیاری)", "sticker": "🎭 استیکر",
+                        "gif": "🎞 گیف (کپشن اختیاری)", "text": "📝 متن", "forward": "↪️ فوروارد"}[args[0]]
                 show(f"✉️ <b>{hint}</b>\n\n" + (
                      "هر پیامی (از هر نوعی) بفرستید یا از یک کانال/چت <b>فوروارد</b> کنید؛ ربات همان را به‌صورت "
                      "<b>فوروارد</b> (با نام مبدأ) برای گیرندگان می‌فرستد."
                      if args[0] == "forward" else
                      "حالا پیام را <b>همان‌طور که می‌خواهید کاربر ببیند</b> بفرستید. "
-                     "فرمت‌ها (bold، کج، خط‌خورده، اسپویلر، لینک و…) دقیقاً حفظ می‌شود.\n\n" + _PREM_CODE_HELP),
+                     "فرمت‌ها (bold، کج، خط‌خورده، اسپویلر، لینک و…) دقیقاً حفظ می‌شود."
+                     + ("\n📝 بعد از ارسال، ربات می‌پرسد کپشن اضافه کنید یا نه (کپشن اختیاری است)." if args[0] in CAP_KINDS else "")
+                     + "\n\n" + _PREM_CODE_HELP),
                      _kb([_ab("🔁 تغییر نوع", "adm_p:x:rch", PRIMARY), _ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
+                return True
+            if act in ("rcap", "rcok"):
+                _, d = get_state(admin_id)
+                if not d or d.get("name") != "rich" or not d.get("media_mid"):
+                    ack("این مرحله منقضی شده.", True)
+                    return True
+                ack()
+                if act == "rcok":
+                    d.pop("await", None)
+                    set_state(admin_id, "adm_in", d)
+                    rich_confirm(chat_id, d)
+                    return True
+                d["await"] = "cap"
+                set_state(admin_id, "adm_in", d)
+                left = CAP_MAX - len(d.get("cap_text") or "")
+                _hsend(chat_id, ("➕ <b>متنِ ادامه‌ی کپشن</b>" if d.get("cap_text") else "✍️ <b>متن کپشن</b>") +
+                       f"\n\nمتن را بفرستید؛ " + ("به انتهای کپشن فعلی اضافه می‌شود. " if d.get("cap_text") else "زیر رسانه قرار می‌گیرد. ") +
+                       f"حداکثر <b>{_n(max(left, 0))}</b> نویسه جا دارید. فرمت‌ها (bold، کج، لینک و…) حفظ می‌شود.\n\n" + _PREM_CODE_HELP,
+                       _kb([_ab("↩️ بدون تغییر ادامه", "adm_p:x:rcok", SUCCESS), _ab("❌ انصراف", "adm_p:x:rx", DANGER)]))
                 return True
             if act in ("rgo", "rgop"):
                 _, d = get_state(admin_id)
