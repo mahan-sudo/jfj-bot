@@ -472,6 +472,10 @@ details.hp summary{padding:12px;font-size:12px}details.hp div{padding:0 12px 12p
 .pgtabs button.on:not(#_){background:none;color:var(--tx);font-weight:700}
 .pgtabs button::after{content:"";position:absolute;inset-inline:16%;bottom:-1px;height:3px;border-radius:3px 3px 0 0;background:var(--t);transform:scaleX(0);transition:transform .2s cubic-bezier(.2,.8,.25,1)}
 .pgtabs button.on::after{transform:scaleX(1)}
+
+.vr.vfold{max-height:112px;overflow:hidden;-webkit-mask:linear-gradient(#000 60%,transparent);mask:linear-gradient(#000 60%,transparent)}
+.vmore{margin-top:8px}
+code{direction:ltr;unicode-bidi:isolate;display:inline-block}
 </style>
 </head>
 <body>
@@ -670,8 +674,13 @@ function foldRows(card,n=16,search=true){
     const left=match-vis;more.classList.toggle("hide",left<=0||!!nq);more.textContent="نمایش "+fa(Math.min(n,left))+" مورد بعدی ("+fa(left)+" باقی‌مانده)"}
   inp.addEventListener("input",()=>{q=inp.value;paint()});more.addEventListener("click",()=>{shown+=n;paint()});
   if(search)card.insertBefore(inp,first);rows[rows.length-1].after(more);paint()}
+function foldChips(vr){
+  const n=vr.children.length;if(n<=18||vr.dataset.f)return;vr.dataset.f=1;vr.classList.add("vfold");
+  const b=h("button",{class:"btn sm vmore",onclick:()=>{const o=vr.classList.toggle("vfold");b.textContent=o?"نمایش همه ("+fa(n)+")":"جمع کردن"}},"نمایش همه ("+fa(n)+")");vr.after(b)}
 function finish(el){
-  el.querySelectorAll(":scope>.card, :scope>div>.card").forEach(c=>{const nr=c.querySelectorAll(":scope>.row").length;if(nr>16&&!c.querySelector(":scope>.fq"))foldRows(c)});
+  const own=CUR==="txt";
+  el.querySelectorAll(":scope>.card, :scope>div>.card").forEach(c=>{const nr=c.querySelectorAll(":scope>.row").length;if(!own&&nr>16&&!c.querySelector(":scope>.fq"))foldRows(c)});
+  el.querySelectorAll(".card .vr").forEach(foldChips);
   if(CUR==="dash"&&matchMedia("(max-width:699px)").matches)el.querySelectorAll(".card").forEach(c=>{if(c.querySelectorAll(":scope>.row").length>3&&!c.querySelector(":scope>.more"))foldRows(c,3,false)});
   tabPages(el,CUR)}
 function countUp(root){
