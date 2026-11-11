@@ -29,6 +29,7 @@ from zoneinfo import ZoneInfo
 import db as _db            # لایه‌ی PostgreSQL (pool + سازگاری رابط)
 
 # ===================== تنظیمات =====================
+SECOND_BOT = os.environ.get("SECOND_BOT") == "1"  # ربات دوم روی همان دیتابیس (توسط start.py)
 BOT_TOKEN = os.environ.get("BOT_TOKEN") or "PUT_YOUR_NEW_TOKEN_HERE"  # روی Railway در Variables با نام BOT_TOKEN بگذارید
 ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "8322577437").replace(" ", "").split(",") if x]  # آیدی عددی ادمین (می‌توانید چند آیدی بگذارید: [111, 222])
 # دیتابیس: PostgreSQL — آدرس اتصال فقط از متغیر محیطی DATABASE_URL (رمز هرگز در سورس نیست). جزئیات: db.py و README_POSTGRES.md
@@ -8685,12 +8686,15 @@ def main():
     logging.info("ربات روشن شد: @%s", BOT_USERNAME)
 
     tg("deleteWebhook")
-    threading.Thread(target=invoice_watcher, daemon=True).start()
-    threading.Thread(target=bc_worker, daemon=True).start()
-    threading.Thread(target=request_sweeper, daemon=True).start()
-    threading.Thread(target=betray_worker, daemon=True).start()
-    threading.Thread(target=rep_worker, daemon=True).start()
-    threading.Thread(target=rep_scheduler, daemon=True).start()
+    if SECOND_BOT:
+        logging.info("حالت ربات دوم: کارگرهای پس‌زمینه خاموش‌اند (فقط ربات اول اجرا می‌کند)")
+    else:
+        threading.Thread(target=invoice_watcher, daemon=True).start()
+        threading.Thread(target=bc_worker, daemon=True).start()
+        threading.Thread(target=request_sweeper, daemon=True).start()
+        threading.Thread(target=betray_worker, daemon=True).start()
+        threading.Thread(target=rep_worker, daemon=True).start()
+        threading.Thread(target=rep_scheduler, daemon=True).start()
     global GAMES, VOICE, TEXTS
     init_premoji()
     setup_bot_commands()
@@ -8711,7 +8715,8 @@ def main():
     try:
         import games as _games
         _games.init(_GlobalsProxy())
-        _games.start()
+        if not SECOND_BOT:
+            _games.start()
         GAMES = _games
         logging.info("🃏 بخش بازی‌ها (games.py) فعال شد")
     except Exception:

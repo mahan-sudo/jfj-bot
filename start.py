@@ -47,10 +47,42 @@ def run_bot():
         time.sleep(10)
 
 
+def spawn_second_bot():
+    """ربات دوم روی همان سرویس و همان دیتابیس: اگر BOT_TOKEN_2 تنظیم باشد، یک پروسه‌ی جدا با توکن دوم بالا می‌آید.
+    فقط BOT_TOKEN_2 لازم است. کارگرهای پس‌زمینه (پرداخت، همگانی، بازی‌ها، ...) فقط در ربات اول اجرا می‌شوند.
+    پنل وب و مینی‌اپ هم فقط با ربات اول است (یک پورت عمومی)."""
+    tok = os.environ.get("BOT_TOKEN_2", "").strip()
+    if not tok:
+        return
+    import subprocess
+    env = dict(os.environ)
+    env["BOT_TOKEN"] = tok
+    env["SECOND_BOT"] = "1"
+    env["MINIAPP_URL"] = ""
+    env["RAILWAY_PUBLIC_DOMAIN"] = ""
+    env["MIGRATE_SQLITE_FROM"] = ""
+    env.pop("PORT", None)
+
+    def loop():
+        while True:
+            try:
+                subprocess.call([sys.executable, os.path.join(HERE, "start.py"), "--second"], env=env)
+            except BaseException:
+                traceback.print_exc()
+            time.sleep(10)
+    threading.Thread(target=loop, daemon=True).start()
+    print("🤖 ربات دوم (BOT_TOKEN_2) راه‌اندازی شد", flush=True)
+
+
 if __name__ == "__main__":
+    if "--second" in sys.argv:  # پروسه‌ی ربات دوم: فقط ربات، بدون وب
+        time.sleep(8)  # صبر برای ساخته شدن جدول‌ها توسط ربات اول
+        run_bot()
+        raise SystemExit
     maybe_migrate_sqlite()
     miniapp.ensure_ready()
     threading.Thread(target=run_bot, daemon=True).start()
+    spawn_second_bot()
     port = int(os.environ.get("PORT", "8000"))
     print(f"mini app on :{port}", flush=True)
     try:
